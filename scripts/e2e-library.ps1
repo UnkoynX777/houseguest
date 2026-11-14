@@ -18,9 +18,11 @@ $service = $null
 try {
     Get-Process houseguest-service -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$root*" } | Stop-Process -Force
     Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory $bin, "$portable\Alpha", "$portable\Beta" | Out-Null
+    New-Item -ItemType Directory $bin, "$portable\Alpha", "$portable\Beta", "$portable\Gamma\a\b\c\d\e\f" | Out-Null
     Copy-Item "$Build\service\houseguest-service.exe", "$Build\service\houseguest-cli.exe" $bin
     foreach ($name in 'Alpha\Alpha.exe', 'Alpha\unins000.exe', 'Beta\Beta.exe', 'Loose.exe') { Copy-Item C:\Windows\System32\find.exe "$portable\$name" }
+    Copy-Item C:\Windows\System32\notepad.exe "$portable\Gamma\a\b\c\d\e\f\first.exe"
+    Copy-Item C:\Windows\System32\notepad.exe "$portable\Gamma\a\second.exe"
 
     $service = Start-Process "$bin\houseguest-service.exe" -ArgumentList '--console', '--data-dir', $data -PassThru -WindowStyle Hidden
     Start-Sleep -Seconds 3
@@ -32,7 +34,7 @@ try {
     $apps = @($library.apps)
     Check 'the library finds installed programs' ($apps.Count -gt 20)
 
-    $keys = $apps | ForEach-Object { $_.path.ToLower() }
+    $keys = $apps | Where-Object { $_.path } | ForEach-Object { $_.path.ToLower() }
     Check 'every executable is listed once' (($keys | Sort-Object -Unique).Count -eq $keys.Count)
     Check 'programs found by several sources are merged' (@($apps | Where-Object { $_.sources.Count -gt 1 }).Count -ge 1)
     Check 'tools and helpers are marked so they can be hidden' (@($apps | Where-Object { $_.role -ne 'application' }).Count -ge 1)
@@ -43,6 +45,9 @@ try {
     $perUser = @($apps | Where-Object { $_.path -like "$env:LOCALAPPDATA\*" -and $_.role -eq 'application' })
     Check 'programs installed for a single user are listed' ($perUser.Count -ge 1)
     $sources = HgJson call apps.sources
+    Check 'every local volume is enumerated with its type' (@($sources.volumes | Where-Object { $_.type -eq 'fixed' -and $_.ready }).Count -ge 1)
+    $steam = @($apps | Where-Object { $_.platform -eq 'steam' -and $_.role -eq 'application' })
+    if ($steam.Count) { Check 'Steam games are resolved from their launch configuration' (@($steam | Where-Object { $_.resolution -ne 'resolved' }).Count -eq 0) }
     Check 'every discovery source reports a status' (@($sources.sources | Where-Object { $_.scanned }).Count -ge 5)
 
     $diag = HgJson call apps.diagnose (Json @{ path = "$portable\Beta\Beta.exe" })
@@ -51,13 +56,20 @@ try {
     Check 'diagnosis recognises a folder' ((HgJson call apps.diagnose (Json @{ path = $portable })).verdict -eq 'folder')
 
     $scan = HgJson call apps.folder.scan (Json @{ path = $portable })
-    $found = @($scan.apps | ForEach-Object { Split-Path $_.path -Leaf } | Sort-Object)
+    $found = @($scan.apps | Where-Object { $_.path } | ForEach-Object { Split-Path $_.path -Leaf } | Sort-Object)
     Check 'a folder scan finds one program per sub folder and skips uninstallers' (($found -join ',') -eq 'Alpha.exe,Beta.exe,Loose.exe')
 
     Hg call apps.manual.add (Json @{ path = "$portable\Loose.exe" }) | Out-Null
     Hg call apps.portable.add (Json @{ path = $portable }) | Out-Null
     $library = WaitScan
     $loose = $library.apps | Where-Object { $_.path -like '*\portable\Loose.exe' }
+    $gamma = $library.apps | Where-Object { $_.install_dir -like '*\portable\Gamma' }
+    Check 'an executable nested six folders deep is still found' ($gamma -and @($gamma.candidates).Count -eq 2)
+    Check 'ambiguous installations keep their entry and offer candidates' ($gamma.resolution -eq 'candidates' -and -not $gamma.path)
+    Hg call apps.resolve (Json @{ id = $gamma.id; path = "$portable\Gamma\a\second.exe" }) | Out-Null
+    $library = WaitScan
+    $gamma = $library.apps | Where-Object { $_.install_dir -like '*\portable\Gamma' }
+    Check 'choosing an executable resolves the entry' ($gamma.resolution -eq 'resolved' -and $gamma.path -like '*second.exe')
     Check 'a program added by hand is listed as such' ($loose -and $loose.manual -and $loose.kind -eq 'manual')
     $alpha = $library.apps | Where-Object { $_.path -like '*\portable\Alpha\Alpha.exe' }
     Check 'a registered portable folder lists its programs as portable' ($alpha -and $alpha.kind -eq 'portable')
@@ -76,6 +88,8 @@ try {
     Start-Sleep 3
     $cached = HgJson call apps.library (Json @{ profile_id = 'builtin-guest' })
     Check 'the cached library is available right after a restart' (@($cached.apps).Count -ge $apps.Count)
+    $gammaAfter = $cached.apps | Where-Object { $_.install_dir -like '*\portable\Gamma' }
+    Check 'the chosen executable survives a restart' ($gammaAfter.path -like '*second.exe')
     Check 'hand-added programs and folders survive a restart' ((HgJson call apps.sources).manual.Count -eq 1 -and (HgJson call apps.sources).portable_roots.Count -eq 1)
 
     Remove-Item "$portable\Loose.exe"

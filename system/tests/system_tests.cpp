@@ -83,8 +83,9 @@ TEST_CASE("discovery finds applications with existing paths", "[discovery]") {
 TEST_CASE("each executable appears once however many sources list it", "[discovery]") {
     const auto catalog = discover_catalog({});
     std::set<std::string> keys;
-    for (const auto& app : catalog.apps)
-        CHECK(keys.insert(normalize_app_key(path_from_utf8(app.path))).second);
+    for (const auto& app : catalog.apps) {
+        if (!app.path.empty()) CHECK(keys.insert(normalize_app_key(path_from_utf8(app.path))).second);
+    }
 }
 
 TEST_CASE("installers and helpers are told apart from applications", "[discovery]") {
@@ -111,7 +112,7 @@ TEST_CASE("a portable folder yields its main program per sub folder", "[discover
     copy("find.exe", root / "Beta" / "Beta.exe");
     copy("find.exe", root / "loose.exe");
 
-    const auto apps = scan_folder(root, 3);
+    const auto apps = scan_folder(root);
     std::set<std::string> names;
     for (const auto& app : apps) {
         names.insert(std::filesystem::path(app.path).filename().string());

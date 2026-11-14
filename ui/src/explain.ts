@@ -79,10 +79,44 @@ export function categoryLabel(key: string): string {
 export function sourceLabel(source: string): string {
   return (
     {
-      registry: t('Installed programs'), installed: t('Installed programs'), app_paths: t('App paths'), start_menu: t('Start menu'), store: t('Microsoft Store'),
-      path: t('PATH folders'), folder: t('Program folders'), portable: t('Portable folder'), manual: t('Added by hand'), winget: t('winget'), scoop: t('Scoop'), chocolatey: t('Chocolatey'),
+      windows_registry: t('Installed programs'), registry: t('Installed programs'), installed: t('Installed programs'), app_paths: t('App paths'),
+      shortcuts: t('Shortcuts'), start_menu: t('Start menu'), packages: t('Microsoft Store'), store: t('Microsoft Store'), xbox_games: t('Xbox games'),
+      steam: t('Steam'), epic: t('Epic Games'), gog: t('GOG Galaxy'), ubisoft: t('Ubisoft Connect'), ea: t('EA app'), battlenet: t('Battle.net'),
+      package_managers: t('Package managers'), path: t('PATH folders'), folder: t('Program folders'), portable: t('Portable folder'),
+      portable_folders: t('Portable folders'), manual: t('Added by hand'), volume_survey: t('Deep scan'), resolver: t('Executable search'),
+      winget: t('winget'), scoop: t('Scoop'), chocolatey: t('Chocolatey'),
     } as Record<string, string>
   )[source] ?? source;
+}
+
+export function platformLabel(platform: string): string {
+  return (
+    {
+      steam: t('Steam'), epic: t('Epic Games'), gog: t('GOG Galaxy'), ubisoft: t('Ubisoft Connect'), ea: t('EA app'), xbox: t('Xbox'), store: t('Microsoft Store'),
+      winget: t('winget'), scoop: t('Scoop'), chocolatey: t('Chocolatey'), '': t('Windows'),
+    } as Record<string, string>
+  )[platform] ?? platform;
+}
+
+export function evidenceLabel(kind: string): string {
+  return (
+    {
+      'registry.uninstall': t('Windows installed-programs entry'), 'registry.app_paths': t('App Paths registration'), shortcut: t('Shortcut'),
+      'package.manifest': t('Package manifest'), 'steam.manifest': t('Steam app manifest'), 'steam.launch': t('Steam launch configuration'),
+      'epic.manifest': t('Epic manifest'), 'gog.registry': t('GOG registration'), 'ubisoft.registry': t('Ubisoft registration'), 'ea.registry': t('EA registration'),
+      'xbox.config': t('Xbox game configuration'), manual: t('Added by hand'), volume_survey: t('Found by the deep scan'), folder: t('Registered folder'),
+      path: t('PATH entry'), user: t('Chosen by you'), resolved: t('Chosen from file evidence'), pending: t('Waiting for a time budget'),
+    } as Record<string, string>
+  )[kind] ?? kind;
+}
+
+export function reasonLabel(reason: string): string {
+  return (
+    {
+      'graphical program': t('Graphical program'), 'console program': t('Console program'), 'product name matches': t('Product name matches'),
+      'same publisher': t('Same publisher'), 'running now': t('Running now'),
+    } as Record<string, string>
+  )[reason] ?? reason;
 }
 
 export function kindLabel(kind: string): string {

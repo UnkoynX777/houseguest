@@ -115,7 +115,7 @@ void Controller::register_policy_commands() {
             std::size_t allowed = 0, denied = 0;
             const auto view = catalog_.view();
             for (const auto& app : view.apps) {
-                if (app.role != system::AppRole::Application) continue;
+                if (app.role != system::AppRole::Application || app.path.empty()) continue;
                 const auto decision =
                     decide_file(*compiled.policy, system::path_from_utf8(app.path), app.package_family, {});
                 (decision.action == core::Action::Allow ? allowed : denied)++;

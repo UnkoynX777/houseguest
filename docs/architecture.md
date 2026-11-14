@@ -62,24 +62,27 @@ The service remembers which allowed processes belong to which application in a l
 
 ### Application library
 
-The library lists what can be allowed, and is separate from what the engine enforces: the engine decides by file identity, the library only finds files and shows their effective decision under the selected profile.
+The library lists what can be allowed. It is separate from what the engine enforces: the engine decides by file identity, the library finds installations and shows the effective decision under the selected profile.
 
-`system/app_catalog` builds the list from complementary sources, each timed and isolated so one unavailable source never stops the others:
+**Installations, not executables.** The unit is an installation with an identity (the canonical executable path when one is known, otherwise the canonical install folder, plus the platform and product id), a set of evidence, and a resolution state. An entry is `resolved` when its main program is known with confidence, `candidates` when the installation is real but the program is ambiguous, and `unresolved` when no program a person would start was found. Entries are never dropped for lack of a confident executable; they stay visible with the candidates so the owner can decide, and the choice is stored by install folder.
 
-- the Uninstall registry (64-bit and 32-bit machine views, plus every loaded user hive, which is where per-user installers such as VS Code and Discord register),
-- App Paths of the machine and of each loaded user,
-- Start menu shortcuts of all users and of every profile folder,
-- packaged apps read from the manifests under `WindowsApps` (newest version per package family),
-- conventional install folders (Program Files, per-user `Programs`) for folders no other source already explains,
-- winget, Scoop and Chocolatey folders,
-- PATH entries from the machine and user environment, classified as tools,
-- folders registered as portable and programs added by hand.
+**Providers.** Independent providers emit claims into one catalog. Each reports what it found, what only it found, what merged into other entries, what it set aside and why, and whether it is available on this Windows:
 
-Entries are merged by canonical long path, never by name, so one executable found by several sources appears once with all its sources. Executables are classified as application, tool, helper or installer from their name and location, and tools and helpers are hidden by default. Nothing is executed during discovery. The whole disk is never scanned: only the sources above, one or two levels inside install folders, and folders the owner registers.
+- the Uninstall registry (64-bit and 32-bit machine views and every loaded user hive); entries without an install folder are correlated with install folders by name tokens,
+- App Paths, Start menu and desktop shortcuts of every user (parsed in parallel), packaged apps from their manifests,
+- Steam (every library in `libraryfolders.vdf` on any volume, app manifests, and the launch configuration in `appinfo.vdf`), Epic manifests, GOG, Ubisoft Connect and EA registrations, Xbox `MicrosoftGame.Config` on every volume; Battle.net is reported as limited because its install list is a private database,
+- winget, Scoop and Chocolatey folders, the PATH (classified as tools), folders registered as portable, programs added by hand,
+- an opt-in deep scan of fixed volumes for programs without registration.
 
-The service keeps the result in `catalog.json`, so the library answers at once after a restart and refreshes in a background thread of below-normal priority. A refresh requested while another runs is queued once. First-seen times feed the "found recently" filter; the first scan only sets a baseline. `apps.diagnose` re-checks one path step by step (existence, extension, local disk, readability, catalog membership) and says whether it is missing, filtered or a duplicate.
+**Resolution by evidence.** Explicit launch targets win in this order: owner choice, platform manifests and launch configuration, shortcuts, `DisplayIcon` when it is a program. When nothing explicit exists, executables in the install folder are found with a time and entry budget instead of a depth limit (junctions and symlinks are never followed) and graded by evidence: graphical subsystem read from the PE header, version information matching the product name and publisher, whether the file is running now, and size. Installers, uninstallers and helpers are excluded and logged. A winner is accepted only with clear margin or independent evidence; installations found only by the deep scan are never accepted automatically.
 
-Limits: other users' registry hives that are not loaded are not read; their programs are found through their profile folders (Start menu, `Programs`, package-manager folders). Windows services and drivers are not listed as applications.
+**Identity and merging.** Claims with an explicit program merge by canonical executable path; claims with only a folder or a platform product id attach to the entry they describe. Two installations of the same product stay separate because their paths differ, and several programs that share one folder keep separate entries.
+
+**Volumes.** Fixed and RAM volumes are enumerated dynamically; removable volumes are skipped unless enabled; optical and network volumes are never opened. Entries on a volume that is not ready are kept and shown as offline. A change in the set of volumes triggers a refresh when the library is opened.
+
+**Cost.** The catalog is cached in `catalog.json` and the library answers at once after a restart. Refreshes run in one background thread at below-normal priority, resolve installations with at most three workers, reuse cached resolutions while the executable is unchanged, and can be cancelled. A refresh requested while another runs is queued once. A deep scan has per-folder budgets and runs only when requested.
+
+Limits: Battle.net and unregistered programs outside registered folders are found only through other evidence or the deep scan; other users' registry hives that are not loaded are not read; Windows services and drivers are not listed as applications; when a game's files carry no distinguishing metadata and no platform launch configuration exists, the entry asks for a choice instead of guessing.
 
 ### Observation
 

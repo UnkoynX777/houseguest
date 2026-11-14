@@ -26,6 +26,20 @@ const scanned = ref(false);
 const path = ref('');
 const diagnosis = ref<Diagnosis>();
 
+async function deepScan() {
+  if (await attempt(() => call('apps.refresh', { deep: true }), t('Deep scan started. It runs in the background and can be cancelled.'))) {
+    emit('changed');
+    await loadSources();
+  }
+}
+
+async function setRemovable(value: boolean) {
+  if (await attempt(() => call('apps.settings', { include_removable: value }))) {
+    emit('changed');
+    await loadSources();
+  }
+}
+
 async function loadSources() {
   try {
     report.value = await call<SourcesReport>('apps.sources');
@@ -159,19 +173,10 @@ async function addDiagnosed() {
   }
 }
 
-const sourceNames = computed(() => ({
-  registry: t('Windows installed-programs list (all users and each signed-in user)'),
-  app_paths: t('App Paths registrations'),
-  start_menu: t('Start menu shortcuts of every user'),
-  store: t('Microsoft Store and packaged apps'),
-  conventional_folders: t('Program Files and per-user Programs folders'),
-  package_managers: t('winget, Scoop and Chocolatey folders'),
-  path: t('Programs on the PATH'),
-  portable_folders: t('Portable folders you registered'),
-  manual: t('Programs you added by hand'),
-}) as Record<string, string>);
+const volumeType = (type: string) =>
+  ({ fixed: t('Fixed disk'), removable: t('Removable'), network: t('Network'), optical: t('Optical'), ramdisk: t('RAM disk'), unknown: t('Unknown') } as Record<string, string>)[type] ?? type;
 
-const canAdd = computed(() => diagnosis.value && ['not_detected', 'sibling_listed', 'filtered'].includes(diagnosis.value.verdict) && diagnosis.value.verdict !== 'filtered');
+const canAdd = computed(() => !!diagnosis.value && ['not_detected', 'discarded', 'component', 'volume_skipped'].includes(diagnosis.value.verdict) && diagnosis.value.verdict !== 'volume_skipped');
 </script>
 
 <template>
@@ -181,21 +186,43 @@ const canAdd = computed(() => diagnosis.value && ['not_detected', 'sibling_liste
     </div>
 
     <template v-if="tab === 'sources'">
-      <p class="muted">{{ t('Houseguest combines these places to find programs. A source that is unavailable on this Windows is skipped without affecting the others.') }}</p>
+      <p class="muted">{{ t('Houseguest combines independent sources. One that is unavailable on this Windows is skipped without affecting the others, and what each one contributed is shown below.') }}</p>
       <div v-if="failure" class="banner bad" role="alert"><Icon name="alert" /><span>{{ failure }}</span></div>
       <div v-else-if="!report" class="stack"><div v-for="n in 5" :key="n" class="skeleton" style="height: 36px" /></div>
       <template v-else>
+        <div class="counters">
+          <span><strong>{{ report.total }}</strong> {{ t('in the library') }}</span>
+          <span><strong>{{ report.resolved }}</strong> {{ t('with a program') }}</span>
+          <span v-if="report.candidates"><strong>{{ report.candidates }}</strong> {{ t('need a choice') }}</span>
+          <span v-if="report.unresolved"><strong>{{ report.unresolved }}</strong> {{ t('without a program') }}</span>
+          <span v-if="report.offline"><strong>{{ report.offline }}</strong> {{ t('on offline drives') }}</span>
+          <span v-if="report.discarded"><strong>{{ report.discarded }}</strong> {{ t('set aside') }}</span>
+        </div>
+        <h3>{{ t('Sources') }}</h3>
         <div class="source-list">
           <div v-for="source in report.sources" :key="source.name" class="source-row">
             <span class="state-dot" :class="source.available ? 'allowed' : 'blocked'" />
-            <div class="grow">
-              <strong>{{ sourceNames[source.name] ?? source.name }}</strong>
-              <div v-if="!source.available" class="hint">{{ source.reason }}</div>
+            <div class="grow" style="min-width: 0">
+              <strong>{{ sourceLabel(source.name) }}</strong>
+              <div class="hint">{{ source.available ? source.note : source.error }}</div>
             </div>
-            <span v-if="source.scanned" class="hint">{{ t('{n} programs · {ms} ms', { n: source.found, ms: source.milliseconds }) }}</span>
+            <span v-if="source.scanned && source.available" class="hint" style="text-align: right">{{ t('{n} found · {unique} only here · {merged} merged · {ms} ms', { n: source.found, unique: source.unique, merged: source.merged, ms: source.milliseconds }) }}</span>
           </div>
         </div>
-        <p class="hint">{{ t('{n} programs in the library.', { n: report.total }) }}{{ ' ' }}<template v-if="report.updated_at"> {{ t('Last refreshed {time}.', { time: formatTime(report.updated_at) }) }}</template><template v-if="report.scanning"> {{ t('Refreshing now…') }}</template></p>
+        <h3>{{ t('Drives') }}</h3>
+        <div class="source-list">
+          <div v-for="volume in report.volumes" :key="volume.root" class="source-row">
+            <span class="state-dot" :class="volume.included && volume.ready ? 'allowed' : 'blocked'" />
+            <div class="grow"><strong>{{ volume.root }} {{ volume.label }}</strong><div class="hint">{{ volumeType(volume.type) }}<template v-if="volume.filesystem"> · {{ volume.filesystem }}</template><template v-if="volume.reason"> · {{ volume.reason }}</template></div></div>
+          </div>
+        </div>
+        <label class="check"><input type="checkbox" :checked="report.include_removable" @change="setRemovable(($event.target as HTMLInputElement).checked)" />{{ t('Include removable drives') }}</label>
+        <p class="hint">{{ t('Network locations are never opened, because the service runs with high privileges.') }}</p>
+        <div class="row wrap">
+          <button class="btn" :disabled="report.scanning" @click="deepScan"><Icon name="search" />{{ t('Deep scan drives') }}</button>
+          <span class="hint">{{ t('Looks through the fixed drives for programs that have no installer or registration. It can take a few minutes and never runs on its own.') }}</span>
+        </div>
+        <p class="hint">{{ t('Last refreshed {time}.', { time: formatTime(report.updated_at) }) }}<template v-if="report.scanning">{{ ' ' }}{{ report.deep ? t('Deep scan running…') : t('Refreshing now…') }}</template></p>
       </template>
     </template>
 

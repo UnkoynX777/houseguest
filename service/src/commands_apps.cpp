@@ -342,16 +342,26 @@ void Controller::register_app_commands() {
             Json list = Json::array();
             std::size_t allowed = 0, blocked = 0;
             for (const auto& installed : view.apps) {
+                Json row = to_json(installed);
+                const auto seen = view.first_seen.find(installed.id);
+                row["first_seen"] = seen == view.first_seen.end() ? 0 : seen->second;
                 const auto file = system::path_from_utf8(installed.path);
+                const auto app_key = installed.path.empty() ? std::string{} : system::normalize_app_key(file);
+                row["manual"] = !app_key.empty() && manual.contains(app_key);
+                if (installed.path.empty()) {
+                    row.update(Json{{"status", "unresolved"},
+                                    {"via", ""},
+                                    {"reason", "unresolved"},
+                                    {"rule_id", ""},
+                                    {"app_id", ""},
+                                    {"blocks", 0}});
+                    list.push_back(std::move(row));
+                    continue;
+                }
                 const auto decision = decide_file(*compiled.policy, file, installed.package_family, {});
                 const bool allow = decision.action == core::Action::Allow;
-                (allow ? allowed : blocked)++;
+                if (installed.role == system::AppRole::Application) (allow ? allowed : blocked)++;
                 const auto key = core::normalize_path(installed.path);
-                const auto app_key = system::normalize_app_key(file);
-                const auto seen = view.first_seen.find(app_key);
-                Json row = to_json(installed);
-                row["first_seen"] = seen == view.first_seen.end() ? 0 : seen->second;
-                row["manual"] = manual.contains(app_key);
                 row.update(Json{{"status", allow ? "allowed" : "blocked"},
                                 {"via", core::source_name(decision.source)},
                                 {"reason", decision.reason},

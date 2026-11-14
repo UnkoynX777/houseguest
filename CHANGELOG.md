@@ -5,13 +5,16 @@ All notable changes are documented here. The project follows [Semantic Versionin
 ## [Unreleased]
 
 ### Fixed
-- The library missed programs installed for a single user, such as Visual Studio Code, because only the machine registry was read and a program needed a `DisplayIcon` to appear. Discovery now reads every loaded user hive, resolves the main executable from the install location, and combines registry, App Paths, Start menu, packaged apps, install folders, package managers and PATH. On the development machine the list grew from 88 to 182 applications, with tools and helpers hidden by default.
-- Packaged apps are read from `WindowsApps` manifests instead of a registry key that only lists a few packages.
+- The library missed whole classes of programs: per-user installs, games whose registration names only a folder and an icon, Steam games on other drives, and entries whose executable differs from the product name. Discovery now builds installations from independent sources and resolves the main program from evidence, with no depth limit and no name matching.
+- Executables inside an install folder are found with a time and entry budget, never following junctions or symlinks, so deep layouts such as `game\bin\win64` no longer depend on a fixed depth.
+- Packaged apps are read from `WindowsApps` manifests, and uninstall entries without an install folder are correlated with install folders by name.
 
 ### Added
-- Library tools: add an application, add by folder, register portable folders, source status, and a diagnosis that explains why a path is missing, duplicated or filtered.
-- Library filters for installed, portable, Microsoft Store, added by hand, found recently, with dependencies and uncategorized, plus a switch for tools and helpers.
-- A persistent catalog cache with background, cancellable refresh and progressive loading.
+- Providers for Steam (libraries on every drive, app manifests and launch configuration), Epic, GOG, Ubisoft Connect, EA, Xbox games, winget, Scoop and Chocolatey, each reporting what it found, what only it found, what merged and what it set aside.
+- Resolution states: entries whose main program is ambiguous or missing stay in the library with ranked candidates and the owner can choose the executable.
+- Dynamic volume enumeration, offline volumes kept and marked, a setting for removable drives, and an opt-in deep scan.
+- Library tools: source and drive report, deep scan, add application, add by folder, portable folders, and a diagnosis that also explains discarded candidates and ambiguous installations.
+- Platform and drive filters, and entries that need a program choice.
 
 ## [0.4.1]
 

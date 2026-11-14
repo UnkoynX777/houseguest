@@ -91,8 +91,24 @@ export interface AppEntry {
 export type AppKind = 'installed' | 'portable' | 'store' | 'manual';
 export type AppRole = 'application' | 'tool' | 'helper' | 'installer';
 
+export type Resolution = 'resolved' | 'candidates' | 'unresolved';
+
+export interface ExecutableCandidate {
+  path: string;
+  score: number;
+  reasons: string[];
+}
+
 export interface LibraryApp extends Required<AppEntry> {
+  id: string;
   install_dir: string;
+  platform: string;
+  product_id: string;
+  volume: string;
+  resolution: Resolution;
+  candidates: ExecutableCandidate[];
+  evidence: { kind: string; detail: string }[];
+  offline: boolean;
   sources: string[];
   kind: AppKind;
   role: AppRole;
@@ -101,7 +117,7 @@ export interface LibraryApp extends Required<AppEntry> {
   size: number;
   first_seen: number;
   manual: boolean;
-  status: 'allowed' | 'blocked';
+  status: 'allowed' | 'blocked' | 'unresolved';
   via: string;
   reason: string;
   rule_id: string;
@@ -115,20 +131,42 @@ export interface LibraryApp extends Required<AppEntry> {
 
 export interface SourceStatus {
   name: string;
+  note: string;
   available: boolean;
-  reason: string;
   found: number;
+  unique: number;
+  merged: number;
+  discarded: number;
   milliseconds: number;
+  error: string;
   scanned: boolean;
+}
+
+export interface VolumeStatus {
+  root: string;
+  type: string;
+  label: string;
+  filesystem: string;
+  ready: boolean;
+  included: boolean;
+  reason: string;
 }
 
 export interface SourcesReport {
   sources: SourceStatus[];
+  volumes: VolumeStatus[];
   portable_roots: string[];
   manual: { path: string; name: string; missing: boolean }[];
   scanning: boolean;
+  deep: boolean;
   updated_at: number;
   total: number;
+  resolved: number;
+  candidates: number;
+  unresolved: number;
+  offline: number;
+  discarded: number;
+  include_removable: boolean;
 }
 
 export interface DiagnosisCheck {

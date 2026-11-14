@@ -5,18 +5,19 @@ import { call, host } from '../api';
 import AppIcon from '../components/AppIcon.vue';
 import AppPanel from '../components/AppPanel.vue';
 import DiscoveryModal from '../components/DiscoveryModal.vue';
+import EntryResolver from '../components/EntryResolver.vue';
 import EmptyState from '../components/EmptyState.vue';
 import LibraryTools from '../components/LibraryTools.vue';
 import Menu from '../components/Menu.vue';
 import Icon from '../components/Icon.vue';
 import PageHeader from '../components/PageHeader.vue';
-import { categoryLabel, categoryOf, kindLabel, sourceLabel } from '../explain';
+import { categoryLabel, categoryOf, kindLabel, platformLabel, sourceLabel } from '../explain';
 import { t } from '../i18n';
 import { app, attempt, describe, loadProfiles, notify, profileLabel, randomId } from '../store';
 import type { Application, LibraryApp } from '../types';
 
 type View = 'grid' | 'list';
-type Status = 'all' | 'allowed' | 'blocked' | 'attention';
+type Status = 'all' | 'allowed' | 'blocked' | 'attention' | 'unresolved';
 type Sort = 'name' | 'publisher' | 'status' | 'blocks' | 'recent';
 type Kind = 'all' | 'installed' | 'portable' | 'store' | 'manual' | 'recent' | 'dependencies' | 'uncategorized';
 
@@ -33,6 +34,8 @@ const active = ref<LibraryApp>();
 const observing = ref<LibraryApp>();
 const working = ref(false);
 const kind = ref<Kind>('all');
+const platform = ref('');
+const volume = ref('');
 const showTools = ref(false);
 const scanning = ref(false);
 const failure = ref('');
@@ -57,8 +60,11 @@ watch(view, (value) => {
 });
 
 const profile = computed(() => app.profiles.find((p) => p.id === profileId.value));
-const key = (entry: LibraryApp) => entry.path.toLowerCase();
+const key = (entry: LibraryApp) => entry.id;
 const attention = (entry: LibraryApp) => !!(entry.pending || entry.conflicts);
+const resolved = (entry: LibraryApp) => entry.resolution === 'resolved' && !!entry.path;
+const iconPath = (entry: LibraryApp) => entry.path || entry.candidates?.[0]?.path || '';
+const stateText = (entry: LibraryApp) => (entry.status === 'allowed' ? t('Allowed') : entry.status === 'blocked' ? t('Blocked') : t('Choose program'));
 
 async function load(quiet = false) {
   if (!profileId.value) return;
@@ -113,6 +119,8 @@ watch(profileId, () => {
 });
 
 const listed = computed(() => library.value.filter((entry) => showTools.value || entry.role === 'application'));
+const platforms = computed(() => [...new Set(listed.value.map((entry) => entry.platform))].filter(Boolean).sort());
+const volumes = computed(() => [...new Set(listed.value.map((entry) => entry.volume))].filter(Boolean).sort());
 const hiddenCount = computed(() => library.value.length - library.value.filter((entry) => entry.role === 'application').length);
 const isRecent = (entry: LibraryApp) => entry.first_seen > 0 && Date.now() / 1000 - entry.first_seen < recentWindow;
 
@@ -138,7 +146,9 @@ const visible = computed(() => {
   const rows = listed.value.filter(
     (entry) =>
       matchesKind(entry) &&
-      (status.value === 'all' || (status.value === 'attention' ? attention(entry) : entry.status === status.value)) &&
+      (!platform.value || entry.platform === platform.value) &&
+      (!volume.value || entry.volume === volume.value) &&
+      (status.value === 'all' || (status.value === 'attention' ? attention(entry) : status.value === 'unresolved' ? !resolved(entry) : entry.status === status.value)) &&
       (!category.value || categoryOf(entry) === category.value) &&
       (!needle || `${entry.name} ${entry.company} ${entry.path} ${entry.description}`.toLowerCase().includes(needle)),
   );
@@ -157,6 +167,7 @@ const totals = computed(() => ({
   blocked: listed.value.filter((e) => e.status === 'blocked').length,
   withDependencies: listed.value.filter((e) => e.listed && (e.dependencies ?? 0) > 0).length,
   attention: listed.value.filter(attention).length,
+  unresolved: listed.value.filter((e) => !resolved(e)).length,
 }));
 
 const kindCounts = computed(() => ({
@@ -187,7 +198,7 @@ function selectAllVisible() {
 }
 
 async function allowSelected() {
-  const targets = chosen.value.filter((e) => !e.listed);
+  const targets = chosen.value.filter((e) => !e.listed && resolved(e) && !e.offline);
   if (!targets.length) return;
   working.value = true;
   let done = 0;
@@ -212,7 +223,7 @@ async function blockSelected() {
   working.value = true;
   const listed = new Set(chosen.value.map((e) => e.listed).filter(Boolean));
   const rules = [...current.rules];
-  for (const entry of chosen.value.filter((e) => !e.listed && e.status === 'allowed')) {
+  for (const entry of chosen.value.filter((e) => !e.listed && resolved(e) && e.status === 'allowed')) {
     rules.push({ id: randomId('r-'), action: 'deny', priority: 90, match: { type: 'path', value: entry.path } });
   }
   const next = { ...current, rules, apps: (current.apps ?? []).filter((a) => !listed.has(a.id)) };
@@ -253,6 +264,14 @@ function afterObservation() {
         <select id="apps-profile" v-model="profileId" class="select"><option v-for="p in app.profiles" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option></select>
       </div>
       <div class="search grow" style="min-width: 220px"><Icon name="search" /><input v-model="query" class="input" :placeholder="t('Search by name, publisher or path')" :aria-label="t('Search applications')" /></div>
+      <select v-if="platforms.length" v-model="platform" class="select" :aria-label="t('Platform')">
+        <option value="">{{ t('Any platform') }}</option>
+        <option v-for="item in platforms" :key="item" :value="item">{{ platformLabel(item) }}</option>
+      </select>
+      <select v-if="volumes.length > 1" v-model="volume" class="select" :aria-label="t('Drive')">
+        <option value="">{{ t('Any drive') }}</option>
+        <option v-for="item in volumes" :key="item" :value="item">{{ item }}</option>
+      </select>
       <select v-model="sort" class="select" :aria-label="t('Sort')">
         <option value="name">{{ t('Sort: name') }}</option>
         <option value="publisher">{{ t('Sort: publisher') }}</option>
@@ -272,6 +291,7 @@ function afterObservation() {
         <button class="chip" :aria-pressed="status === 'allowed'" @click="status = 'allowed'">{{ t('Allowed') }} · {{ totals.allowed }}</button>
         <button class="chip" :aria-pressed="status === 'blocked'" @click="status = 'blocked'">{{ t('Blocked') }} · {{ totals.blocked }}</button>
         <button v-if="totals.attention" class="chip" :aria-pressed="status === 'attention'" @click="status = 'attention'">{{ t('Needs attention') }} · {{ totals.attention }}</button>
+        <button v-if="totals.unresolved" class="chip" :aria-pressed="status === 'unresolved'" @click="status = 'unresolved'">{{ t('Choose program') }} · {{ totals.unresolved }}</button>
       </div>
       <div class="chips" role="group" :aria-label="t('Category')">
         <button class="chip" :aria-pressed="category === ''" @click="category = ''">{{ t('Any category') }}</button>
@@ -306,27 +326,31 @@ function afterObservation() {
     <EmptyState v-else-if="!visible.length" icon="apps" :text="t('No applications match your filters.')" />
 
     <div v-else-if="view === 'grid'" class="app-grid">
-      <div v-for="entry in visible" :key="entry.path" class="app-card" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
+      <div v-for="entry in visible" :key="entry.id" class="app-card" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
         <input class="pick" type="checkbox" :checked="selected.has(key(entry))" :aria-label="t('Select {name}', { name: entry.name })" @click.stop @change="toggle(entry)" />
         <span class="state">
           <span v-if="entry.pending" class="mini warn" :title="t('Waiting for your decision')"><Icon name="alert" />{{ entry.pending }}</span>
           <span v-if="entry.conflicts" class="mini bad" :title="t('A rule conflicts with this program')"><Icon name="alert" /></span>
-          <span class="state-dot" :class="entry.status" :title="entry.status === 'allowed' ? t('Allowed') : t('Blocked')" />
+          <span class="state-dot" :class="entry.status" :title="stateText(entry)" />
         </span>
-        <AppIcon :path="entry.path" :name="entry.name" :size="52" />
+        <AppIcon :path="iconPath(entry)" :name="entry.name" :size="52" />
         <div class="name truncate" :title="entry.name">{{ entry.name }}</div>
         <div class="sub truncate" :title="entry.company">{{ entry.company || sourceLabel(entry.source) }}</div>
+        <span v-if="entry.offline" class="mini warn">{{ t('Drive offline') }}</span>
+        <span v-else-if="!resolved(entry)" class="mini warn">{{ t('Choose program') }}</span>
+        <span v-if="entry.platform && entry.platform !== 'store'" class="mini">{{ platformLabel(entry.platform) }}</span>
+        <span v-if="entry.volume" class="mini">{{ entry.volume }}</span>
         <span v-if="entry.listed" class="mini"><Icon name="link" />{{ t('{n} dependencies', { n: entry.dependencies ?? 0 }) }}</span>
-        <span v-if="entry.kind !== 'installed'" class="mini">{{ kindLabel(entry.kind) }}</span>
+        <span v-if="entry.kind !== 'installed' && !entry.platform" class="mini">{{ kindLabel(entry.kind) }}</span>
       </div>
     </div>
 
     <div v-else class="app-list">
-      <div v-for="entry in visible" :key="entry.path" class="app-row" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
+      <div v-for="entry in visible" :key="entry.id" class="app-row" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
         <input class="pick" type="checkbox" :checked="selected.has(key(entry))" :aria-label="t('Select {name}', { name: entry.name })" @click.stop @change="toggle(entry)" />
-        <AppIcon :path="entry.path" :name="entry.name" :size="34" />
+        <AppIcon :path="iconPath(entry)" :name="entry.name" :size="34" />
         <div style="min-width: 0"><strong class="truncate" style="display: block">{{ entry.name }}</strong><span class="hint truncate" style="display: block">{{ entry.company || sourceLabel(entry.source) }}</span></div>
-        <div class="hint mono truncate hide-narrow" :title="entry.path">{{ entry.path }}</div>
+        <div class="hint mono truncate hide-narrow" :title="entry.path || entry.install_dir">{{ entry.path || entry.install_dir }}</div>
         <div class="row hide-narrow" style="gap: 6px">
           <span v-if="entry.kind !== 'installed'" class="mini">{{ kindLabel(entry.kind) }}</span>
           <span v-if="entry.listed" class="mini"><Icon name="link" />{{ entry.dependencies ?? 0 }}</span>
@@ -334,7 +358,7 @@ function afterObservation() {
           <span v-if="entry.conflicts" class="mini bad"><Icon name="alert" /></span>
           <span v-if="entry.blocks" class="mini">{{ t('{n} blocks', { n: entry.blocks }) }}</span>
         </div>
-        <span class="badge" :class="entry.status === 'allowed' ? 'ok' : 'bad'">{{ entry.status === 'allowed' ? t('Allowed') : t('Blocked') }}</span>
+        <span class="badge" :class="entry.status === 'allowed' ? 'ok' : entry.status === 'blocked' ? 'bad' : 'warn'">{{ stateText(entry) }}</span>
       </div>
     </div>
 
@@ -345,7 +369,8 @@ function afterObservation() {
       <button class="btn sm ghost" @click="selected = new Set()">{{ t('Clear') }}</button>
     </div>
 
-    <AppPanel v-if="active" :key="active.path + profileId" :entry="active" :profile-id="profileId" @close="active = undefined" @changed="load()" @observe="observing = active" />
+    <EntryResolver v-if="active && !resolved(active)" :key="active.id" :entry="active" @close="active = undefined" @changed="load(true)" />
+    <AppPanel v-else-if="active" :key="active.id + profileId" :entry="active" :profile-id="profileId" @close="active = undefined" @changed="load()" @observe="observing = active" />
     <LibraryTools v-if="tools" :start="tools" @close="tools = undefined" @changed="load(true)" />
     <DiscoveryModal v-if="observing" :entry="observing" :profile-id="profileId" @close="observing = undefined" @saved="afterObservation" />
   </div>

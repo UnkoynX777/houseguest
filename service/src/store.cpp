@@ -97,6 +97,8 @@ core::Json state_to_json(const State& state) {
         manual.push_back({{"path", app.path}, {"name", app.name}, {"added_at", app.added_at}});
     json["manual_apps"] = std::move(manual);
     json["portable_roots"] = state.portable_roots;
+    json["resolutions"] = state.resolutions;
+    json["include_removable"] = state.include_removable;
     return json;
 }
 
@@ -125,6 +127,12 @@ State state_from_json(const core::Json& json) {
             if (item.is_string()) state.portable_roots.push_back(item.get<std::string>());
         }
     }
+    if (const auto it = json.find("resolutions"); it != json.end() && it->is_object()) {
+        for (const auto& [key, value] : it->items()) {
+            if (value.is_string()) state.resolutions[key] = value.get<std::string>();
+        }
+    }
+    state.include_removable = json.value("include_removable", false);
     if (const auto it = json.find("managed"); it != json.end()) {
         for (const auto& account : *it) {
             state.managed.push_back(

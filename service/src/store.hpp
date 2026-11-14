@@ -55,6 +55,8 @@ struct State {
     std::vector<ManagedAccount> managed;
     std::vector<ManualApp> manual_apps;
     std::vector<std::string> portable_roots;
+    std::map<std::string, std::string> resolutions;
+    bool include_removable = false;
     std::optional<Session> session;
 
     [[nodiscard]] bool configured() const { return !owner_sid.empty(); }
