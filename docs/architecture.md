@@ -33,11 +33,11 @@ houseguest-cli.exe                          ------ named pipe \\.\pipe\housegues
 
 | Module | Responsibility |
 | --- | --- |
-| `core` | Types, glob matching, evaluation, analysis (conflicts, shadowing, baseline overlap, missing allowances), simulation, JSON serialization, built-in profiles |
+| `core` | Types, glob and signer matching, the protection table, evaluation, analysis (conflicts, shadowing, protected overlap, application and component checks), simulation, JSON serialization, built-in profiles |
 | `system` | SHA-256, HMAC, PBKDF2, DPAPI, signature and catalog verification, app discovery, process references (one handle per inspection), session helpers, capability probe, pipe client |
-| `service` | Signed store, audit chain, identity resolver (cached hashes and publishers), ETW session, supervisor (workers, de-duplication, polling fallback, latency statistics), controller (commands split by domain, tokens, sessions), pipe server, SCM entry point |
+| `service` | Signed store, audit chain, identity resolver (cached hashes and publishers), ETW session, assessor (facts for one process), lineage table, continuity guard, observation, supervisor (workers, de-duplication, ordered retries, polling fallback, statistics), controller (commands split by domain, tokens, sessions), pipe server, SCM entry point |
 | `cli` | Status, setup, recovery, scripted calls |
-| `host` | WebView2 window and bridge, window geometry and DPI, notification-area icon, service status monitor, interface preferences, native dialogs |
+| `host` | WebView2 window and bridge, window geometry and DPI, notification-area icon, service status monitor, interface preferences, native dialogs, recovery console, icon extraction |
 | `fuzz` | libFuzzer targets for policies, globs, the state parser and the command handler |
 | `ui` | Vue application and design system |
 
@@ -45,11 +45,30 @@ Dependencies point downward. `core` knows nothing about Windows.
 
 ## Policy semantics
 
-1. A **baseline** of essential system processes and the Houseguest install folder is always allowed and cannot be overridden. It excludes `cmd`, PowerShell, `regedit` and `mmc`, which profiles may restrict.
-2. Active rules are ordered by **priority**; at equal priority **Deny wins**. Expired rules are ignored.
-3. With no match, the profile **default** applies.
-4. Matchers: path glob (case-insensitive, `*` within a segment, `**` across), SHA-256, signer subject (embedded or catalog Authenticode signature chained to a trusted root), package family.
-5. `analyze()` reports errors that block activation (malformed matchers, duplicate ids) and warnings that need confirmation (equal-priority conflicts, rules overlapping the baseline, no allowances).
+The engine (`core/evaluator`) decides from a `ProcessFacts` record that the platform layer fills in; it never reads the system. The order is fixed and the result is deterministic:
+
+1. **Protection.** A process the kernel marks as critical (`IsProcessCritical`) or protected is never denied, whatever its path. After that comes the compiled-in table of Windows components (`core/protection.cpp`): exact locations under the Windows folder for sign-in, services, the desktop shell, input and accessibility, plus signed programs in driver packages (`DriverStore\FileRepository`) and signed system apps. System32 as a whole is not protected, and no file name protects a file outside its directory. The table is reviewed code, not configuration, and a unit test pins its size.
+2. **Continuity.** Houseguest's own programs (hash pinned when the service starts, installed in a folder the restricted accounts cannot write) and the Microsoft-signed WebView2 runtime processes started below a verified Houseguest process, from a runtime folder those accounts cannot write.
+3. **Candidates**, ranked by priority, then Deny over Allow, then source (rule, application, dependency, related), then id: profile rules, application executables, approved components and related descendants.
+4. The profile **default**.
+
+A decision that needs a hash or signature that was not resolved yet says so (`needs_hash`, `needs_publisher`) and the caller resolves it once and asks again, so expensive checks only run when the outcome depends on them. Every decision carries a reason code, the rule or application and component that produced it, and notes such as a component that changed since it was approved.
+
+### Applications and dependencies
+
+An application has components: main executables, launchers, helpers, runtimes, updaters, services. A component is identified by a path or package plus an optional hash, signer, or both, and can follow updates signed by the pinned signer. Its scope is `descendant` (allowed only when an allowed member of the application is its parent) or `independent` (started by Windows or a broker, which requires a hash or signer pin). The application mode selects what its executable may start: only itself, its approved components, or also unlisted descendants that share its signer (or, for unsigned applications, live in its folder), never tools that run other programs (`is_sensitive_tool`). Unknown descendants are blocked and queued for review.
+
+The service remembers which allowed processes belong to which application in a lineage table. Each record holds a handle to its process, so the system cannot give that process id to another program while the record exists, and a child's parent id is trusted only when the parent is older than the child and the owner, session and exit time agree. Membership is never inherited by a process that was not itself allowed.
+
+### Observation
+
+The owner can watch one application run for up to 30 minutes. The service records the owner's processes started below it, or kept in its folder, with hash, signer and the evidence the owner needs (unsigned, outside the folder, writable location, tool that runs programs). Nothing is allowed by observation; the owner picks what to save.
+
+### Recovery path
+
+`houseguest.exe` opens a native window that talks to the service directly (tray menu, `--recovery`, or when WebView2 fails), `houseguest-cli` administers from a prompt, and `houseguest-cli recover` ends a session without the PIN from an elevated prompt. Before a session starts, the preview checks that the Houseguest folder cannot be written by the restricted accounts, that its programs are pinned and that the policy does not block them.
+
+`analyze()` reports errors that block activation (malformed matchers and components, duplicate ids, an application without a main executable, an independent component without a pin) and warnings that need confirmation (equal-priority conflicts, rules overlapping protected components, an application covered by a stronger Deny, sensitive tools approved as components, no allowances).
 
 ## Authentication and authorization
 

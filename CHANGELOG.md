@@ -4,6 +4,27 @@ All notable changes are documented here. The project follows [Semantic Versionin
 
 ## [Unreleased]
 
+## [0.4.0]
+
+### Fixed
+- A restricted account that ran the Houseguest window lost its WebView2 processes, because only the install folder was allowed. The engine now recognizes Houseguest's own programs by pinned hash from a folder restricted accounts cannot write, and WebView2 by its Microsoft signature, runtime folder and a verified Houseguest parent, never by name alone.
+- Signer comparison never matched the subject Windows reports, because attributes were compared as text in a different order. Subjects are now compared as attribute sets, and stored profiles with the old Windows signer rule are upgraded to a rule that needs the signer and the Windows folder together, so signed Windows tools copied elsewhere do not run.
+- Parent process ids came from a cached snapshot that could predate a reused process id, and retries were not woken early, which delayed evaluation by seconds.
+- Components that Windows needs in a user session (driver package helpers, input and accessibility tools, system apps) were blocked in restrictive profiles. A reviewed table now protects them, together with processes the kernel marks as critical or protected, and the kernel flags are checked again before any termination.
+
+### Added
+- Applications with explicit dependencies, scoped to their application and pinned by hash or signer, with modes (only the program, approved dependencies, related programs) and a review queue for unknown dependencies.
+- Observation of an application run to find what it needs, with the evidence for each program, and saved dependency sets.
+- A visual application library with real icons, grid and list views, filters, categories, sorting, multi-select and a detail panel with a live explanation, dependencies, block history, advanced settings and a simulation.
+- Block history with the reason, profile, parent, application involved and a recommended action, and a review dialog that approves a dependency or allows a program temporarily.
+- Live editing of the active profile, a continuity check before a session starts, a native recovery console that works without WebView2, and the commands `continuity`, `blocks`, `explain` and `reviews` in the command line.
+- Discovery of Microsoft Store apps and installed programs, with version and description.
+- `scripts/e2e-continuity.ps1`, an isolated end-to-end check that runs a private service instance (builds with `HOUSEGUEST_INSTANCES`) beside an installed one, in audit mode.
+
+### Changed
+- Built-in profiles deny a larger set of tools that run other programs, and a Custom template is available.
+- Notifications for blocked dependencies are coalesced per application.
+
 ## [0.3.0]
 
 ### Security

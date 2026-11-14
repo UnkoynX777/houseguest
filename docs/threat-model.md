@@ -25,7 +25,7 @@ The source code is public. Security rests on Windows access control, authenticat
 
 - **No stealth.** No process hiding, no hidden persistence, no anti-debugging, no evasion of security tools. The service is listed in Services with a clear description.
 - **Always recoverable.** An elevated administrator can end a session or reset the owner with `houseguest-cli recover`, and can uninstall. Safe Mode uninstall works.
-- **Fail safe for the owner.** The baseline of essential processes cannot be denied, Houseguest cannot be blocked from the guest's own session, policies with errors cannot be activated, and sessions always have an end.
+- **Fail safe for the owner.** The protected Windows components and Houseguest itself cannot be denied, Houseguest cannot be blocked from the guest's own session, policies with errors cannot be activated, and sessions always have an end.
 - **Least privilege.** The interface runs unelevated. Only the service is privileged, and it exposes a small, validated command set.
 
 ## Control mapping
@@ -47,9 +47,14 @@ The source code is public. Security rests on Windows access control, authenticat
 | Interface as an attack path | Navigation, frames, new windows and permission requests denied; no host objects, dialogs or autofill; CSP; every privileged command re-validated by the service | Code review |
 | Uninstall during a guest session | The MSI asks the service whether a session is active and aborts unless an administrator passes `FORCE_UNINSTALL=1`; removal needs elevation either way | `install-test.ps1` |
 | Event session stopped or unavailable | Fallback to polling every second, retry of the event session, audit entry on every mode change, no enforcing session starts without supervision | `e2e.ps1` (stops the event session, checks polling, enforcement and recovery) |
-| Accidental lockout | Baseline, analysis, preview, audit mode, timed sessions | Core tests |
+| Accidental lockout | Protection table, continuity, analysis, preview, audit mode, timed sessions | Core tests |
 | Malformed input | Strict JSON parsing with limits | Serialization tests, libFuzzer targets for policies, globs, state and the command handler (AddressSanitizer) |
-| Recycled process ids | Single process handle per inspection, creation-time check against the event | Code review, `e2e.ps1` |
+| Recycled process ids | Single process handle per inspection, creation-time check against the event, parent snapshots newer than the process, lineage records that hold the process handle | Code review, `e2e.ps1`, `e2e-continuity.ps1` |
+| Houseguest blocked by its own profile | Kernel-critical and protected processes, a reviewed Windows table, Houseguest files recognized by pinned hash from an unwritable folder, WebView2 recognized by Microsoft signature, runtime folder and a verified Houseguest parent | `e2e-continuity.ps1` (the host and six WebView2 processes stay allowed, also after a service restart) |
+| Allowed application used to run a blocked tool | Dependencies pinned by hash or signer and scoped below their application; unlisted programs blocked; tools that run programs never inherited; a renamed or copied tool matches no pin; a signed Windows tool copied elsewhere is no longer Windows | Core tests, `e2e-continuity.ps1` |
+| A pinned dependency replaced after approval | A hash mismatch is reported as changed and blocked until the owner approves the new file, or the file follows an update from the pinned signer | Core tests |
+| Critical Windows process ended by mistake | Kernel flags are read again immediately before termination; uncertain or unreadable critical processes are spared and logged | Code review, Diagnostics counter |
+| Dependency approved from a stale view | Approvals re-read the file and fail if its hash differs from the one shown | Code review |
 
 ## Not yet verified
 
@@ -65,3 +70,8 @@ Behaviour on Windows 11 and non-Pro editions, behaviour on modified or reduced W
 - The audit key is readable by administrators, so an administrator can forge a consistent log.
 - Files that change between inspection and execution are re-checked once after hashing; a program replaced by a different file at the same path after inspection is not detected.
 - Rules for network programs can only match their path.
+- The parent a process reports can be set by a process that may open its intended parent. Lineage therefore only narrows what a pinned component may do; it never grants anything by itself, except for unlisted programs in related mode, which also need the application's signer (or its folder for unsigned applications).
+- A dependency that starts and finishes before the event is handled is not evaluated, as with any reactive enforcement. Evaluation waits briefly for the parent's membership so a dependency is not judged before its application is known, and gives up after about twelve seconds.
+- Related mode on an unsigned application trusts the install folder. If guests can write there, pin the components instead.
+- The WebView2 check does not read command lines. A process that may open the Houseguest host as its parent could start a Microsoft-signed WebView2 runtime executable and have it recognized; it is a browser engine without a host window.
+- Protected directory grants (driver packages and system apps) trust the signature and the administrator-only location of those folders.

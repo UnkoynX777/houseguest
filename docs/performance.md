@@ -21,6 +21,10 @@ The interface is not needed for protection. Closing it (or exiting from the tray
 
 This is the delay *after* Windows reports the start. It does not include the time the program ran before the event, and Houseguest cannot stop a program that finishes before the event is handled. A signature or hash rule can add the time needed to compute it on the first launch of a large file; results are cached afterwards. The same figures are shown in **Diagnostics → Monitoring performance** on your machine.
 
+## Decision cost
+
+Measured by the service while it assessed every process of a busy desktop session and a launched application tree (`scripts/e2e-continuity.ps1`, Debug build, audit mode): assessing one process, which covers the kernel flags, token, image, parent lookup and the engine, took 4 to 12 microseconds on average and 10 to 27 microseconds at the 95th percentile once the file identity was cached. Hash and signature checks are cached by path, size and modification time, so they cost time only on the first launch of a file; a signature check of a catalog-signed program can take about a second the first time, which is why observation lists a program as soon as it is hashed and fills in the signer afterwards. Decisions are not cached: they are cheap and depend on the lineage of the moment. Queue depth and high-water marks are reported, and a full lineage table is counted and shown in Diagnostics.
+
 ## Fallback mode
 
 When Event Tracing is unavailable the service checks running programs once per second. CPU stays low, and blocking can be about a second slower.

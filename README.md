@@ -66,7 +66,7 @@ It is **reactive, not preventive**: a blocked program can run for a moment befor
 | Local administrator | Tampering is detectable. Removal and recovery are always possible, by design. |
 | Physical access | Nothing. Use BitLocker and a firmware password. |
 
-Also worth knowing: programs you allow can start other programs, so review launchers and browsers; Microsoft Store apps are matched by executable path or publisher. Read the [threat model](docs/threat-model.md) and the [FAQ](docs/faq.md).
+Allowing a program does not allow everything it starts. A program is an application with explicit dependencies, each pinned by file hash or signer and valid only below that application (or, for components Windows starts on its behalf, only with a pin). You can find them by observing a run, and anything unknown is blocked and queued for your decision. Houseguest's own window, its WebView2 processes and a reviewed table of Windows components are never ended; see [architecture](docs/architecture.md). Limits worth knowing: a program that is not listed and not related is blocked even if an allowed program needs it, parent links can be spoofed by a process that may open its parent, and a very short-lived dependency can finish before it is evaluated. Read the [threat model](docs/threat-model.md) and the [FAQ](docs/faq.md).
 
 ## Documentation
 
