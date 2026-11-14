@@ -16,6 +16,7 @@
 #include "assessor.hpp"
 #include "audit.hpp"
 #include "catalog.hpp"
+#include "change_watcher.hpp"
 #include "continuity.hpp"
 #include "discovery.hpp"
 #include "lineage.hpp"
@@ -115,6 +116,7 @@ private:
     std::condition_variable_any timer_wake_;
     Store store_;
     AppCatalog catalog_;
+    std::unique_ptr<ChangeWatcher> watcher_;
     std::filesystem::path install_dir_;
     std::unique_ptr<AuditLog> audit_;
     IdentityResolver resolver_;

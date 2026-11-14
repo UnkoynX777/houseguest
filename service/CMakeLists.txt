@@ -7,6 +7,7 @@ add_library(houseguest_service_lib STATIC
   src/discovery.cpp
   src/lineage.cpp
   src/identity_resolver.cpp
+  src/change_watcher.cpp
   src/process_trace.cpp
   src/controller.cpp
   src/command_support.cpp

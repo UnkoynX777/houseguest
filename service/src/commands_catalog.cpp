@@ -206,6 +206,7 @@ void Controller::register_catalog_commands() {
         store_.state.portable_roots.push_back(text);
         store_.save();
         audit_->append(caller.sid, "apps.portable_folder_added", {{"path", text}});
+        if (watcher_) watcher_->refresh_places();
         catalog_.refresh(catalog_request_locked());
         return Json{{"added", true}};
     });
@@ -217,6 +218,7 @@ void Controller::register_catalog_commands() {
         if (removed == 0) throw Failure("not_found", "That folder is not registered.");
         store_.save();
         audit_->append(caller.sid, "apps.portable_folder_removed", {{"path", require_text(args, "path")}});
+        if (watcher_) watcher_->refresh_places();
         catalog_.refresh(catalog_request_locked());
         return Json::object();
     });

@@ -81,6 +81,10 @@ void Controller::register_system_commands() {
                     {"ipc", ipc_stats_ ? ipc_stats_() : Json::object()},
                     {"commands", command_stats_json()},
                     {"caches", caches_json()},
+                    {"watcher", watcher_ ? Json{{"signals", watcher_->signals()},
+                                                {"reports", watcher_->reports()},
+                                                {"watching", watcher_->watching()}}
+                                         : Json::object()},
                     {"state", load_result_ == LoadResult::Loaded      ? "loaded"
                               : load_result_ == LoadResult::Fresh     ? "fresh"
                               : load_result_ == LoadResult::Recovered ? "recovered"

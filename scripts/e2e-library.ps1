@@ -92,6 +92,16 @@ try {
     Check 'the chosen executable survives a restart' ($gammaAfter.path -like '*second.exe')
     Check 'hand-added programs and folders survive a restart' ((HgJson call apps.sources).manual.Count -eq 1 -and (HgJson call apps.sources).portable_roots.Count -eq 1)
 
+    New-Item -ItemType Directory "$portable\Delta" | Out-Null
+    Copy-Item C:\Windows\System32\find.exe "$portable\Delta\Delta.exe"
+    $seen = $null
+    for ($i = 0; $i -lt 60 -and -not $seen; $i++) {
+        Start-Sleep 1
+        $seen = (HgJson call apps.library (Json @{ profile_id = 'builtin-guest' })).apps | Where-Object { $_.path -like '*\portable\Delta\Delta.exe' }
+    }
+    Check 'a program added to a registered folder appears without a manual refresh' ($null -ne $seen)
+    Check 'the change watcher reported the change once it settled' ((HgJson call diagnostics).watcher.reports -ge 1)
+
     Remove-Item "$portable\Loose.exe"
     Check 'a removed hand-added file is reported as missing' ((HgJson call apps.sources).manual[0].missing)
     Hg call apps.manual.remove (Json @{ path = "$portable\Loose.exe" }) | Out-Null

@@ -129,7 +129,18 @@ Controller::Controller(std::filesystem::path data_directory, bool enable_enforce
     supervisor_->on_allowed([this](const Denial& allowed) { on_allowed(allowed); });
     if (enable_enforcement) supervisor_->start();
     register_commands();
-    if (enable_enforcement) catalog_.refresh(catalog_request());
+    if (enable_enforcement) {
+        catalog_.refresh(catalog_request());
+        watcher_ = std::make_unique<ChangeWatcher>(
+            [this] {
+                std::scoped_lock lock(mutex_);
+                std::vector<std::filesystem::path> roots;
+                for (const auto& root : store_.state.portable_roots) roots.push_back(system::path_from_utf8(root));
+                return roots;
+            },
+            [this](const std::string&) { catalog_.refresh(catalog_request()); });
+        watcher_->start();
+    }
 
     {
         std::scoped_lock lock(mutex_);
@@ -164,6 +175,7 @@ Controller::~Controller() {
 }
 
 void Controller::shutdown() {
+    if (watcher_) watcher_->stop();
     if (timer_.joinable()) {
         timer_.request_stop();
         timer_wake_.notify_all();
