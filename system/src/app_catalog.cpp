@@ -311,10 +311,25 @@ struct Candidate {
     int score = 0;
 };
 
+std::string acronym(const std::string& text) {
+    std::string out;
+    bool start = true;
+    for (const unsigned char c : text) {
+        if (!std::isalnum(c)) {
+            start = true;
+            continue;
+        }
+        if (start) out += static_cast<char>(std::tolower(c));
+        start = false;
+    }
+    return out.size() >= 2 ? out : std::string{};
+}
+
 std::vector<Candidate> main_executables(const fs::path& directory, const std::string& hint, unsigned depth,
                                         const std::atomic<bool>* cancel) {
     std::vector<Candidate> found;
     const auto wanted = alnum(hint);
+    const auto initials = acronym(hint);
     const auto folder_name = alnum(path_to_utf8(directory.filename()));
     std::size_t visited = 0;
     std::error_code ec;
@@ -336,8 +351,9 @@ std::vector<Candidate> main_executables(const fs::path& directory, const std::st
         if (lower(it->path().extension().string()) != ".exe") continue;
         const auto stem = path_to_utf8(it->path().stem());
         if (classify_executable(it->path(), stem) != AppRole::Application) continue;
-        int score = 10 - 3 * it.depth();
+        int score = 10 - 2 * it.depth();
         const auto key = alnum(stem);
+        if (!initials.empty() && key == initials) score += 10;
         if (!wanted.empty() && (key == wanted || wanted.starts_with(key) || key.starts_with(wanted)))
             score += 8;
         else if (!wanted.empty() && !key.empty() &&
@@ -400,7 +416,7 @@ void scan_uninstall_key(Collector& collector, HKEY root, const std::wstring& par
         if (target.empty() && !location.empty()) {
             std::error_code ec;
             if (fs::is_directory(location, ec) && is_local_disk_path(location)) {
-                const auto found = main_executables(location, to_utf8(display), 2, cancel);
+                const auto found = main_executables(location, to_utf8(display), 4, cancel);
                 if (!found.empty() && found.front().score >= 8) target = found.front().file;
             }
         }
