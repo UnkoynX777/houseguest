@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Repository hygiene
+        shell: pwsh
+        run: ./scripts/check-repo-hygiene.ps1 -All
+      - name: Commit metadata
+        shell: pwsh
+        run: ./scripts/check-commit-message.ps1 -Range HEAD
+      - name: Formatting
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem core, system, service, cli, host -Include *.cpp, *.hpp -Recurse | Where-Object { $_.FullName -notmatch 'webview2' }
+          clang-format --dry-run --Werror --style=file $files.FullName
+
+  native:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      - name: Build the interface
+        working-directory: ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

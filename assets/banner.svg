@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" role="img" aria-label="Houseguest: lend your PC without lending your life">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f1420"/>
+      <stop offset="1" stop-color="#1c2438"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.18" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f3b544" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#f3b544" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="320" rx="24" fill="url(#bg)"/>
+  <rect width="1280" height="320" rx="24" fill="url(#glow)"/>
+  <g transform="translate(96 76) scale(2.6)">
+    <rect width="64" height="64" rx="15" fill="#0f1420" stroke="#2b3654" stroke-width="1"/>
+    <path d="M18 49V30a14 14 0 0 1 28 0v19" fill="none" stroke="#f3b544" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M12 49h40" stroke="#f3b544" stroke-width="4.5" stroke-linecap="round"/>
+    <circle cx="32" cy="31" r="4.6" fill="#f3b544"/>
+    <path d="M30 34h4l1.6 9h-7.2z" fill="#f3b544"/>
+  </g>
+  <text x="300" y="150" fill="#eceff6" font-family="Segoe UI Variable Display, Segoe UI, system-ui, sans-serif" font-size="76" font-weight="700" letter-spacing="-2">Houseguest</text>
+  <text x="302" y="204" fill="#a3adc4" font-family="Segoe UI Variable Text, Segoe UI, system-ui, sans-serif" font-size="30">Lend your PC without lending your life.</text>
+  <text x="302" y="250" fill="#6f7a93" font-family="Segoe UI Variable Text, Segoe UI, system-ui, sans-serif" font-size="21">Open source guest-session app control for Windows</text>
+</svg>
