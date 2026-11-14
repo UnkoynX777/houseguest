@@ -60,9 +60,7 @@ Resolution IdentityResolver::resolve_checked(const std::filesystem::path& file, 
     const auto canonical = canonical_path(stripped);
     identity.path = system::path_to_utf8(canonical);
 
-    std::error_code ec;
-    const auto size = std::filesystem::file_size(canonical, ec);
-    const auto modified = std::filesystem::last_write_time(canonical, ec);
+    const auto stamp = system::file_stamp(canonical);
     const auto key = lowered(identity.path);
 
     Entry known;
@@ -70,7 +68,7 @@ Resolution IdentityResolver::resolve_checked(const std::filesystem::path& file, 
         std::scoped_lock lock(mutex_);
         if (cache_.size() > kMaxCacheEntries) cache_.clear();
         auto& entry = cache_[key];
-        if (entry.size != size || entry.modified != modified) entry = Entry{size, modified, {}, {}};
+        if (!stamp || entry.stamp != stamp) entry = Entry{stamp, {}, {}};
         known = entry;
     }
 
@@ -80,7 +78,7 @@ Resolution IdentityResolver::resolve_checked(const std::filesystem::path& file, 
     {
         std::scoped_lock lock(mutex_);
         const auto it = cache_.find(key);
-        if (it != cache_.end() && it->second.size == size && it->second.modified == modified) {
+        if (stamp && it != cache_.end() && it->second.stamp == stamp) {
             if (known.sha256) it->second.sha256 = known.sha256;
             if (known.publisher) it->second.publisher = known.publisher;
         }

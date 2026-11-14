@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "houseguest/core/evaluator.hpp"
+#include "houseguest/system/windows_info.hpp"
 
 namespace houseguest::service {
 
@@ -26,8 +27,7 @@ public:
 
 private:
     struct Entry {
-        std::uintmax_t size = 0;
-        std::filesystem::file_time_type modified;
+        std::optional<system::FileStamp> stamp;
         std::optional<std::string> sha256;
         std::optional<std::string> publisher;
     };

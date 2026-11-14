@@ -1,5 +1,7 @@
 #include <windows.h>
 
+#include <filesystem>
+#include <fstream>
 #include <set>
 
 #include <catch2/catch_test_macros.hpp>
@@ -177,3 +179,38 @@ TEST_CASE("the COM server index reads the machine registrations once and reuses 
     CHECK(index.rebuilds() == 1);
 }
 
+
+TEST_CASE("a file stamp changes when content is replaced even if size and write time are restored", "[stamp][safety]") {
+    const auto file = std::filesystem::temp_directory_path() / L"houseguest-stamp-test.bin";
+    {
+        std::ofstream out(file, std::ios::binary | std::ios::trunc);
+        out << "AAAA";
+    }
+    const auto before = houseguest::system::file_stamp(file);
+    REQUIRE(before.has_value());
+    CHECK(before->size == 4);
+    CHECK(houseguest::system::file_stamp(file) == before);
+
+    Sleep(60);  // file times advance with the system clock tick, about 16 ms
+    HANDLE handle = CreateFileW(file.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                                FILE_ATTRIBUTE_NORMAL, nullptr);
+    REQUIRE(handle != INVALID_HANDLE_VALUE);
+    DWORD written = 0;
+    REQUIRE(WriteFile(handle, "BBBB", 4, &written, nullptr));
+    FILETIME restored;
+    restored.dwLowDateTime = static_cast<DWORD>(before->written & 0xFFFFFFFF);
+    restored.dwHighDateTime = static_cast<DWORD>(before->written >> 32);
+    REQUIRE(SetFileTime(handle, nullptr, nullptr, &restored));
+    CloseHandle(handle);
+
+    const auto after = houseguest::system::file_stamp(file);
+    REQUIRE(after.has_value());
+    CHECK(after->size == before->size);
+    CHECK(after->written == before->written);
+    CHECK(after->changed != before->changed);
+    CHECK_FALSE(after == before);
+
+    std::error_code ec;
+    std::filesystem::remove(file, ec);
+    CHECK_FALSE(houseguest::system::file_stamp(file).has_value());
+}

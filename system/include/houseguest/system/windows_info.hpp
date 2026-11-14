@@ -20,6 +20,22 @@ std::vector<LocalUser> list_local_users();
 // True only for a drive-letter path on a fixed, removable, optical or RAM disk. Network locations return
 // false so the privileged service never opens files that an unprivileged user can point at a remote server.
 bool is_local_disk_path(const std::filesystem::path& file);
+
+// What the file system says about one file at one moment. The change time is maintained by the file system and
+// cannot be set from user mode, unlike the write time, and the file id names the file itself, so a file
+// replaced under the same name, size and write time still yields a different stamp.
+struct FileStamp {
+    std::uint64_t size = 0;
+    std::int64_t written = 0;
+    std::int64_t changed = 0;
+    std::uint64_t volume = 0;
+    std::uint64_t id_low = 0;
+    std::uint64_t id_high = 0;
+
+    friend bool operator==(const FileStamp&, const FileStamp&) = default;
+};
+
+[[nodiscard]] std::optional<FileStamp> file_stamp(const std::filesystem::path& file);
 // Returns the signer subject only when the Authenticode signature chains to a trusted root.
 std::string trusted_publisher(const std::filesystem::path& file);
 

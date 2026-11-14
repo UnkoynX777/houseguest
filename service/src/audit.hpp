@@ -37,6 +37,10 @@ public:
     [[nodiscard]] AuditReport verify() const;
     [[nodiscard]] bool verify_chain() const { return verify().valid; }
     [[nodiscard]] std::uint64_t write_failures() const;
+    [[nodiscard]] std::uint64_t sequence() const {
+        std::scoped_lock lock(mutex_);
+        return sequence_;
+    }
 
     static constexpr std::uintmax_t kMaxFileBytes = 2 * 1024 * 1024;
     static constexpr int kRotatedFiles = 8;

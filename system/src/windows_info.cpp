@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <set>
@@ -158,6 +159,28 @@ std::string catalog_signer_subject(const std::filesystem::path& file) {
 }
 
 }  // namespace
+
+std::optional<FileStamp> file_stamp(const std::filesystem::path& file) {
+    Handle handle(CreateFileW(file.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+    if (handle.get() == INVALID_HANDLE_VALUE) return std::nullopt;
+    FILE_BASIC_INFO basic{};
+    FILE_STANDARD_INFO standard{};
+    if (!GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &basic, sizeof(basic)) ||
+        !GetFileInformationByHandleEx(handle.get(), FileStandardInfo, &standard, sizeof(standard)))
+        return std::nullopt;
+    FileStamp stamp;
+    stamp.size = static_cast<std::uint64_t>(standard.EndOfFile.QuadPart);
+    stamp.written = basic.LastWriteTime.QuadPart;
+    stamp.changed = basic.ChangeTime.QuadPart;
+    FILE_ID_INFO id{};
+    if (GetFileInformationByHandleEx(handle.get(), FileIdInfo, &id, sizeof(id))) {
+        stamp.volume = id.VolumeSerialNumber;
+        std::memcpy(&stamp.id_low, id.FileId.Identifier, sizeof(stamp.id_low));
+        std::memcpy(&stamp.id_high, id.FileId.Identifier + sizeof(stamp.id_low), sizeof(stamp.id_high));
+    }
+    return stamp;
+}
 
 std::string trusted_publisher(const std::filesystem::path& file) {
     WINTRUST_FILE_INFO file_info{};

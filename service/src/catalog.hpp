@@ -40,6 +40,10 @@ public:
     void request_stop() { cancel_ = true; }
     [[nodiscard]] CatalogView view() const;
     [[nodiscard]] bool scanning() const { return scanning_.load(); }
+    [[nodiscard]] std::uint64_t generation() const {
+        std::scoped_lock lock(mutex_);
+        return view_.generation;
+    }
     [[nodiscard]] bool volumes_changed(bool include_removable) const;
 
 private:

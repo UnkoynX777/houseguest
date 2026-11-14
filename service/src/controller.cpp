@@ -693,7 +693,9 @@ Json Controller::status_json() const {
                 {"now", now_seconds()},
                 {"enforcement", enforcement_name(supervisor_->mode())},
                 {"store_tampered", load_result_ == LoadResult::Tampered},
-                {"language", state.language}};
+                {"language", state.language},
+                {"generations",
+                 {{"policy", store_.revision()}, {"catalog", catalog_.generation()}, {"history", audit_->sequence()}}}};
     if (state.session) {
         status["ends_at"] = state.session->ends_at;
         status["ending"] = state.session->ending();
