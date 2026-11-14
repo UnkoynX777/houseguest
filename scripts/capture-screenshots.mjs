@@ -77,6 +77,7 @@ const fill = (selector, value) =>
     value,
   );
 const shot = async (name) => {
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1270, y: 790 });
   await sleep(450);
   const { data } = await send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(join(out, `${name}.png`), Buffer.from(data, 'base64'));
@@ -177,6 +178,8 @@ await nav('History', "document.querySelector('.table-wrap tr')");
 check('history shows the blocked app', await evaluate("document.body.textContent.includes('Blocked node.exe')"));
 await shot('history-dark');
 await theme('light');
+await nav('History', "document.querySelector('.table-wrap tr')");
+await shot('history');
 await nav('Applications', "document.querySelector('.table-wrap tr')");
 await shot('applications');
 await nav('Profiles', "document.querySelector('.grid .card')");
