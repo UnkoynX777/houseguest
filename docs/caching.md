@@ -111,6 +111,6 @@ Taken on the development machine (Windows 10, a local installation with 339 cata
 
 Where the time went: the scan spent about 19 of its 20 seconds in the progress preview and the merge step, which resolved the canonical form of every path against every entry. Paths and file checks are now looked up once per build and previews are limited to one per 750 ms. The library request spent 150 ms of 215 ms re-reading file metadata for every program; decisions are now reused for as long as the policy and the file are unchanged.
 
-The numbers in the interface are from a scripted browser session against a mock service, so they describe the page logic and not the service: first visit asks once and shows a placeholder, returning asks nothing and shows none, a policy generation change refreshes the page without a placeholder, and 1500 programs render about 35 cards or 24 rows.
+The interface figures come from `scripts/ui-check/run.ps1`, a scripted browser session against a mock service, so they describe the page logic and not the service: first visit asks once and shows a placeholder, returning asks nothing and shows none, a policy generation change refreshes the page without a placeholder, and 1500 programs render about 35 cards or 24 rows.
 
 Not measured: CPU of the service during a scan beyond the observation that the scan runs on one thread at below-normal priority plus up to three resolvers; the first-paint time inside the real WebView2 window; behaviour with a library of several thousand entries on slow disks.
