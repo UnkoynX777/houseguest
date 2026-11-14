@@ -187,3 +187,32 @@ TEST_CASE("oversized detail is replaced instead of growing the log", "[audit][re
     CHECK(log.tail(1)[0]["detail"]["truncated"] == true);
     std::filesystem::remove_all(directory);
 }
+
+TEST_CASE("logs written before keyed sealing keep verifying", "[audit][compatibility]") {
+    const auto directory = fresh_directory("hg-audit-legacy");
+    const auto file = directory / "audit.log";
+    std::string previous;
+    std::string text;
+    for (int sequence = 1; sequence <= 3; ++sequence) {
+        houseguest::core::Json entry{{"seq", sequence},
+                                     {"ts", 100 + sequence},
+                                     {"actor", "svc"},
+                                     {"event", "old"},
+                                     {"detail", houseguest::core::Json::object()},
+                                     {"prev", previous}};
+        const auto body = previous + entry.dump();
+        previous =
+            hgsys::to_hex(hgsys::sha256({reinterpret_cast<const std::uint8_t*>(body.data()), body.size()}));
+        entry["hash"] = previous;
+        text += entry.dump() + "\n";
+    }
+    write_file(file, text);
+
+    AuditLog log(file, test_key());
+    CHECK(log.verify().valid);
+    log.append("svc", "new");
+    const auto report = log.verify();
+    CHECK(report.valid);
+    CHECK(report.entries == 4);
+    std::filesystem::remove_all(directory);
+}

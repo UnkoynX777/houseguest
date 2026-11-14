@@ -290,7 +290,7 @@ void PipeServer::accept_loop() {
     HANDLE pipe = static_cast<HANDLE>(first_instance_);
     first_instance_ = nullptr;
     Owned connect_event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-    const HANDLE stop = static_cast<HANDLE>(stop_event_);
+    HANDLE stop = static_cast<HANDLE>(stop_event_);
 
     while (!stopping_) {
         if (pipe == INVALID_HANDLE_VALUE) {
@@ -350,10 +350,10 @@ void PipeServer::accept_loop() {
     if (pipe != INVALID_HANDLE_VALUE) CloseHandle(pipe);
 }
 
-void PipeServer::serve(void* raw, std::string peer) {
+void PipeServer::serve(void* raw, const std::string& peer) {
     Owned pipe(static_cast<HANDLE>(raw));
     Owned event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
-    const HANDLE stop = static_cast<HANDLE>(stop_event_);
+    HANDLE stop = static_cast<HANDLE>(stop_event_);
     std::optional<Caller> caller;
     bool pending = true;
     TokenBucket bucket(kRequestsPerSecond, kRequestBurst);

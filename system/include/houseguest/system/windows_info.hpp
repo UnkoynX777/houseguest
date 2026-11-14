@@ -23,6 +23,9 @@ struct InstalledApp {
 };
 
 std::vector<LocalUser> list_local_users();
+// True only for a drive-letter path on a fixed, removable, optical or RAM disk. Network locations return
+// false so the privileged service never opens files that an unprivileged user can point at a remote server.
+bool is_local_disk_path(const std::filesystem::path& file);
 // Returns the signer subject only when the Authenticode signature chains to a trusted root.
 std::string trusted_publisher(const std::filesystem::path& file);
 

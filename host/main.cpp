@@ -5,6 +5,7 @@
 #include <wrl.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -36,6 +37,7 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"HouseguestWindow";
 constexpr wchar_t kHost[] = L"app.houseguest";
 constexpr wchar_t kOrigin[] = L"https://app.houseguest/";
+constexpr int kMaxInFlightRequests = 8;
 constexpr UINT kReplyMessage = WM_APP + 1;
 constexpr UINT kTrayMessage = WM_APP + 2;
 constexpr UINT kStatusMessage = WM_APP + 3;
@@ -206,12 +208,25 @@ void handle_message(const std::string& text) {
         handle_host_command(id, command, request.value("args", Json::object()));
         return;
     }
-    std::thread([request = std::move(request), id] {
-        houseguest::system::PipeClient client;
-        auto reply = client.call(request);
-        post_to_view(reply ? *reply
-                           : failure(id, "service_unavailable", "The Houseguest service is not running."));
-    }).detach();
+    static std::atomic<int> in_flight = 0;
+    if (in_flight.fetch_add(1) >= kMaxInFlightRequests) {
+        in_flight.fetch_sub(1);
+        post_to_view(failure(id, "busy", "Too many requests are waiting for the service."));
+        return;
+    }
+    try {
+        std::thread([request = std::move(request), id] {
+            houseguest::system::PipeClient client;
+            auto reply = client.call(request);
+            post_to_view(reply
+                             ? *reply
+                             : failure(id, "service_unavailable", "The Houseguest service is not running."));
+            in_flight.fetch_sub(1);
+        }).detach();
+    } catch (const std::system_error&) {
+        in_flight.fetch_sub(1);
+        post_to_view(failure(id, "busy", "The request could not be started."));
+    }
 }
 
 bool user_is_looking() {
@@ -296,8 +311,15 @@ void configure_settings() {
     settings->put_AreDefaultContextMenusEnabled(FALSE);
     settings->put_IsStatusBarEnabled(FALSE);
     settings->put_IsZoomControlEnabled(FALSE);
+    settings->put_AreHostObjectsAllowed(FALSE);
+    settings->put_AreDefaultScriptDialogsEnabled(FALSE);
     ComPtr<ICoreWebView2Settings3> settings3;
     if (SUCCEEDED(settings.As(&settings3))) settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+    ComPtr<ICoreWebView2Settings4> settings4;
+    if (SUCCEEDED(settings.As(&settings4))) {
+        settings4->put_IsPasswordAutosaveEnabled(FALSE);
+        settings4->put_IsGeneralAutofillEnabled(FALSE);
+    }
 #ifndef HOUSEGUEST_DEVTOOLS
     settings->put_AreDevToolsEnabled(FALSE);
 #endif
@@ -317,6 +339,40 @@ void register_handlers() {
             })
             .Get(),
         &token);
+    g.view->add_PermissionRequested(
+        Callback<ICoreWebView2PermissionRequestedEventHandler>(
+            [](ICoreWebView2*, ICoreWebView2PermissionRequestedEventArgs* args) -> HRESULT {
+                args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
+                return S_OK;
+            })
+            .Get(),
+        &token);
+    ComPtr<ICoreWebView2_4> view4;
+    if (SUCCEEDED(g.view.As(&view4))) {
+        view4->add_FrameCreated(
+            Callback<ICoreWebView2FrameCreatedEventHandler>([](ICoreWebView2*,
+                                                               ICoreWebView2FrameCreatedEventArgs* args)
+                                                                -> HRESULT {
+                ComPtr<ICoreWebView2Frame> frame;
+                if (SUCCEEDED(args->get_Frame(&frame))) {
+                    ComPtr<ICoreWebView2Frame2> frame2;
+                    EventRegistrationToken frame_token;
+                    if (SUCCEEDED(frame.As(&frame2))) {
+                        frame2->add_NavigationStarting(
+                            Callback<ICoreWebView2FrameNavigationStartingEventHandler>(
+                                [](ICoreWebView2Frame*,
+                                   ICoreWebView2NavigationStartingEventArgs* nav) -> HRESULT {
+                                    nav->put_Cancel(TRUE);
+                                    return S_OK;
+                                })
+                                .Get(),
+                            &frame_token);
+                    }
+                }
+                return S_OK;
+            }).Get(),
+            &token);
+    }
     g.view->add_NewWindowRequested(
         Callback<ICoreWebView2NewWindowRequestedEventHandler>(
             [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {

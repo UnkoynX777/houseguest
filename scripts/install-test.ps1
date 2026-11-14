@@ -45,6 +45,12 @@ try {
     Check 'service still running after the attempt' ((Get-Service Houseguest).Status -eq 'Running')
     Check 'standard user cannot claim ownership' ((AsGuest "set HOUSEGUEST_PIN=999999&& `"$cli`" setup") -match 'forbidden')
     Check 'ownership remains unclaimed' (-not ((& $cli status | ConvertFrom-Json).configured))
+    Check 'service path is quoted' ((Get-CimInstance Win32_Service -Filter "Name='Houseguest'").PathName -match '^"')
+    Check 'install folder rejects files from a standard user' ((AsGuest "copy nul `"$install\planted.dll`"") -match 'denied|negado|Acesso')
+    Check 'service binary cannot be replaced by a standard user' ((AsGuest "copy nul `"$install\houseguest-service.exe`"") -match 'denied|negado|Acesso')
+    Check 'data folder rejects files from a standard user' ((AsGuest 'copy nul C:\ProgramData\Houseguest\planted.json') -match 'denied|negado|Acesso')
+    Check 'nothing was planted' (-not (Test-Path "$install\planted.dll") -and -not (Test-Path 'C:\ProgramData\Houseguest\planted.json'))
+    Check 'service binary is intact after the attempt' ((Get-Item "$install\houseguest-service.exe").Length -gt 100000)
 
     $env:HOUSEGUEST_PIN = '482913'
     & $cli setup | Out-Null
@@ -65,10 +71,19 @@ try {
 
     $env:HOUSEGUEST_PIN = '482913'
     $guestSid = ((& $cli call users.list | ConvertFrom-Json) | Where-Object name -eq $guest).sid
-    $profileId = (& $cli call profiles.list | ConvertFrom-Json)[0].id
-    $start = @{ profile_id = $profileId; guest_sids = @($guestSid); duration_minutes = 5; audit_only = $true; confirm_warnings = $true } | ConvertTo-Json -Compress
+    $profile = @{ profile = @{ id = 'install-check'; name = 'Install check'; default_action = 'deny'; rules = @() } } | ConvertTo-Json -Depth 5 -Compress
+    & $cli call profiles.save $profile | Out-Null
+    $start = @{ profile_id = 'install-check'; guest_sids = @($guestSid); duration_minutes = 5; confirm_warnings = $true } | ConvertTo-Json -Compress
     & $cli call session.start $start | Out-Null
     Check 'a guest session is active' ((& $cli status | ConvertFrom-Json).armed)
+    Check 'the installed service reports event-based supervision' ((& $cli status | ConvertFrom-Json).enforcement -eq 'supervised')
+    $credential = New-Object System.Management.Automation.PSCredential($guest, (ConvertTo-SecureString $password -AsPlainText -Force))
+    $blocked = Start-Process "$env:SystemRoot\System32\choice.exe" -ArgumentList '/T', '30', '/D', 'y' -Credential $credential -PassThru -WindowStyle Hidden
+    Start-Sleep -Seconds 4
+    $blocked.Refresh()
+    Check 'the installed service (LocalSystem, reduced privileges) terminates a denied program' ($blocked.HasExited)
+    $audit = (& $cli call audit.list '{"limit":20}' | ConvertFrom-Json)
+    Check 'the block is in the audit log' ([bool]($audit | Where-Object { $_.event -eq 'app.blocked' }))
     $refused = Start-Process msiexec.exe -ArgumentList '/x', "`"$Msi`"", '/qn', '/l*v', "`"$log.refused`"" -Wait -PassThru
     Check 'uninstall is refused while a session is active' ($refused.ExitCode -ne 0)
     Check 'files and service remain after the refused uninstall' ((Test-Path $cli) -and (Get-Service Houseguest -ErrorAction SilentlyContinue))

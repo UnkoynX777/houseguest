@@ -33,7 +33,8 @@ void Controller::register_account_commands() {
     add("unlock", Access::Anyone, [this](Who caller, Args args) {
         if (!store_.state.configured()) throw Failure("not_configured", "Run setup first.");
         if (caller.sid != store_.state.owner_sid) {
-            audit_->append(caller.sid, "unlock.denied", {{"reason", "not the owner account"}});
+            audit_limited("unlock.denied|" + caller.sid, caller.sid, "unlock.denied",
+                          {{"reason", "not the owner account"}});
             throw Failure("forbidden", "Only the owner account can unlock Houseguest.");
         }
         verify_pin(require_text(args, "pin"));
@@ -105,6 +106,7 @@ void Controller::register_account_commands() {
     });
 
     add("accounts.managed.create", Access::Owner, [this](Who caller, Args args) {
+        if (!live_) throw Failure("unavailable", "Account management is disabled in this mode.");
         const auto name = "hg-" + require_text(args, "name");
         if (!system::valid_managed_name(name))
             throw Failure("bad_request", "Use up to 13 letters, digits, - or _.");
@@ -134,8 +136,8 @@ void Controller::register_account_commands() {
         if (store_.state.session && std::ranges::find(store_.state.session->guest_sids, sid) !=
                                         store_.state.session->guest_sids.end())
             throw Failure("conflict", "This account is used by the active session.");
-        system::disconnect_sessions({sid}, true);
-        if (system::user_exists(sid) && !system::delete_user(sid))
+        end_user_sessions({sid}, true);
+        if (live_ && system::user_exists(sid) && !system::delete_user(sid))
             throw Failure("account_error", "The account could not be removed.");
         const auto name = it->name;
         store_.state.managed.erase(it);

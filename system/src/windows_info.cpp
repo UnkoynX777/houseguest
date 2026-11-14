@@ -94,7 +94,7 @@ void scan_start_menu(const std::filesystem::path& root, std::set<std::string>& s
         if (!it->is_regular_file(ec) || lower(it->path().extension().string()) != ".lnk") continue;
         const auto target = resolve_shortcut(it->path());
         if (target.empty() || lower(target.extension().string()) != ".exe") continue;
-        if (!std::filesystem::exists(target, ec)) continue;
+        if (!is_local_disk_path(target) || !std::filesystem::exists(target, ec)) continue;
         const auto name = it->path().stem().string();
         const auto lowered = lower(name);
         if (lowered.find("uninstall") != std::string::npos) continue;
@@ -129,7 +129,7 @@ void scan_app_paths(std::set<std::string>& seen, std::vector<InstalledApp>& out)
         ExpandEnvironmentStringsW(raw.c_str(), expanded, MAX_PATH * 2);
         std::filesystem::path target = expanded;
         std::error_code ec;
-        if (!std::filesystem::is_regular_file(target, ec)) continue;
+        if (!is_local_disk_path(target) || !std::filesystem::is_regular_file(target, ec)) continue;
         const auto path = path_to_utf8(target);
         if (!seen.insert(lower(path)).second) continue;
         out.push_back({to_utf8(target.stem().wstring()), path, company_name(target)});
@@ -138,6 +138,15 @@ void scan_app_paths(std::set<std::string>& seen, std::vector<InstalledApp>& out)
 }
 
 }  // namespace
+
+bool is_local_disk_path(const std::filesystem::path& file) {
+    const auto text = file.wstring();
+    if (text.size() < 3 || text[1] != L':' || (text[2] != L'\\' && text[2] != L'/')) return false;
+    if (!((text[0] >= L'A' && text[0] <= L'Z') || (text[0] >= L'a' && text[0] <= L'z'))) return false;
+    const wchar_t root[] = {text[0], L':', L'\\', L'\0'};
+    const UINT type = GetDriveTypeW(root);
+    return type == DRIVE_FIXED || type == DRIVE_REMOVABLE || type == DRIVE_CDROM || type == DRIVE_RAMDISK;
+}
 
 std::vector<LocalUser> list_local_users() {
     std::vector<LocalUser> users;

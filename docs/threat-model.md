@@ -38,7 +38,13 @@ The source code is public. Security rests on Windows access control, authenticat
 | Pipe spoofing | `FILE_FLAG_FIRST_PIPE_INSTANCE`, explicit DACL, no remote clients | Code review |
 | Unauthorized commands | Per-command access class, owner token bound to SID | `e2e.ps1`, `install-test.ps1` |
 | PIN brute force | PBKDF2-SHA256 (600,000 iterations), persisted exponential back-off | Code review |
-| Audit tampering | Hash chain | Audit tests |
+| Audit tampering | Keyed HMAC chain, keyed anchor against truncation, rotation, torn-record quarantine. An administrator can still read the key | Audit tests, `e2e-security.ps1`, libFuzzer target |
+| Pipe exhaustion by idle or slow clients | Deadlines on every read and write, pending and per-user limits, rate limit, size and nesting limits | `e2e-security.ps1` (40 idle clients, oversized, nested and truncated messages, request bursts) |
+| Guest account left usable after a session | Two-phase end that retries until the expiry action works, managed accounts disabled with a Windows-enforced expiry | `e2e-security.ps1` (restart during a session, expiry while the service is down) |
+| Service tricked into touching a network path | Network image paths and shortcuts are never opened by the service | System tests, code review |
+| Transient inspection failure treated as permission | Explicit per-process states, bounded retries, failure counters and audit events | Code review, Diagnostics counters |
+| Weak service process | Unused privileges removed at startup, safe DLL search path, no remote or low-integrity image loads, extension points disabled | `e2e.ps1` runs with the reduced token |
+| Interface as an attack path | Navigation, frames, new windows and permission requests denied; no host objects, dialogs or autofill; CSP; every privileged command re-validated by the service | Code review |
 | Uninstall during a guest session | The MSI asks the service whether a session is active and aborts unless an administrator passes `FORCE_UNINSTALL=1`; removal needs elevation either way | `install-test.ps1` |
 | Event session stopped or unavailable | Fallback to polling every second, retry of the event session, audit entry on every mode change, no enforcing session starts without supervision | `e2e.ps1` (stops the event session, checks polling, enforcement and recovery) |
 | Accidental lockout | Baseline, analysis, preview, audit mode, timed sessions | Core tests |
@@ -51,4 +57,11 @@ Behaviour on Windows 11 and non-Pro editions, behaviour on modified or reduced W
 
 ## Residual risks (accepted and disclosed)
 
-Reactive enforcement window; owner-account guests rely on PIN strength; per-user connection cap can be filled by that user (denial of service of the pipe for that user only).
+- Reactive enforcement window.
+- Owner-account guests rely on PIN strength.
+- A user can fill their own connection allowance, which only denies service to that user's own clients for a few seconds.
+- Rules match the user in the process token, not the logon session. A program the guest starts with other credentials (for example `runas` with an administrator password the guest knows) is outside the policy.
+- Session deadlines use the system clock. Changing the clock requires administrator rights.
+- The audit key is readable by administrators, so an administrator can forge a consistent log.
+- Files that change between inspection and execution are re-checked once after hashing; a program replaced by a different file at the same path after inspection is not detected.
+- Rules for network programs can only match their path.

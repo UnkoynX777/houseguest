@@ -80,6 +80,7 @@ const char* enforcement_name(SupervisionMode mode) {
 
 Controller::Controller(std::filesystem::path data_directory, bool enable_enforcement)
     : store_(std::move(data_directory)), install_dir_(executable_directory()) {
+    live_ = enable_enforcement;
     load_result_ = store_.load();
     audit_ = std::make_unique<AuditLog>(store_.directory() / L"audit.log",
                                         store_.derive_key("houseguest.audit.v2"));
@@ -232,10 +233,10 @@ bool Controller::finish_session() {
     }
     if (session.end_apply_action && session.on_expiry != "none") {
         const bool logoff = session.on_expiry == "logoff" || session.on_expiry == "disable";
-        complete &= system::disconnect_sessions(session.guest_sids, logoff).complete;
+        complete &= end_user_sessions(session.guest_sids, logoff);
     }
-    for (const auto& sid : managed_guests) complete &= system::set_user_disabled(sid, true);
-    if (!managed_guests.empty()) complete &= system::disconnect_sessions(managed_guests, true).complete;
+    for (const auto& sid : managed_guests) complete &= set_account_disabled(sid, true);
+    if (!managed_guests.empty()) complete &= end_user_sessions(managed_guests, true);
 
     if (!complete) {
         if (end_attempts_++ % 6 == 0) {
@@ -261,6 +262,18 @@ void Controller::force_end_session(const std::string& reason) {
     audit_->append("service", "session.forced_end", {{"reason", reason}, {"profile", session.profile_id}});
 }
 
+bool Controller::set_account_disabled(const std::string& sid, bool disabled) const {
+    return !live_ || system::set_user_disabled(sid, disabled);
+}
+
+bool Controller::set_account_expiry(const std::string& sid, std::int64_t unix_seconds) const {
+    return !live_ || system::set_user_expiry(sid, unix_seconds);
+}
+
+bool Controller::end_user_sessions(const std::vector<std::string>& sids, bool logoff) const {
+    return !live_ || system::disconnect_sessions(sids, logoff).complete;
+}
+
 bool Controller::is_managed(const std::string& sid) const {
     return std::ranges::any_of(store_.state.managed,
                                [&](const ManagedAccount& account) { return account.sid == sid; });
@@ -273,14 +286,14 @@ void Controller::reconcile_managed_accounts() {
             store_.state.session && std::ranges::find(store_.state.session->guest_sids, account.sid) !=
                                         store_.state.session->guest_sids.end();
         if (in_session) continue;
-        if (!system::user_exists(account.sid)) continue;
-        if (!system::set_user_disabled(account.sid, true)) {
+        if (!live_ || !system::user_exists(account.sid)) continue;
+        if (!set_account_disabled(account.sid, true)) {
             audit_->append("service", "managed_account.disable_failed", {{"name", account.name}});
             continue;
         }
         idle.push_back(account.sid);
     }
-    if (!idle.empty()) system::disconnect_sessions(idle, true);
+    if (!idle.empty()) end_user_sessions(idle, true);
 }
 
 void Controller::timer_loop(const std::stop_token& stop) {
@@ -363,6 +376,25 @@ void Controller::on_failure(const InspectionFailure& failure) {
                     {"attempts", failure.attempts},
                     {"degraded", failure.degraded},
                     {"suppressed", suppressed}});
+}
+
+void Controller::audit_limited(const std::string& key, const std::string& actor, const std::string& event,
+                               Json detail) {
+    const auto now = std::chrono::steady_clock::now();
+    std::uint64_t suppressed = 0;
+    {
+        std::scoped_lock lock(limited_mutex_);
+        if (limited_notice_.size() > 256) limited_notice_.clear();
+        auto& entry = limited_notice_[key];
+        if (entry.first != std::chrono::steady_clock::time_point{} && now - entry.first < kNoticeInterval) {
+            ++entry.second;
+            return;
+        }
+        suppressed = entry.second;
+        entry = {now, 0};
+    }
+    if (suppressed != 0) detail["suppressed"] = suppressed;
+    audit_->append(actor, event, std::move(detail));
 }
 
 void Controller::set_ipc_stats(std::function<Json()> provider) {
@@ -528,7 +560,7 @@ Json Controller::handle(const Caller& caller, const Json& request) {
                 {"ok", false},
                 {"error", {{"code", "bad_request"}, {"message", e.what()}, {"details", Json::object()}}}};
     } catch (const std::exception& e) {
-        audit_->append("service", "internal_error", {{"message", e.what()}});
+        audit_limited("internal_error", "service", "internal_error", {{"message", e.what()}});
         return {
             {"id", id},
             {"ok", false},

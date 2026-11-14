@@ -383,9 +383,18 @@ Supervisor::Outcome Supervisor::inspect(const Pending& pending) {
     const auto now = std::chrono::system_clock::now();
     const auto family = process->package_family();
     core::AppIdentity identity;
-    if (image) identity = resolver_.resolve_checked(*image, false, false, family).identity;
+    bool remote = false;
+    if (image) {
+        auto first = resolver_.resolve_checked(*image, false, false, family);
+        identity = std::move(first.identity);
+        remote = first.remote;
+    }
     auto decision = core::evaluate(policy->profile, policy->baseline, identity, now);
-    if (image && !decided_by_path(*policy, decision) && (policy->needs_hash || policy->needs_publisher)) {
+    if (remote && (policy->needs_hash || policy->needs_publisher) && !decided_by_path(*policy, decision)) {
+        degraded = true;
+        if (on_failure_) on_failure_({pending.pid, "remote_image", 0, pending.attempt + 1, true});
+    } else if (image && !decided_by_path(*policy, decision) &&
+               (policy->needs_hash || policy->needs_publisher)) {
         auto full = resolver_.resolve_checked(*image, policy->needs_hash, policy->needs_publisher, family);
         if (!full.complete) {
             if (!final) return retry("hash", GetLastError());

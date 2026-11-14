@@ -96,3 +96,12 @@ TEST_CASE("capability probe reports every check with a verdict", "[capabilities]
     CHECK_FALSE(capabilities.critical_failure());
     CHECK(to_json(capabilities)["ready"].get<bool>());
 }
+
+TEST_CASE("only local drive-letter paths are opened by the service", "[system][security]") {
+    CHECK(houseguest::system::is_local_disk_path(R"(C:\Windows\System32\notepad.exe)"));
+    CHECK_FALSE(houseguest::system::is_local_disk_path(R"(\server\share\tool.exe)"));
+    CHECK_FALSE(houseguest::system::is_local_disk_path(R"(\?\UNC\server\share\tool.exe)"));
+    CHECK_FALSE(houseguest::system::is_local_disk_path(R"(tool.exe)"));
+    CHECK_FALSE(houseguest::system::is_local_disk_path(R"(1:\tool.exe)"));
+    CHECK_FALSE(houseguest::system::is_local_disk_path(""));
+}

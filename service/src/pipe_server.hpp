@@ -22,7 +22,7 @@ public:
 
 private:
     void accept_loop();
-    void serve(void* pipe, std::string peer);
+    void serve(void* pipe, const std::string& peer);
     bool admit(const std::string& peer);
     void release(const std::string& peer, bool was_pending);
     void leave_pending(const std::string& peer);

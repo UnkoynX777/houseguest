@@ -67,10 +67,15 @@ private:
     void arm(const Session& session);
     void end_session(const std::string& reason, bool apply_expiry_action);
     bool finish_session();
+    bool set_account_disabled(const std::string& sid, bool disabled) const;
+    bool set_account_expiry(const std::string& sid, std::int64_t unix_seconds) const;
+    bool end_user_sessions(const std::vector<std::string>& sids, bool logoff) const;
     void force_end_session(const std::string& reason);
     void reconcile_managed_accounts();
     [[nodiscard]] bool is_managed(const std::string& sid) const;
     void on_failure(const InspectionFailure& failure);
+    void audit_limited(const std::string& key, const std::string& actor, const std::string& event,
+                       core::Json detail);
     void timer_loop(const std::stop_token& stop);
     void on_denial(const Denial& denial);
     void on_mode(SupervisionMode mode, const std::string& reason);
@@ -88,11 +93,15 @@ private:
     std::unordered_map<std::string, Command> commands_;
     std::mutex token_mutex_;
     std::unordered_map<std::string, Token> tokens_;
+    std::mutex limited_mutex_;
+    std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::uint64_t>>
+        limited_notice_;
     std::mutex failure_mutex_;
     std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::uint64_t>>
         failure_notice_;
     std::function<core::Json()> ipc_stats_;
     unsigned end_attempts_ = 0;
+    bool live_ = true;
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_notice_;
     std::mutex notice_mutex_;
     std::filesystem::path install_dir_;

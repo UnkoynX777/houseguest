@@ -12,8 +12,8 @@ namespace houseguest::service {
 namespace {
 
 constexpr int kCurrentVersion = 2;
-constexpr std::size_t kMaxEntryBytes = 16 * 1024;
-constexpr std::size_t kMaxLineBytes = 64 * 1024;
+constexpr std::size_t kMaxEntryBytes = std::size_t{16} * 1024;
+constexpr std::size_t kMaxLineBytes = std::size_t{64} * 1024;
 
 std::string read_all(const std::filesystem::path& file) {
     std::ifstream in(file, std::ios::binary);

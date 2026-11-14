@@ -64,9 +64,9 @@ void Controller::register_session_commands() {
         arm(session);
         for (const auto& sid : session.guest_sids) {
             if (!is_managed(sid)) continue;
-            if (!system::set_user_expiry(sid, session.ends_at) || !system::set_user_disabled(sid, false)) {
+            if (!set_account_expiry(sid, session.ends_at) || !set_account_disabled(sid, false)) {
                 for (const auto& other : session.guest_sids) {
-                    if (is_managed(other)) system::set_user_disabled(other, true);
+                    if (is_managed(other)) set_account_disabled(other, true);
                 }
                 supervisor_->apply(nullptr);
                 throw Failure("account_error", "A managed account could not be enabled.");
@@ -95,7 +95,7 @@ void Controller::register_session_commands() {
         const auto minutes = require_int(args, "minutes", 1, kMaxSessionMinutes);
         store_.state.session->ends_at += minutes * 60;
         for (const auto& sid : store_.state.session->guest_sids) {
-            if (is_managed(sid)) system::set_user_expiry(sid, store_.state.session->ends_at);
+            if (is_managed(sid)) set_account_expiry(sid, store_.state.session->ends_at);
         }
         store_.save();
         audit_->append(caller.sid, "session.extended", {{"minutes", minutes}});

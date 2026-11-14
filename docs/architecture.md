@@ -59,15 +59,21 @@ Dependencies point downward. `core` knows nothing about Windows.
 | `setup`, `recover` | Caller token must be elevated. `setup` works only while no owner exists. |
 | Everything else | A token issued by `unlock`, bound to the owner SID, valid 15 minutes, extended on use. |
 
-The pipe has an explicit DACL, rejects remote clients, caps messages at 1 MiB and connections at four per user. The caller identity is read from the pipe's impersonation token, never from the message.
+The pipe has an explicit DACL, rejects remote clients and uses overlapped I/O with deadlines: 5 seconds for a first message, 10 seconds to finish a message, 120 seconds idle and 5 seconds per write. Connections are limited per user (four open, three still waiting for a first message) and globally (24 open, 16 waiting), the peer is accounted for from the moment it connects, messages are capped at 1 MiB with a JSON nesting limit of 32, and each connection has a request rate limit. The caller identity is read from the pipe's impersonation token, never from the message. Owner tokens live in memory under their own lock.
 
 ## Persistence
 
-`%ProgramData%\Houseguest` is restricted to SYSTEM and Administrators with a protected DACL. `state.json` carries an HMAC-SHA256 over its content with a key sealed by DPAPI (machine scope). Writes are atomic with a `state.previous.json` snapshot; a file that fails verification is set aside and the previous snapshot is used. `audit.log` is append-only JSON lines where each entry includes the hash of the previous one.
+`%ProgramData%\Houseguest` is restricted to SYSTEM and Administrators with a protected DACL. `state.json` carries an HMAC-SHA256 over its content with a key sealed by DPAPI (machine scope). Writes are atomic with a `state.previous.json` snapshot; a file that fails verification is set aside and the previous snapshot is used. `audit.log` is append-only JSON lines. Each record is sealed with an HMAC-SHA256 that covers the previous record's seal, keyed from the same DPAPI-protected secret, so the chain cannot be recomputed without that key. A small keyed anchor file records the last sequence and seal to reveal truncation, files rotate at 2 MiB (eight kept), and a partly written final record is moved aside on startup. A local administrator can read the key, so this detects tampering by anyone else and makes administrator tampering harder to hide; it does not stop an administrator.
 
 ## Session lifecycle
 
-The session (profile, guests, deadline, exceptions) is persisted, so a service restart or reboot resumes it, and a session that expired while the service was stopped ends on the next start with the configured action. Expiry lifts the policy and then, by choice, disconnects or logs off the guest sessions.
+The session (profile, guests, deadline, exceptions) is persisted, so a service restart or reboot resumes it, and a session that expired while the service was stopped ends on the next start with the configured action. A session ends in two phases: it is first marked as ending (persisted), the expiry action runs, and only when that succeeds is the policy lifted. If the action fails, for example because the session list cannot be read, the policy keeps applying and the service retries every ten seconds. An administrator can always force the end with `houseguest-cli recover`.
+
+Guests are existing Windows accounts, which Houseguest never disables or alters, or accounts created by Houseguest (`hg-` prefix, recorded as managed). Managed accounts are created disabled, enabled for a session with a Windows account expiry equal to the session end (so Windows itself refuses logons after the deadline even if the service is down), disabled and logged off when the session ends, and re-disabled by the service at startup if they are not part of an active session. Disabling is only ever applied to accounts in the managed list.
+
+## Process supervision
+
+Each process-start event is queued (events first, reconciliation sweeps second, 8192 entries each), inspected through one handle, and tracked per process id and creation time as in flight, retrying or settled. Transient failures (handle, token, image path, hash, a termination that fails while the process is still alive) are retried with backoff from 25 ms to 1 s up to seven times, and a failure never counts as permission: when retries are exhausted it is reported and the decision uses what is known (path only, for a missing hash). Dropped events are counted and trigger an immediate reconciliation of running processes. Files on network locations are never opened by the service, so a guest cannot make a SYSTEM process authenticate to a server it chooses; hash and publisher rules cannot be evaluated for such programs and the audit log says so. The package family comes from the process token.
 
 ## Performance
 

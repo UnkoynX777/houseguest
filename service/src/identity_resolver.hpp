@@ -14,6 +14,7 @@ namespace houseguest::service {
 struct Resolution {
     core::AppIdentity identity;
     bool complete = true;
+    bool remote = false;
 };
 
 class IdentityResolver {
