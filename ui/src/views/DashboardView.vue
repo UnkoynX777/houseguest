@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue';
+import EmptyState from '../components/EmptyState.vue';
 import { computed, onMounted, ref } from 'vue';
 
 import { call } from '../api';
@@ -34,13 +36,9 @@ async function stop() {
 
 <template>
   <div class="page">
-    <div class="page-head">
-      <div class="grow">
-        <h1>{{ t('Dashboard') }}</h1>
-        <p>{{ t('Your computer, your rules.') }}</p>
-      </div>
+    <PageHeader :title="t('Dashboard')" :subtitle="t('Your computer, your rules.')">
       <button class="btn primary" @click="go('sessions')"><Icon name="play" />{{ app.status?.armed ? t('Manage session') : t('Start a guest session') }}</button>
-    </div>
+    </PageHeader>
 
     <div v-if="loading" class="grid cols-3"><div v-for="n in 3" :key="n" class="card"><div class="skeleton" style="height: 70px" /></div></div>
 
@@ -88,7 +86,7 @@ async function stop() {
 
       <div class="card">
         <div class="row"><h2 class="grow">{{ t('Recent events') }}</h2><button class="btn sm ghost" @click="go('history')">{{ t('See all') }}</button></div>
-        <div v-if="!data.recent.length" class="empty"><Icon name="history" />{{ t('Nothing has happened yet.') }}</div>
+        <EmptyState v-if="!data.recent.length" icon="history" :text="t('Nothing has happened yet.')" />
         <div v-else class="timeline" style="margin-top: 8px">
           <div v-for="entry in data.recent" :key="entry.seq">
             <span class="faint" style="width: 150px; flex: none">{{ formatTime(entry.ts) }}</span>

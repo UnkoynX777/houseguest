@@ -72,11 +72,10 @@ async function remove() {
 
 <template>
   <div class="page">
-    <div class="page-head">
-      <div class="grow"><h1>{{ t('Profiles') }}</h1><p>{{ t('A profile is a reusable set of rules for a kind of guest.') }}</p></div>
+    <PageHeader :title="t('Profiles')" :subtitle="t('A profile is a reusable set of rules for a kind of guest.')">
       <button class="btn" @click="importProfile"><Icon name="upload" />{{ t('Import') }}</button>
       <button class="btn primary" @click="creating = true"><Icon name="plus" />{{ t('New profile') }}</button>
-    </div>
+    </PageHeader>
 
     <div class="grid cols-3">
       <div v-for="profile in app.profiles" :key="profile.id" class="card stack" style="gap: 10px">

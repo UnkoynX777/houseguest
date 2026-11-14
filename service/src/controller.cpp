@@ -310,7 +310,11 @@ Json Controller::status_json() const {
                 {"enforcement", supervisor_->running() ? "supervised" : "unavailable"},
                 {"store_tampered", load_result_ == LoadResult::Tampered},
                 {"language", state.language}};
-    if (state.session) status["ends_at"] = state.session->ends_at;
+    if (state.session) {
+        status["ends_at"] = state.session->ends_at;
+        const auto profile = std::ranges::find(state.profiles, state.session->profile_id, &core::Profile::id);
+        if (profile != state.profiles.end()) status["profile"] = profile->name;
+    }
     return status;
 }
 

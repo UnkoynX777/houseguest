@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue';
+import EmptyState from '../components/EmptyState.vue';
 import { computed, onMounted, ref } from 'vue';
 
 import { call } from '../api';
@@ -77,10 +79,9 @@ async function addRule() {
 
 <template>
   <div class="page">
-    <div class="page-head">
-      <div class="grow"><h1>{{ t('Applications') }}</h1><p>{{ t('Programs found on this computer. Pick one to allow or block it in a profile.') }}</p></div>
+    <PageHeader :title="t('Applications')" :subtitle="t('Programs found on this computer. Pick one to allow or block it in a profile.')">
       <button class="btn" :disabled="loading" @click="load"><Icon name="refresh" />{{ t('Rescan') }}</button>
-    </div>
+    </PageHeader>
 
     <div class="row">
       <div class="search grow"><Icon name="search" /><input v-model="query" class="input" :placeholder="t('Search applications')" :aria-label="t('Search applications')" /></div>
@@ -91,7 +92,7 @@ async function addRule() {
     </div>
 
     <div v-if="loading" class="stack"><div v-for="n in 6" :key="n" class="skeleton" style="height: 54px" /></div>
-    <div v-else-if="!filtered.length" class="card empty"><Icon name="apps" />{{ t('No applications match your search.') }}</div>
+    <EmptyState v-else-if="!filtered.length" icon="apps" :text="t('No applications match your search.')" />
     <div v-else class="table-wrap">
       <table>
         <tbody>

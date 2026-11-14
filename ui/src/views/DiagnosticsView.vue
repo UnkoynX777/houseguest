@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue';
 import { computed, onMounted, ref } from 'vue';
 
 import { call } from '../api';
@@ -37,11 +38,10 @@ async function copy() {
 
 <template>
   <div class="page">
-    <div class="page-head">
-      <div class="grow"><h1>{{ t('Diagnostics') }}</h1><p>{{ t('Check that everything Houseguest depends on is healthy.') }}</p></div>
+    <PageHeader :title="t('Diagnostics')" :subtitle="t('Check that everything Houseguest depends on is healthy.')">
       <button class="btn" :disabled="!info" @click="copy"><Icon name="copy" />{{ t('Copy report') }}</button>
       <button class="btn primary" :disabled="loading" @click="load"><Icon name="refresh" />{{ t('Run checks') }}</button>
-    </div>
+    </PageHeader>
     <div v-if="loading" class="stack"><div v-for="n in 5" :key="n" class="skeleton" style="height: 52px" /></div>
     <template v-else-if="info">
       <div class="table-wrap">

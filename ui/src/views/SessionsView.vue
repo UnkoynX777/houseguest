@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue';
+import Toggle from '../components/Toggle.vue';
 import { computed, onMounted, ref } from 'vue';
 
 import { ApiError, call } from '../api';
@@ -82,7 +84,7 @@ async function extend(add: number) {
 
 <template>
   <div class="page">
-    <div class="page-head"><div class="grow"><h1>{{ t('Sessions') }}</h1><p>{{ t('Lend your computer for a set time, with only the apps you choose.') }}</p></div></div>
+    <PageHeader :title="t('Sessions')" :subtitle="t('Lend your computer for a set time, with only the apps you choose.')" />
 
     <div v-if="app.status?.armed && detail?.session" class="card hero stack">
       <div class="row">
@@ -144,10 +146,7 @@ async function extend(add: number) {
           <option value="logoff">{{ t('Sign the guest out') }}</option>
           <option value="none">{{ t('Only remove restrictions') }}</option>
         </select>
-        <label class="row" style="margin-top: 4px">
-          <span class="switch"><input v-model="auditOnly" type="checkbox" /></span>
-          <span class="grow"><strong>{{ t('Audit mode') }}</strong><br /><span class="hint">{{ t('Only record what would be blocked. Nothing is stopped.') }}</span></span>
-        </label>
+        <Toggle v-model="auditOnly" :label="t('Audit mode')" :hint="t('Only record what would be blocked. Nothing is stopped.')" />
         <div class="row" style="margin-top: 8px">
           <button class="btn" :disabled="!valid || previewing" @click="runPreview"><span v-if="previewing" class="spinner" /><Icon v-else name="eye" />{{ t('Preview') }}</button>
           <button class="btn primary right" :disabled="!valid || busy" @click="start()"><Icon name="shield" />{{ t('Start protection') }}</button>

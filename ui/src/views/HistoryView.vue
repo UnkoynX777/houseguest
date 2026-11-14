@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import EmptyState from '../components/EmptyState.vue';
+import PageHeader from '../components/PageHeader.vue';
 import { computed, onMounted, ref } from 'vue';
 
 import { call, host } from '../api';
@@ -49,11 +51,10 @@ async function exportCsv() {
 
 <template>
   <div class="page">
-    <div class="page-head">
-      <div class="grow"><h1>{{ t('History') }}</h1><p>{{ t('Everything Houseguest did or blocked, in tamper-evident order.') }}</p></div>
+    <PageHeader :title="t('History')" :subtitle="t('Everything Houseguest did or blocked, in tamper-evident order.')">
       <button class="btn" @click="verify"><Icon name="shield" />{{ t('Verify log') }}</button>
       <button class="btn" :disabled="!rows.length" @click="exportCsv"><Icon name="download" />{{ t('Export CSV') }}</button>
-    </div>
+    </PageHeader>
     <div class="row wrap">
       <div class="seg" role="group">
         <button v-for="g in ['all', 'blocked', 'sessions', 'security', 'changes'] as const" :key="g" :aria-pressed="filter === g" @click="filter = g">
@@ -63,7 +64,7 @@ async function exportCsv() {
       <div class="search grow"><Icon name="search" /><input v-model="query" class="input" :placeholder="t('Search events')" :aria-label="t('Search events')" /></div>
     </div>
     <div v-if="loading" class="stack"><div v-for="n in 6" :key="n" class="skeleton" style="height: 40px" /></div>
-    <div v-else-if="!rows.length" class="card empty"><Icon name="history" />{{ t('No events match.') }}</div>
+    <EmptyState v-else-if="!rows.length" icon="history" :text="t('No events match.')" />
     <div v-else class="table-wrap">
       <table>
         <tbody>

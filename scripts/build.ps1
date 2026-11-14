@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Debug', 'Release')] [string] $Config = 'Debug',
-    [switch] $RunTests
+    [switch] $RunTests,
+    [switch] $Devtools
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -12,9 +13,11 @@ if (-not $vs) { throw 'MSVC build tools not found.' }
 $cmakeBin = Join-Path $vs 'Common7\IDE\CommonExtensions\Microsoft\CMake'
 $env:PATH = "$cmakeBin\CMake\bin;$cmakeBin\Ninja;$env:PATH"
 
-$build = Join-Path $root "build\$($Config.ToLower())"
+$name = if ($Devtools) { 'devtools' } else { $Config.ToLower() }
+$build = Join-Path $root "build\$name"
+$flags = if ($Devtools) { ' -DHOUSEGUEST_DEVTOOLS=ON' } else { '' }
 $script = "call `"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && " +
-    "cmake -S `"$root`" -B `"$build`" -G Ninja -DCMAKE_BUILD_TYPE=$Config && " +
+    "cmake -S `"$root`" -B `"$build`" -G Ninja -DCMAKE_BUILD_TYPE=$Config$flags && " +
     "cmake --build `"$build`""
 if ($RunTests) { $script += " && ctest --test-dir `"$build`" --output-on-failure" }
 cmd /c $script

@@ -2,11 +2,12 @@
 
 #include <dwmapi.h>
 #include <shellapi.h>
-#include <shlobj.h>
 #include <wrl.h>
 
-#include <fstream>
-#include <sstream>
+#include <algorithm>
+#include <chrono>
+#include <functional>
+#include <memory>
 #include <string>
 #include <thread>
 
@@ -17,11 +18,18 @@
 #include "houseguest/system/pipe.hpp"
 #include "houseguest/system/text.hpp"
 
+#include "dialogs.hpp"
+#include "geometry.hpp"
+#include "service_monitor.hpp"
+#include "tray.hpp"
+#include "ui_settings.hpp"
+
 using houseguest::core::Json;
 using houseguest::system::to_utf8;
 using houseguest::system::to_wide;
 using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
+namespace host = houseguest::host;
 
 namespace {
 
@@ -29,11 +37,30 @@ constexpr wchar_t kWindowClass[] = L"HouseguestWindow";
 constexpr wchar_t kHost[] = L"app.houseguest";
 constexpr wchar_t kOrigin[] = L"https://app.houseguest/";
 constexpr UINT kReplyMessage = WM_APP + 1;
-constexpr std::size_t kMaxFileBytes = 2 * 1024 * 1024;
+constexpr UINT kTrayMessage = WM_APP + 2;
+constexpr UINT kStatusMessage = WM_APP + 3;
+constexpr UINT kShowMessage = WM_APP + 4;
+constexpr UINT_PTR kTooltipTimer = 1;
+constexpr UINT kTooltipInterval = 15000;
+constexpr COREWEBVIEW2_COLOR kDarkBackground{255, 15, 20, 32};
+constexpr COREWEBVIEW2_COLOR kLightBackground{255, 250, 248, 244};
 
-HWND g_window = nullptr;
-ComPtr<ICoreWebView2Controller> g_controller;
-ComPtr<ICoreWebView2> g_view;
+struct App {
+    HWND window = nullptr;
+    ComPtr<ICoreWebView2Controller> controller;
+    ComPtr<ICoreWebView2> view;
+    host::UiSettings settings;
+    std::unique_ptr<host::Tray> tray;
+    std::unique_ptr<host::ServiceMonitor> monitor;
+    host::ServiceStatus status;
+    std::chrono::steady_clock::time_point status_time;
+    bool have_status = false;
+    bool exiting = false;
+    bool hint_shown = false;
+    UINT taskbar_created = 0;
+};
+
+App g;
 
 bool system_uses_dark_theme() {
     DWORD value = 1, size = sizeof(value);
@@ -42,9 +69,37 @@ bool system_uses_dark_theme() {
     return value == 0;
 }
 
-void apply_title_bar_theme(HWND window) {
-    const BOOL dark = system_uses_dark_theme();
-    DwmSetWindowAttribute(window, 20, &dark, sizeof(dark));
+bool dark_in_effect() {
+    return g.settings.theme == "dark" || (g.settings.theme == "system" && system_uses_dark_theme());
+}
+
+bool portuguese() {
+    return host::prefers_portuguese(g.settings);
+}
+
+void apply_theme() {
+    const BOOL dark = dark_in_effect();
+    if (g.window) {
+        DwmSetWindowAttribute(g.window, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+        static HBRUSH dark_brush = CreateSolidBrush(RGB(15, 20, 32));
+        static HBRUSH light_brush = CreateSolidBrush(RGB(250, 248, 244));
+        SetClassLongPtrW(g.window, GCLP_HBRBACKGROUND,
+                         reinterpret_cast<LONG_PTR>(dark ? dark_brush : light_brush));
+        RedrawWindow(g.window, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_ERASE);
+    }
+    if (!g.controller) return;
+    ComPtr<ICoreWebView2Controller2> controller2;
+    if (SUCCEEDED(g.controller.As(&controller2))) {
+        controller2->put_DefaultBackgroundColor(dark ? kDarkBackground : kLightBackground);
+    }
+    ComPtr<ICoreWebView2_13> view13;
+    ComPtr<ICoreWebView2Profile> profile;
+    if (g.view && SUCCEEDED(g.view.As(&view13)) && SUCCEEDED(view13->get_Profile(&profile))) {
+        profile->put_PreferredColorScheme(
+            g.settings.theme == "system" ? COREWEBVIEW2_PREFERRED_COLOR_SCHEME_AUTO
+            : g.settings.theme == "dark" ? COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK
+                                         : COREWEBVIEW2_PREFERRED_COLOR_SCHEME_LIGHT);
+    }
 }
 
 std::filesystem::path executable_directory() {
@@ -65,120 +120,179 @@ Json failure(const Json& id, const char* code, const char* message) {
             {"error", {{"code", code}, {"message", message}, {"details", Json::object()}}}};
 }
 
-void post_reply(const Json& reply) {
-    auto* text = new std::wstring(to_wide(reply.dump()));
-    if (!PostMessageW(g_window, kReplyMessage, 0, reinterpret_cast<LPARAM>(text))) delete text;
+void post_to_view(const Json& message) {
+    auto* text = new std::wstring(to_wide(message.dump()));
+    if (!PostMessageW(g.window, kReplyMessage, 0, reinterpret_cast<LPARAM>(text))) delete text;
 }
 
-Json relaunch_elevated() {
-    wchar_t module[MAX_PATH];
-    GetModuleFileNameW(nullptr, module, MAX_PATH);
-    SHELLEXECUTEINFOW info{sizeof(info)};
-    info.lpVerb = L"runas";
-    info.lpFile = module;
-    info.nShow = SW_SHOWNORMAL;
-    if (!ShellExecuteExW(&info)) return {{"started", false}};
-    PostMessageW(g_window, WM_CLOSE, 0, 0);
-    return {{"started", true}};
+void show_window() {
+    if (!IsWindowVisible(g.window)) ShowWindow(g.window, SW_SHOW);
+    if (IsIconic(g.window)) ShowWindow(g.window, SW_RESTORE);
+    SetForegroundWindow(g.window);
 }
 
-Json save_text(const Json& args) {
-    const auto name = to_wide(args.value("name", "export.json"));
-    const auto content = args.value("content", "");
-    ComPtr<IFileSaveDialog> dialog;
-    if (FAILED(
-            CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
-        return {{"saved", false}};
+void navigate_to(const char* route) {
+    show_window();
+    post_to_view({{"event", "navigate"}, {"route", route}});
+}
+
+void save_settings() {
+    if (const auto placement = host::capture_placement(g.window)) g.settings.placement = placement;
+    host::save_ui_settings(g.settings);
+}
+
+Json prefs_json() {
+    return {{"minimize_to_tray", g.settings.minimize_to_tray},
+            {"start_with_windows", g.settings.start_with_windows},
+            {"theme", g.settings.theme}};
+}
+
+Json update_prefs(const Json& args) {
+    if (args.contains("minimize_to_tray") && args["minimize_to_tray"].is_boolean()) {
+        g.settings.minimize_to_tray = args["minimize_to_tray"].get<bool>();
     }
-    dialog->SetFileName(name.c_str());
-    dialog->SetDefaultExtension(L"json");
-    if (FAILED(dialog->Show(g_window))) return {{"saved", false}};
-    ComPtr<IShellItem> item;
-    PWSTR path = nullptr;
-    if (FAILED(dialog->GetResult(&item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
-        return {{"saved", false}};
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    CoTaskMemFree(path);
-    out << content;
-    return {{"saved", static_cast<bool>(out)}};
-}
-
-Json open_text() {
-    ComPtr<IFileOpenDialog> dialog;
-    if (FAILED(
-            CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
-        return {{"opened", false}};
+    if (args.contains("start_with_windows") && args["start_with_windows"].is_boolean()) {
+        const bool wanted = args["start_with_windows"].get<bool>();
+        if (host::set_autostart(wanted)) g.settings.start_with_windows = wanted;
     }
-    const COMDLG_FILTERSPEC filter[] = {{L"JSON", L"*.json"}};
-    dialog->SetFileTypes(1, filter);
-    if (FAILED(dialog->Show(g_window))) return {{"opened", false}};
-    ComPtr<IShellItem> item;
-    PWSTR path = nullptr;
-    if (FAILED(dialog->GetResult(&item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
-        return {{"opened", false}};
-    std::ifstream in(path, std::ios::binary);
-    CoTaskMemFree(path);
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    if (buffer.str().size() > kMaxFileBytes) return {{"opened", false}, {"reason", "file too large"}};
-    return {{"opened", true}, {"content", buffer.str()}};
+    if (args.contains("theme") && args["theme"].is_string()) {
+        const auto theme = args["theme"].get<std::string>();
+        if (theme == "system" || theme == "light" || theme == "dark") g.settings.theme = theme;
+        apply_theme();
+    }
+    if (args.contains("language") && args["language"].is_string()) {
+        const auto language = args["language"].get<std::string>();
+        if (language == "en" || language == "pt-BR") g.settings.language = language;
+    }
+    save_settings();
+    return prefs_json();
 }
 
-bool is_elevated() {
-    HANDLE token = nullptr;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
-    TOKEN_ELEVATION elevation{};
-    DWORD size = 0;
-    const bool ok = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
-    CloseHandle(token);
-    return ok && elevation.TokenIsElevated;
+void handle_host_command(const Json& id, const std::string& command, const Json& args) {
+    Json data;
+    if (command == "host.elevate") {
+        const bool started = host::relaunch_elevated();
+        if (started) {
+            g.exiting = true;
+            PostMessageW(g.window, WM_CLOSE, 0, 0);
+        }
+        data = {{"started", started}};
+    } else if (command == "host.save_text") {
+        data = host::save_text(g.window, args);
+    } else if (command == "host.open_text") {
+        data = host::open_text(g.window);
+    } else if (command == "host.info") {
+        data = {{"elevated", host::is_elevated()}};
+    } else if (command == "host.get_prefs") {
+        data = prefs_json();
+    } else if (command == "host.set_prefs") {
+        data = update_prefs(args);
+    } else {
+        post_to_view(failure(id, "bad_request", "Unknown host command."));
+        return;
+    }
+    post_to_view({{"id", id}, {"ok", true}, {"data", std::move(data)}});
 }
 
 void handle_message(const std::string& text) {
     auto request = Json::parse(text, nullptr, false);
     if (request.is_discarded() || !request.is_object() || !request.contains("cmd") ||
-        !request["cmd"].is_string())
-        return;
-    const Json id = request.value("id", Json(nullptr));
-    const auto command = request["cmd"].get<std::string>();
-
-    if (command.starts_with("host.")) {
-        const Json args = request.value("args", Json::object());
-        Json data;
-        if (command == "host.elevate")
-            data = relaunch_elevated();
-        else if (command == "host.save_text")
-            data = save_text(args);
-        else if (command == "host.open_text")
-            data = open_text();
-        else if (command == "host.info")
-            data = {{"elevated", is_elevated()}};
-        else {
-            post_reply(failure(id, "bad_request", "Unknown host command."));
-            return;
-        }
-        post_reply({{"id", id}, {"ok", true}, {"data", std::move(data)}});
+        !request["cmd"].is_string()) {
         return;
     }
-
+    const Json id = request.value("id", Json(nullptr));
+    const auto command = request["cmd"].get<std::string>();
+    if (command.starts_with("host.")) {
+        handle_host_command(id, command, request.value("args", Json::object()));
+        return;
+    }
     std::thread([request = std::move(request), id] {
         houseguest::system::PipeClient client;
         auto reply = client.call(request);
-        post_reply(reply ? *reply
-                         : failure(id, "service_unavailable", "The Houseguest service is not running."));
+        post_to_view(reply ? *reply
+                           : failure(id, "service_unavailable", "The Houseguest service is not running."));
     }).detach();
 }
 
-HRESULT on_controller_ready(HWND window, HRESULT result, ICoreWebView2Controller* controller) {
-    if (FAILED(result) || !controller) {
-        MessageBoxW(window, L"The WebView2 runtime could not be started.", L"Houseguest", MB_ICONERROR);
-        return result;
-    }
-    g_controller = controller;
-    g_controller->get_CoreWebView2(&g_view);
+bool user_is_looking() {
+    return IsWindowVisible(g.window) && !IsIconic(g.window) && GetForegroundWindow() == g.window;
+}
 
+std::int64_t remaining_seconds() {
+    if (!g.status.armed) return 0;
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - g.status_time);
+    return std::max<std::int64_t>(0, g.status.ends_at - g.status.server_now - elapsed.count());
+}
+
+void refresh_tooltip() {
+    g.tray->set_tooltip(host::describe_status(g.status, remaining_seconds(), portuguese()).tooltip);
+}
+
+void on_status(std::unique_ptr<host::ServiceStatus> next) {
+    const bool had = g.have_status;
+    const auto previous = g.status;
+    g.status = *next;
+    g.status_time = std::chrono::steady_clock::now();
+    g.have_status = true;
+    refresh_tooltip();
+    if (!had || user_is_looking()) return;
+
+    const bool pt = portuguese();
+    if (previous.reachable && !next->reachable) {
+        g.tray->balloon(L"Houseguest", host::service_lost_message(pt), true);
+    } else if (!previous.reachable && next->reachable) {
+        g.tray->balloon(L"Houseguest", host::service_back_message(pt), false);
+    } else if (previous.armed && !next->armed && next->reachable) {
+        g.tray->balloon(L"Houseguest", host::session_ended_message(pt), false);
+    } else if (next->armed && previous.enforcement_available && !next->enforcement_available) {
+        g.tray->balloon(L"Houseguest", host::enforcement_lost_message(pt), true);
+    }
+}
+
+void on_tray_menu() {
+    const auto text = host::describe_status(g.status, remaining_seconds(), portuguese());
+    const host::TrayMenuState state{g.settings.minimize_to_tray, g.settings.start_with_windows, portuguese()};
+    const auto command = g.tray->show_menu(text, state);
+    if (!command) return;
+    switch (*command) {
+        case host::TrayCommand::Open:
+            show_window();
+            break;
+        case host::TrayCommand::Settings:
+            navigate_to("settings");
+            break;
+        case host::TrayCommand::ToggleMinimizeToTray:
+            update_prefs({{"minimize_to_tray", !g.settings.minimize_to_tray}});
+            post_to_view({{"event", "prefs"}, {"prefs", prefs_json()}});
+            break;
+        case host::TrayCommand::ToggleAutostart:
+            update_prefs({{"start_with_windows", !g.settings.start_with_windows}});
+            post_to_view({{"event", "prefs"}, {"prefs", prefs_json()}});
+            break;
+        case host::TrayCommand::Exit:
+            g.exiting = true;
+            DestroyWindow(g.window);
+            break;
+    }
+}
+
+void open_external(const std::wstring& target) {
+    if (target.starts_with(L"https://"))
+        ShellExecuteW(nullptr, L"open", target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+std::wstring uri_of(const std::function<HRESULT(PWSTR*)>& getter) {
+    PWSTR uri = nullptr;
+    getter(&uri);
+    std::wstring target = uri ? uri : L"";
+    CoTaskMemFree(uri);
+    return target;
+}
+
+void configure_settings() {
     ComPtr<ICoreWebView2Settings> settings;
-    g_view->get_Settings(&settings);
+    g.view->get_Settings(&settings);
     settings->put_AreDefaultContextMenusEnabled(FALSE);
     settings->put_IsStatusBarEnabled(FALSE);
     settings->put_IsZoomControlEnabled(FALSE);
@@ -187,56 +301,37 @@ HRESULT on_controller_ready(HWND window, HRESULT result, ICoreWebView2Controller
 #ifndef HOUSEGUEST_DEVTOOLS
     settings->put_AreDevToolsEnabled(FALSE);
 #endif
+}
 
-    ComPtr<ICoreWebView2_3> view3;
-    if (SUCCEEDED(g_view.As(&view3))) {
-        const auto ui_directory = (executable_directory() / L"ui").wstring();
-        view3->SetVirtualHostNameToFolderMapping(kHost, ui_directory.c_str(),
-                                                 COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
-    }
-
+void register_handlers() {
     EventRegistrationToken token;
-    g_view->add_NavigationStarting(
+    g.view->add_NavigationStarting(
         Callback<ICoreWebView2NavigationStartingEventHandler>(
             [](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
-                PWSTR uri = nullptr;
-                args->get_Uri(&uri);
-                const std::wstring target = uri ? uri : L"";
-                CoTaskMemFree(uri);
+                const auto target = uri_of([&](PWSTR* uri) { return args->get_Uri(uri); });
                 if (!target.starts_with(kOrigin)) {
                     args->put_Cancel(TRUE);
-                    if (target.starts_with(L"https://"))
-                        ShellExecuteW(nullptr, L"open", target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                    open_external(target);
                 }
                 return S_OK;
             })
             .Get(),
         &token);
-
-    g_view->add_NewWindowRequested(
+    g.view->add_NewWindowRequested(
         Callback<ICoreWebView2NewWindowRequestedEventHandler>(
             [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
-                PWSTR uri = nullptr;
-                args->get_Uri(&uri);
-                const std::wstring target = uri ? uri : L"";
-                CoTaskMemFree(uri);
                 args->put_Handled(TRUE);
-                if (target.starts_with(L"https://"))
-                    ShellExecuteW(nullptr, L"open", target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                open_external(uri_of([&](PWSTR* uri) { return args->get_Uri(uri); }));
                 return S_OK;
             })
             .Get(),
         &token);
-
-    g_view->add_WebMessageReceived(
+    g.view->add_WebMessageReceived(
         Callback<ICoreWebView2WebMessageReceivedEventHandler>(
             [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
-                PWSTR source = nullptr;
-                args->get_Source(&source);
-                const bool trusted = source && std::wstring(source).starts_with(kOrigin);
-                CoTaskMemFree(source);
+                const auto source = uri_of([&](PWSTR* uri) { return args->get_Source(uri); });
                 PWSTR message = nullptr;
-                if (trusted && SUCCEEDED(args->TryGetWebMessageAsString(&message))) {
+                if (source.starts_with(kOrigin) && SUCCEEDED(args->TryGetWebMessageAsString(&message))) {
                     handle_message(to_utf8(message));
                     CoTaskMemFree(message);
                 }
@@ -244,38 +339,119 @@ HRESULT on_controller_ready(HWND window, HRESULT result, ICoreWebView2Controller
             })
             .Get(),
         &token);
+}
+
+HRESULT on_controller_ready(HRESULT result, ICoreWebView2Controller* controller) {
+    if (FAILED(result) || !controller) {
+        MessageBoxW(g.window, L"The WebView2 runtime could not be started.", L"Houseguest", MB_ICONERROR);
+        return result;
+    }
+    g.controller = controller;
+    g.controller->get_CoreWebView2(&g.view);
+    configure_settings();
+    apply_theme();
+
+    ComPtr<ICoreWebView2_3> view3;
+    if (SUCCEEDED(g.view.As(&view3))) {
+        const auto ui_directory = (executable_directory() / L"ui").wstring();
+        view3->SetVirtualHostNameToFolderMapping(kHost, ui_directory.c_str(),
+                                                 COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
+    }
+    register_handlers();
 
     RECT bounds;
-    GetClientRect(window, &bounds);
-    g_controller->put_Bounds(bounds);
-    g_view->Navigate((std::wstring(kOrigin) + L"index.html").c_str());
+    GetClientRect(g.window, &bounds);
+    g.controller->put_Bounds(bounds);
+    g.view->Navigate((std::wstring(kOrigin) + L"index.html").c_str());
     return S_OK;
 }
 
+void resize_view() {
+    if (!g.controller) return;
+    RECT bounds;
+    GetClientRect(g.window, &bounds);
+    g.controller->put_Bounds(bounds);
+}
+
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (g.taskbar_created != 0 && message == g.taskbar_created) {
+        g.tray->add();
+        refresh_tooltip();
+        return 0;
+    }
     switch (message) {
         case WM_SIZE:
-            if (g_controller) {
-                RECT bounds;
-                GetClientRect(window, &bounds);
-                g_controller->put_Bounds(bounds);
+            if (wparam == SIZE_MINIMIZED && g.settings.minimize_to_tray && !g.exiting) {
+                ShowWindow(window, SW_HIDE);
+                return 0;
             }
+            resize_view();
+            return 0;
+        case WM_EXITSIZEMOVE:
+            save_settings();
             return 0;
         case WM_GETMINMAXINFO: {
-            auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
-            const UINT dpi = GetDpiForWindow(window);
-            info->ptMinTrackSize = {MulDiv(900, dpi, 96), MulDiv(620, dpi, 96)};
+            const SIZE minimum = host::minimum_size(window);
+            reinterpret_cast<MINMAXINFO*>(lparam)->ptMinTrackSize = {minimum.cx, minimum.cy};
+            return 0;
+        }
+        case WM_DPICHANGED: {
+            const auto* suggested = reinterpret_cast<const RECT*>(lparam);
+            SetWindowPos(window, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
+                         suggested->bottom - suggested->top, SWP_NOZORDER | SWP_NOACTIVATE);
             return 0;
         }
         case WM_SETTINGCHANGE:
-            apply_title_bar_theme(window);
+            if (lparam != 0 &&
+                std::wstring_view(reinterpret_cast<const wchar_t*>(lparam)) == L"ImmersiveColorSet") {
+                apply_theme();
+            }
+            return 0;
+        case WM_TIMER:
+            if (wparam == kTooltipTimer) refresh_tooltip();
+            return 0;
+        case WM_CLOSE:
+            if (g.settings.minimize_to_tray && !g.exiting) {
+                save_settings();
+                ShowWindow(window, SW_HIDE);
+                if (!g.hint_shown) {
+                    g.hint_shown = true;
+                    g.tray->balloon(L"Houseguest", host::tray_hint_message(portuguese()), false);
+                }
+                return 0;
+            }
+            g.exiting = true;
+            DestroyWindow(window);
+            return 0;
+        case kTrayMessage:
+            switch (LOWORD(lparam)) {
+                case NIN_SELECT:
+                case NIN_KEYSELECT:
+                    show_window();
+                    break;
+                case WM_CONTEXTMENU:
+                    on_tray_menu();
+                    break;
+                default:
+                    break;
+            }
+            return 0;
+        case kStatusMessage:
+            on_status(std::unique_ptr<host::ServiceStatus>(reinterpret_cast<host::ServiceStatus*>(lparam)));
+            return 0;
+        case kShowMessage:
+            show_window();
             return 0;
         case kReplyMessage: {
             std::unique_ptr<std::wstring> text(reinterpret_cast<std::wstring*>(lparam));
-            if (g_view) g_view->PostWebMessageAsString(text->c_str());
+            if (g.view) g.view->PostWebMessageAsString(text->c_str());
             return 0;
         }
         case WM_DESTROY:
+            KillTimer(window, kTooltipTimer);
+            save_settings();
+            g.monitor.reset();
+            g.tray.reset();
             PostQuitMessage(0);
             return 0;
         default:
@@ -283,36 +459,35 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
     }
 }
 
-}  // namespace
-
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
-    HANDLE single =
-        CreateMutexW(nullptr, TRUE, is_elevated() ? L"Local\\HouseguestUI.elevated" : L"Local\\HouseguestUI");
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (HWND existing = FindWindowW(kWindowClass, nullptr)) SetForegroundWindow(existing);
-        return 0;
-    }
-    if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 1;
-
+HWND create_main_window(HINSTANCE instance, bool& maximized) {
     WNDCLASSEXW window_class{sizeof(window_class)};
     window_class.lpfnWndProc = window_proc;
     window_class.hInstance = instance;
     window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     window_class.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1));
-    window_class.hbrBackground =
-        CreateSolidBrush(system_uses_dark_theme() ? RGB(15, 20, 32) : RGB(250, 248, 244));
+    window_class.hIconSm = window_class.hIcon;
+    window_class.hbrBackground = CreateSolidBrush(dark_in_effect() ? RGB(15, 20, 32) : RGB(250, 248, 244));
     window_class.lpszClassName = kWindowClass;
     RegisterClassExW(&window_class);
 
-    const UINT dpi = GetDpiForSystem();
-    g_window =
-        CreateWindowExW(0, kWindowClass, L"Houseguest", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                        MulDiv(1180, dpi, 96), MulDiv(760, dpi, 96), nullptr, nullptr, instance, nullptr);
-    apply_title_bar_theme(g_window);
-    ShowWindow(g_window, show);
+    const auto initial = host::initial_window(g.settings.placement);
+    const RECT& r = initial.bounds;
+    HWND window = CreateWindowExW(0, kWindowClass, L"Houseguest", WS_OVERLAPPEDWINDOW, r.left, r.top,
+                                  r.right - r.left, r.bottom - r.top, nullptr, nullptr, instance, nullptr);
+    maximized = initial.maximized;
+    return window;
+}
 
-    const auto data_directory = user_data_directory();
-    std::filesystem::create_directories(data_directory);
+bool start_requested_hidden() {
+    int count = 0;
+    LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
+    bool hidden = false;
+    for (int i = 1; i < count; ++i) hidden = hidden || std::wstring_view(arguments[i]) == L"--tray";
+    LocalFree(arguments);
+    return hidden;
+}
+
+void create_webview(const std::filesystem::path& data_directory) {
     ICoreWebView2EnvironmentOptions* options = nullptr;
 #ifdef HOUSEGUEST_DEVTOOLS
     auto debug_options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
@@ -324,26 +499,59 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
                 if (FAILED(result) || !environment) {
-                    MessageBoxW(g_window, L"The WebView2 runtime is not installed.", L"Houseguest",
-                                MB_ICONERROR);
+                    host::offer_webview_runtime(g.window, portuguese());
                     return result;
                 }
                 return environment->CreateCoreWebView2Controller(
-                    g_window, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                    g.window, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                                   [](HRESULT r, ICoreWebView2Controller* controller) -> HRESULT {
-                                      return on_controller_ready(g_window, r, controller);
+                                      return on_controller_ready(r, controller);
                                   })
                                   .Get());
             })
             .Get());
+}
+
+}  // namespace
+
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+    HANDLE single = CreateMutexW(
+        nullptr, TRUE, host::is_elevated() ? L"Local\\HouseguestUI.elevated" : L"Local\\HouseguestUI");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (HWND existing = FindWindowW(kWindowClass, nullptr)) {
+            PostMessageW(existing, kShowMessage, 0, 0);
+            SetForegroundWindow(existing);
+        }
+        return 0;
+    }
+    if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 1;
+
+    g.settings = host::load_ui_settings();
+    bool maximized = false;
+    g.window = create_main_window(instance, maximized);
+    g.taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");
+    g.tray = std::make_unique<host::Tray>(g.window, kTrayMessage);
+    g.tray->add();
+    apply_theme();
+
+    if (!host::webview_runtime_installed()) host::offer_webview_runtime(g.window, portuguese());
+
+    const bool hidden = start_requested_hidden();
+    if (!hidden) ShowWindow(g.window, maximized ? SW_SHOWMAXIMIZED : SW_SHOW);
+
+    const auto data_directory = user_data_directory();
+    std::filesystem::create_directories(data_directory);
+    create_webview(data_directory);
+    g.monitor = std::make_unique<host::ServiceMonitor>(g.window, kStatusMessage);
+    SetTimer(g.window, kTooltipTimer, kTooltipInterval, nullptr);
 
     MSG message;
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
-    g_view.Reset();
-    g_controller.Reset();
+    g.view.Reset();
+    g.controller.Reset();
     CoUninitialize();
     CloseHandle(single);
     return static_cast<int>(message.wParam);

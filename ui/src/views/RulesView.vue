@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import EmptyState from '../components/EmptyState.vue';
+import PageHeader from '../components/PageHeader.vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { call } from '../api';
@@ -75,14 +77,13 @@ const setAction = (action: Action) => editing.value && (editing.value.action = a
 
 <template>
   <div class="page">
-    <div class="page-head">
-      <div class="grow"><h1>{{ t('Rules') }}</h1><p>{{ t('Higher priority wins. At equal priority, Block wins over Allow.') }}</p></div>
+    <PageHeader :title="t('Rules')" :subtitle="t('Higher priority wins. At equal priority, Block wins over Allow.')">
       <select v-model="app.ruleProfileId" class="select" style="width: 220px" :aria-label="t('Profile')">
-        <option v-for="p in app.profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+      <option v-for="p in app.profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
-    </div>
+    </PageHeader>
 
-    <div v-if="!draft" class="card empty"><Icon name="rules" />{{ t('Create a profile first.') }}</div>
+    <EmptyState v-if="!draft" icon="rules" :text="t('Create a profile first.')" />
     <template v-else>
       <div class="card row wrap">
         <div class="grow"><h2>{{ t('Default for anything not listed') }}</h2><p class="muted">{{ t('Essential Windows components are always allowed so the computer stays usable.') }}</p></div>
@@ -98,7 +99,7 @@ const setAction = (action: Action) => editing.value && (editing.value.action = a
         <button class="btn primary" @click="edit()"><Icon name="plus" />{{ t('Add rule') }}</button>
       </div>
 
-      <div v-if="!rules.length" class="card empty"><Icon name="rules" />{{ t('No rules yet. Add one, or pick an app from Applications.') }}</div>
+      <EmptyState v-if="!rules.length" icon="rules" :text="t('No rules yet. Add one, or pick an app from Applications.')" />
       <div v-else class="table-wrap">
         <table>
           <thead><tr><th>{{ t('Action') }}</th><th>{{ t('Match') }}</th><th>{{ t('Priority') }}</th><th /></tr></thead>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue';
 import { onMounted, ref } from 'vue';
 
 import { call } from '../api';
@@ -53,7 +54,7 @@ const limits = [
 
 <template>
   <div class="page">
-    <div class="page-head"><div class="grow"><h1>{{ t('Security') }}</h1><p>{{ t('What Houseguest protects, what it does not, and how to keep it healthy.') }}</p></div></div>
+    <PageHeader :title="t('Security')" :subtitle="t('What Houseguest protects, what it does not, and how to keep it healthy.')" />
 
     <div class="grid cols-2" style="align-items: start">
       <div class="card stack">

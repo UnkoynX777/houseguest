@@ -4,7 +4,7 @@ import { computed, onMounted, type Component } from 'vue';
 import Icon from './components/Icon.vue';
 import Mark from './components/Mark.vue';
 import { t } from './i18n';
-import { app, boot, toasts, unlocked, type Route } from './store';
+import { app, boot, formatDuration, remaining, toasts, unlocked, type Route } from './store';
 import AboutView from './views/AboutView.vue';
 import AppsView from './views/AppsView.vue';
 import DashboardView from './views/DashboardView.vue';
@@ -23,18 +23,32 @@ const views: Record<Route, Component> = {
   history: HistoryView, security: SecurityView, settings: SettingsView, diagnostics: DiagnosticsView, about: AboutView,
 };
 
-const items = computed<{ route: Route; label: string }[]>(() => [
-  { route: 'dashboard', label: t('Dashboard') },
-  { route: 'sessions', label: t('Sessions') },
-  { route: 'apps', label: t('Applications') },
-  { route: 'profiles', label: t('Profiles') },
-  { route: 'rules', label: t('Rules') },
-  { route: 'history', label: t('History') },
-  { route: 'security', label: t('Security') },
-  { route: 'diagnostics', label: t('Diagnostics') },
+const groups = computed<{ route: Route; label: string }[][]>(() => [
+  [
+    { route: 'dashboard', label: t('Dashboard') },
+    { route: 'sessions', label: t('Sessions') },
+  ],
+  [
+    { route: 'apps', label: t('Applications') },
+    { route: 'profiles', label: t('Profiles') },
+    { route: 'rules', label: t('Rules') },
+  ],
+  [
+    { route: 'history', label: t('History') },
+    { route: 'security', label: t('Security') },
+    { route: 'diagnostics', label: t('Diagnostics') },
+  ],
+]);
+
+const footer = computed<{ route: Route; label: string }[]>(() => [
   { route: 'settings', label: t('Settings') },
   { route: 'about', label: t('About') },
 ]);
+
+const protection = computed(() => {
+  if (!app.status?.armed) return { active: false, text: t('No active session') };
+  return { active: true, text: t('Protection active') + ' · ' + formatDuration(remaining.value) };
+});
 
 onMounted(boot);
 </script>
@@ -45,11 +59,20 @@ onMounted(boot);
   <div v-else class="shell">
     <nav class="sidebar" :aria-label="t('Main navigation')">
       <div class="brand"><Mark /><span>Houseguest</span></div>
-      <button v-for="item in items" :key="item.route" class="nav" :aria-current="app.route === item.route ? 'page' : undefined" @click="app.route = item.route">
+      <template v-for="(group, index) in groups" :key="index">
+        <div v-if="index > 0" class="nav-divider" />
+        <button v-for="item in group" :key="item.route" class="nav" :title="item.label" :aria-current="app.route === item.route ? 'page' : undefined" @click="app.route = item.route">
+          <Icon :name="item.route" /><span>{{ item.label }}</span>
+        </button>
+      </template>
+      <div class="spacer" />
+      <button class="side-status" :class="{ active: protection.active }" :title="protection.text" @click="app.route = 'dashboard'">
+        <span class="dot" /><span>{{ protection.text }}</span>
+      </button>
+      <button v-for="item in footer" :key="item.route" class="nav" :title="item.label" :aria-current="app.route === item.route ? 'page' : undefined" @click="app.route = item.route">
         <Icon :name="item.route" /><span>{{ item.label }}</span>
       </button>
-      <div class="spacer" />
-      <button class="nav" @click="lockNow"><Icon name="lock" /><span>{{ t('Lock') }}</span></button>
+      <button class="nav" :title="t('Lock')" @click="lockNow"><Icon name="lock" /><span>{{ t('Lock') }}</span></button>
     </nav>
     <main class="main"><component :is="views[app.route]" :key="app.route" /></main>
   </div>

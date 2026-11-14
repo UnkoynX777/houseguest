@@ -1,6 +1,6 @@
 import { computed, reactive, ref, watch } from 'vue';
 
-import { ApiError, auth, call, host } from './api';
+import { ApiError, auth, call, host, onHostEvent } from './api';
 import { lang, t } from './i18n';
 import type { Profile, Status } from './types';
 
@@ -9,6 +9,12 @@ export type Route =
   | 'security' | 'settings' | 'diagnostics' | 'about';
 
 export type Theme = 'system' | 'light' | 'dark';
+
+export interface HostPrefs {
+  minimize_to_tray: boolean;
+  start_with_windows: boolean;
+  theme?: Theme;
+}
 
 export interface Toast {
   id: number;
@@ -26,6 +32,7 @@ export const app = reactive({
   ruleProfileId: '',
   clock: Date.now(),
   theme: 'system' as Theme,
+  prefs: { minimize_to_tray: true, start_with_windows: false } as HostPrefs,
 });
 
 export const toasts = ref<Toast[]>([]);
@@ -98,7 +105,7 @@ export function randomId(prefix: string): string {
   return prefix + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export function applyTheme(theme: Theme) {
+function showTheme(theme: Theme) {
   app.theme = theme;
   if (theme === 'system') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.dataset.theme = theme;
@@ -109,16 +116,31 @@ export function applyTheme(theme: Theme) {
   }
 }
 
+export async function applyTheme(theme: Theme) {
+  showTheme(theme);
+  await host('set_prefs', { theme }).catch(() => undefined);
+}
+
+export async function setPrefs(change: Partial<HostPrefs>) {
+  app.prefs = { ...app.prefs, ...(await host<HostPrefs>('set_prefs', change)) };
+}
+
+async function loadPrefs() {
+  const prefs = await host<HostPrefs>('get_prefs').catch(() => undefined);
+  if (!prefs) return;
+  app.prefs = prefs;
+  if (prefs.theme) showTheme(prefs.theme);
+}
+
 export async function boot() {
-  try {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'light' || saved === 'dark') applyTheme(saved);
-  } catch {
-    /* storage can be unavailable */
-  }
+  onHostEvent((event) => {
+    if (event.event === 'navigate' && unlocked.value) app.route = event.route as Route;
+    if (event.event === 'prefs') app.prefs = event.prefs as HostPrefs;
+  });
   try {
     app.elevated = (await host<{ elevated: boolean }>('info')).elevated;
-    await refreshStatus();
+    await Promise.all([refreshStatus(), loadPrefs()]);
+    host('set_prefs', { language: lang.value }).catch(() => undefined);
   } catch (error) {
     notify('bad', describe(error));
   }

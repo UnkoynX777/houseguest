@@ -21,8 +21,19 @@ const bridge = (window as unknown as { chrome?: { webview?: Bridge } }).chrome?.
 const pending = new Map<number, { resolve: (value: any) => void; reject: (error: ApiError) => void }>();
 let sequence = 0;
 
+type HostEvent = { event: string; [key: string]: unknown };
+const listeners = new Set<(event: HostEvent) => void>();
+
+export function onHostEvent(listener: (event: HostEvent) => void) {
+  listeners.add(listener);
+}
+
 bridge?.addEventListener('message', (event) => {
   const reply = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+  if (typeof reply.event === 'string') {
+    listeners.forEach((listener) => listener(reply));
+    return;
+  }
   const waiter = pending.get(reply.id);
   if (!waiter) return;
   pending.delete(reply.id);

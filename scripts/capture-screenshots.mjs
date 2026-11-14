@@ -57,6 +57,41 @@ const nav = async (label, marker) => {
   await waitFor(marker, label);
 };
 const theme = (value) => evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(value)}`);
+const labels = ['Dashboard', 'Sessions', 'Applications', 'Profiles', 'Rules', 'History', 'Security', 'Diagnostics', 'Settings', 'About'];
+const clipped = () =>
+  evaluate(`(() => {
+    const width = window.innerWidth;
+    const horizontal = document.documentElement.scrollWidth > width + 1;
+    const cut = [...document.querySelectorAll('.main *')].filter((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return false;
+      let parent = el.parentElement;
+      while (parent && parent !== document.body) {
+        const overflow = getComputedStyle(parent).overflowX;
+        if (overflow === 'auto' || overflow === 'hidden' || overflow === 'scroll') return false;
+        parent = parent.parentElement;
+      }
+      return r.right > width + 1;
+    }).length;
+    return { horizontal, cut };
+  })()`);
+const review = process.env.REVIEW_DIR;
+const sweep = async (width, height) => {
+  await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+  await sleep(300);
+  for (const label of labels) {
+    const index = labels.indexOf(label);
+    await evaluate(`document.querySelectorAll('.nav')[${index}].click()`);
+    await sleep(450);
+    const result = await clipped();
+    check(`${label} fits ${width}x${height}`, !result.horizontal && result.cut === 0);
+    if (review) {
+      const { data } = await send('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(join(review, `${width}x${height}-${label}.png`), Buffer.from(data, 'base64'));
+    }
+  }
+  await send('Emulation.clearDeviceMetricsOverride');
+};
 const checks = [];
 const check = (name, ok) => {
   checks.push({ name, ok });
@@ -124,6 +159,9 @@ await nav('Diagnostics', "document.querySelector('.table-wrap tr')");
 check('diagnostics reports process monitoring running', await evaluate("document.body.textContent.includes('Process monitoring')"));
 await shot('diagnostics');
 
+if (process.env.SWEEP) {
+  for (const [w, h] of [[760, 480], [900, 560], [1240, 800]]) await sweep(w, h);
+}
 await evaluate("localStorage.clear()");
 await clickText('Settings', '.nav');
 await waitFor("document.querySelector('.seg')", 'settings');
