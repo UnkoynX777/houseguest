@@ -310,11 +310,20 @@ void Controller::register_app_commands() {
         "apps.library", Access::Owner,
         [this](Who, Args args) {
             core::Profile profile;
+            std::uint64_t revision = 0;
             {
                 std::scoped_lock lock(mutex_);
+                revision = store_.revision();
                 profile = find_profile(require_text(args, "profile_id"));
             }
-            const auto compiled = compile(profile, {}, {}, false);
+            std::scoped_lock cache_lock(library_mutex_);
+            auto& cache = library_cache_[profile.id];
+            if (cache.revision != revision || !cache.compiled) {
+                cache = ProfileCache{};
+                cache.revision = revision;
+                cache.compiled = std::make_shared<const Compiled>(compile(profile, {}, {}, false));
+            }
+            const auto& compiled = *cache.compiled;
             const auto recent = blocks(500);
             std::map<std::string, std::uint64_t> blocked_by_path;
             for (const auto& block : recent) ++blocked_by_path[core::normalize_path(block.value("path", ""))];
@@ -337,7 +346,8 @@ void Controller::register_app_commands() {
             {
                 std::scoped_lock lock(mutex_);
                 for (const auto& entry : store_.state.manual_apps)
-                    manual.insert(system::normalize_app_key(system::path_from_utf8(entry.path)));
+                    manual.insert(core::normalize_path(
+                        system::normalize_app_key(system::path_from_utf8(entry.path))));
             }
             Json list = Json::array();
             std::size_t allowed = 0, blocked = 0;
@@ -345,9 +355,8 @@ void Controller::register_app_commands() {
                 Json row = to_json(installed);
                 const auto seen = view.first_seen.find(installed.id);
                 row["first_seen"] = seen == view.first_seen.end() ? 0 : seen->second;
-                const auto file = system::path_from_utf8(installed.path);
-                const auto app_key = installed.path.empty() ? std::string{} : system::normalize_app_key(file);
-                row["manual"] = !app_key.empty() && manual.contains(app_key);
+                const auto key = core::normalize_path(installed.path);
+                row["manual"] = !installed.path.empty() && manual.contains(key);
                 if (installed.path.empty()) {
                     row.update(Json{{"status", "unresolved"},
                                     {"via", ""},
@@ -358,10 +367,21 @@ void Controller::register_app_commands() {
                     list.push_back(std::move(row));
                     continue;
                 }
-                const auto decision = decide_file(*compiled.policy, file, installed.package_family, {});
+                const auto cached_key = key + '|' + installed.package_family;
+                auto& remembered = cache.decisions[cached_key];
+                if (remembered.size == installed.size && remembered.modified == installed.modified &&
+                    !remembered.decision.reason.empty()) {
+                    ++library_hits_;
+                } else {
+                    ++library_misses_;
+                    remembered.decision = decide_file(*compiled.policy, system::path_from_utf8(installed.path),
+                                                      installed.package_family, {});
+                    remembered.size = installed.size;
+                    remembered.modified = installed.modified;
+                }
+                const auto& decision = remembered.decision;
                 const bool allow = decision.action == core::Action::Allow;
                 if (installed.role == system::AppRole::Application) (allow ? allowed : blocked)++;
-                const auto key = core::normalize_path(installed.path);
                 row.update(Json{{"status", allow ? "allowed" : "blocked"},
                                 {"via", core::source_name(decision.source)},
                                 {"reason", decision.reason},
@@ -383,6 +403,13 @@ void Controller::register_app_commands() {
                     break;
                 }
                 list.push_back(std::move(row));
+            }
+            if (cache.decisions.size() > view.apps.size() * 2 + 64) {
+                std::erase_if(cache.decisions, [&](const auto& item) {
+                    return std::ranges::none_of(view.apps, [&](const system::InstalledApp& app) {
+                        return item.first == core::normalize_path(app.path) + '|' + app.package_family;
+                    });
+                });
             }
             return Json{{"apps", std::move(list)},
                         {"allowed", allowed},

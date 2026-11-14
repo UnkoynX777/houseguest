@@ -79,6 +79,8 @@ void Controller::register_system_commands() {
                      }()},
                     {"audit_chain_valid", audit_->verify_chain()},
                     {"ipc", ipc_stats_ ? ipc_stats_() : Json::object()},
+                    {"commands", command_stats_json()},
+                    {"caches", caches_json()},
                     {"state", load_result_ == LoadResult::Loaded      ? "loaded"
                               : load_result_ == LoadResult::Fresh     ? "fresh"
                               : load_result_ == LoadResult::Recovered ? "recovered"

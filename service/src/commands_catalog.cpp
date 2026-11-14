@@ -276,6 +276,7 @@ void Controller::register_catalog_commands() {
                         {"scanning", view.scanning},
                         {"deep", view.deep},
                         {"updated_at", view.updated_at},
+                        {"scan_ms", view.scan_ms},
                         {"total", view.apps.size()},
                         {"resolved", resolved},
                         {"candidates", candidates},

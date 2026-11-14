@@ -303,7 +303,9 @@ void AppCatalog::scan(system::CatalogRequest request) {
     };
     const auto signature = volume_signature(request.include_removable);
 
+    const auto started = std::chrono::steady_clock::now();
     auto catalog = system::discover_catalog(request);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
     std::scoped_lock lock(mutex_);
     if (catalog.cancelled) {
         view_.apps = committed_;
@@ -317,6 +319,7 @@ void AppCatalog::scan(system::CatalogRequest request) {
         std::erase_if(view_.first_seen, [&](const auto& entry) { return !live.contains(entry.first); });
         view_.apps = std::move(catalog.apps);
         view_.updated_at = stamp;
+        view_.scan_ms = elapsed.count();
         view_.sources = std::move(catalog.sources);
         view_.volumes = std::move(catalog.volumes);
         view_.discarded = std::move(catalog.discarded);

@@ -27,6 +27,7 @@ namespace {
 
 constexpr std::size_t kMaxEntries = 8000;
 constexpr std::size_t kMaxEvidence = 10;
+constexpr auto kProgressInterval = std::chrono::milliseconds(750);
 constexpr std::size_t kMaxCandidates = 6;
 constexpr std::size_t kMaxDiscardLog = 300;
 constexpr int kConfidentScore = 45;
@@ -44,6 +45,7 @@ struct Entry {
     std::vector<std::pair<fs::path, int>> executables;
     std::vector<FileEntry> known;
     std::string product_key;
+    std::string exe_key;
 };
 
 void add_unique(std::vector<std::string>& list, const std::string& value) {
@@ -92,8 +94,7 @@ public:
             stats.found(claim.source);
             std::ranges::sort(claim.executables,
                               [](const auto& a, const auto& b) { return a.second > b.second; });
-            if (std::ranges::any_of(claim.executables,
-                                    [](const auto& item) { return usable_executable(item.first); }))
+            if (std::ranges::any_of(claim.executables, [&](const auto& item) { return usable(item.first); }))
                 with_exe.push_back(&claim);
             else if (!claim.root.empty())
                 rooted.push_back(&claim);
@@ -117,12 +118,12 @@ private:
     void place_explicit(Claim& claim, Stats stats) {
         fs::path exe;
         for (const auto& [file, weight] : claim.executables) {
-            if (usable_executable(file)) {
+            if (usable(file)) {
                 exe = file;
                 break;
             }
         }
-        const auto key = "exe:" + canonical_key(exe);
+        const auto key = "exe:" + key_of(exe);
         if (const auto it = by_key_.find(key); it != by_key_.end()) {
             merge(entries[it->second], claim);
             stats.merged(claim.source);
@@ -132,12 +133,13 @@ private:
         Entry entry;
         entry.key = key;
         entry.has_exe = true;
+        entry.exe_key = key.substr(4);
         entry.app.path = path_to_utf8(exe);
         create(std::move(entry), claim, claim.root.empty() ? exe.parent_path() : claim.root);
     }
 
     void place_rooted(Claim& claim, Stats stats) {
-        const auto root_key = canonical_key(claim.root);
+        const auto root_key = key_of(claim.root);
         if (const auto product = product_key_of(claim.platform, claim.product_id); !product.empty()) {
             if (const auto it = by_product_.find(product); it != by_product_.end()) {
                 merge(entries[it->second], claim);
@@ -153,7 +155,7 @@ private:
         std::size_t best = entries.size();
         for (std::size_t i = 0; i < entries.size(); ++i) {
             if (!entries[i].has_exe ||
-                !key_inside(root_key, canonical_key(path_from_utf8(entries[i].app.path))))
+                !key_inside(root_key, entries[i].exe_key))
                 continue;
             if (best == entries.size() || entries[i].app.evidence.size() > entries[best].app.evidence.size())
                 best = i;
@@ -171,7 +173,7 @@ private:
 
     void create(Entry entry, Claim& claim, const fs::path& root) {
         entry.root = root;
-        entry.root_key = canonical_key(root);
+        entry.root_key = key_of(root);
         entry.app.install_dir = path_to_utf8(root);
         entry.app.kind = claim.kind;
         index(entries.size(), entry.key, product_key_of(claim.platform, claim.product_id));
@@ -209,7 +211,7 @@ private:
         if (kind_rank(claim.kind) > kind_rank(entry.app.kind)) entry.app.kind = claim.kind;
         entry.user_facing = entry.user_facing || claim.user_facing;
         if (!claim.root.empty()) {
-            const auto root_key = canonical_key(claim.root);
+            const auto root_key = key_of(claim.root);
             if (entry.root.empty() || key_inside(root_key, entry.root_key)) {
                 entry.root = claim.root;
                 entry.root_key = root_key;
@@ -222,8 +224,24 @@ private:
         }
     }
 
+    // Resolving a path to its canonical form and checking that a file exists both touch the disk, and the same
+    // few hundred paths are asked about by many claims, so each answer is looked up once per build.
+    const std::string& key_of(const fs::path& path) {
+        auto [it, inserted] = keys_.try_emplace(path.native());
+        if (inserted) it->second = canonical_key(path);
+        return it->second;
+    }
+
+    bool usable(const fs::path& file) {
+        auto [it, inserted] = usable_.try_emplace(file.native(), false);
+        if (inserted) it->second = usable_executable(file);
+        return it->second;
+    }
+
     std::unordered_map<std::string, std::size_t> by_key_;
     std::unordered_map<std::string, std::size_t> by_product_;
+    std::unordered_map<std::wstring, std::string> keys_;
+    std::unordered_map<std::wstring, bool> usable_;
 };
 
 struct ResolveContext {
@@ -705,6 +723,7 @@ Catalog discover_catalog(const CatalogRequest& request) {
     std::vector<Discarded> discarded;
     std::map<std::string, SourceReport> reports;
     std::vector<std::string> order;
+    auto last_progress = std::chrono::steady_clock::now() - kProgressInterval;
 
     for (const auto& provider : providers()) {
         if (provider.deep_only && !request.deep_scan) continue;
@@ -733,7 +752,8 @@ Catalog discover_catalog(const CatalogRequest& request) {
         order.push_back(provider.name);
         for (auto& claim : context.claims) claims.push_back(std::move(claim));
         for (auto& entry : context.discarded) discarded.push_back(std::move(entry));
-        if (request.progress) {
+        if (request.progress && std::chrono::steady_clock::now() - last_progress >= kProgressInterval) {
+            last_progress = std::chrono::steady_clock::now();
             std::vector<Claim> provisional = claims;
             std::map<std::string, SourceReport> scratch;
             Builder builder;

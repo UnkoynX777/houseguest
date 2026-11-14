@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -76,6 +77,10 @@ public:
 
     State state;
 
+    // Increases whenever the persisted state is written or replaced, so anything derived from it can tell
+    // whether it was computed from the current policy.
+    [[nodiscard]] std::uint64_t revision() const { return revision_.load(); }
+
     const std::filesystem::path& directory() const { return directory_; }
     [[nodiscard]] system::Bytes derive_key(const std::string& label) const;
 
@@ -84,6 +89,7 @@ private:
 
     std::filesystem::path directory_;
     system::Bytes mac_key_;
+    std::atomic<std::uint64_t> revision_{1};
 };
 
 State state_from_json(const core::Json& json);

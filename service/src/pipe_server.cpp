@@ -384,6 +384,7 @@ void PipeServer::serve(void* raw, const std::string& peer) {
         }
 
         core::Json reply;
+        core::Json parsed;
         if (!bucket.take()) {
             ++rate_limited_;
             reply = error_reply("rate_limited", "Too many requests.");
@@ -397,10 +398,14 @@ void PipeServer::serve(void* raw, const std::string& peer) {
                 ++malformed_;
                 reply = error_reply("bad_request", "Malformed JSON.");
             } else {
+                parsed = request;
                 reply = controller_.handle(*caller, request);
             }
         }
-        if (!write_message(pipe.get(), event.get(), stop, reply.dump())) break;
+        const auto encoding_started = std::chrono::steady_clock::now();
+        const auto encoded = reply.dump();
+        controller_.note_reply(parsed, encoded.size(), std::chrono::steady_clock::now() - encoding_started);
+        if (!write_message(pipe.get(), event.get(), stop, encoded)) break;
     }
 
     if (pipe.get() != INVALID_HANDLE_VALUE) DisconnectNamedPipe(pipe.get());

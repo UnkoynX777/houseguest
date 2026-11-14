@@ -6,6 +6,7 @@
 
 #include "houseguest/core/analysis.hpp"
 #include "houseguest/core/glob.hpp"
+#include "houseguest/core/protection.hpp"
 #include "houseguest/system/accounts.hpp"
 #include "houseguest/system/capabilities.hpp"
 #include "houseguest/system/crypto.hpp"
@@ -421,6 +422,21 @@ void Controller::remember_review(const Denial& denial) {
     reviews_.emplace(review.id, std::move(review));
 }
 
+namespace {
+
+bool unclassified_windows_component(const Denial& denial) {
+    static const std::string root = [] {
+        wchar_t buffer[MAX_PATH] = {};
+        GetWindowsDirectoryW(buffer, MAX_PATH);
+        return core::normalize_path(system::path_to_utf8(buffer)) + "/";
+    }();
+    return core::is_windows_signer(denial.app.publisher) &&
+           core::normalize_path(denial.app.path).starts_with(root) &&
+           denial.decision.source != core::DecisionSource::Rule;
+}
+
+}  // namespace
+
 void Controller::on_denial(const Denial& denial) {
     const auto& decision = denial.decision;
     const auto file = system::path_from_utf8(denial.app.path).filename();
@@ -466,7 +482,8 @@ void Controller::on_denial(const Denial& denial) {
                     {"note", decision.note},
                     {"related_app", decision.review_app},
                     {"parent", denial.parent_path},
-                    {"recommendation", recommendation}});
+                    {"recommendation", recommendation},
+                    {"windows_component", unclassified_windows_component(denial)}});
 
     if (!denial.enforced || denial.session_id == 0) return;
     const auto notice_key = decision.review_app.empty() ? denial.app.path : "app|" + decision.review_app;
@@ -698,6 +715,7 @@ Json Controller::handle(const Caller& caller, const Json& request) {
             request.contains("args") && request["args"].is_object() ? request["args"] : Json::object();
 
         Json data;
+        const auto started = std::chrono::steady_clock::now();
         auto execute = [&] {
             if (entry.access == Access::Elevated && !caller.elevated) {
                 throw Failure("forbidden", "Administrator elevation is required.");
@@ -710,6 +728,16 @@ Json Controller::handle(const Caller& caller, const Json& request) {
         } else {
             std::scoped_lock lock(mutex_);
             data = execute();
+        }
+        {
+            const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                                     std::chrono::steady_clock::now() - started)
+                                     .count();
+            std::scoped_lock lock(stats_mutex_);
+            auto& stat = command_stats_[command];
+            ++stat.count;
+            stat.run_us += static_cast<std::uint64_t>(elapsed);
+            stat.run_max_us = std::max(stat.run_max_us, static_cast<std::uint64_t>(elapsed));
         }
         return {{"id", id}, {"ok", true}, {"data", std::move(data)}};
     } catch (const Failure& failure) {
@@ -732,6 +760,50 @@ Json Controller::handle(const Caller& caller, const Json& request) {
             {"ok", false},
             {"error", {{"code", "internal"}, {"message", "Internal error."}, {"details", Json::object()}}}};
     }
+}
+
+void Controller::note_reply(const Json& request, std::size_t bytes, std::chrono::steady_clock::duration encoding) {
+    if (!request.is_object() || !request.contains("cmd") || !request["cmd"].is_string()) return;
+    std::scoped_lock lock(stats_mutex_);
+    const auto found = command_stats_.find(request["cmd"].get<std::string>());
+    if (found == command_stats_.end()) return;
+    auto& stat = found->second;
+    stat.encode_us += static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(encoding).count());
+    stat.bytes += bytes;
+    stat.bytes_max = std::max<std::uint64_t>(stat.bytes_max, bytes);
+}
+
+Json Controller::caches_json() {
+    const auto hits = library_hits_.load();
+    const auto misses = library_misses_.load();
+    std::scoped_lock lock(library_mutex_);
+    std::size_t decisions = 0;
+    for (const auto& [id, cache] : library_cache_) decisions += cache.decisions.size();
+    return Json{{"library",
+                 {{"hits", hits},
+                  {"misses", misses},
+                  {"hit_rate", hits + misses == 0 ? 0.0 : static_cast<double>(hits) / static_cast<double>(hits + misses)},
+                  {"profiles", library_cache_.size()},
+                  {"decisions", decisions},
+                  {"revision", store_.revision()}}}};
+}
+
+Json Controller::command_stats_json() {
+    Json rows = Json::array();
+    std::scoped_lock lock(stats_mutex_);
+    for (const auto& [name, stat] : command_stats_) {
+        if (stat.count == 0) continue;
+        const auto n = static_cast<double>(stat.count);
+        rows.push_back({{"cmd", name},
+                        {"count", stat.count},
+                        {"run_avg_ms", static_cast<double>(stat.run_us) / n / 1000.0},
+                        {"run_max_ms", static_cast<double>(stat.run_max_us) / 1000.0},
+                        {"encode_avg_ms", static_cast<double>(stat.encode_us) / n / 1000.0},
+                        {"bytes_avg", static_cast<double>(stat.bytes) / n},
+                        {"bytes_max", stat.bytes_max}});
+    }
+    return rows;
 }
 
 void Controller::add(const char* name, Access access, std::function<Json(const Caller&, const Json&)> run,

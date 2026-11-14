@@ -37,6 +37,7 @@ public:
     core::Json handle(const Caller& caller, const core::Json& request);
     void shutdown();
     void set_ipc_stats(std::function<core::Json()> provider);
+    void note_reply(const core::Json& request, std::size_t bytes, std::chrono::steady_clock::duration encoding);
 
 private:
     enum class Access { Anyone, Elevated, Owner };
@@ -137,6 +138,36 @@ private:
     std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::uint64_t>>
         failure_notice_;
     std::function<core::Json()> ipc_stats_;
+    struct CommandStat {
+        std::uint64_t count = 0;
+        std::uint64_t run_us = 0;
+        std::uint64_t run_max_us = 0;
+        std::uint64_t encode_us = 0;
+        std::uint64_t bytes = 0;
+        std::uint64_t bytes_max = 0;
+    };
+    std::mutex stats_mutex_;
+    std::map<std::string, CommandStat> command_stats_;
+
+    // Presentation cache for the library: the compiled profile and the decision for each listed program, valid
+    // for one revision of the stored policy and for the file's size and write time. It never feeds enforcement;
+    // the supervisor evaluates against the policy it was handed and re-evaluates when that policy is replaced.
+    struct CachedDecision {
+        std::int64_t size = 0;
+        std::int64_t modified = 0;
+        core::Decision decision;
+    };
+    struct ProfileCache {
+        std::uint64_t revision = 0;
+        std::shared_ptr<const Compiled> compiled;
+        std::unordered_map<std::string, CachedDecision> decisions;
+    };
+    std::mutex library_mutex_;
+    std::map<std::string, ProfileCache> library_cache_;
+    std::atomic<std::uint64_t> library_hits_{0};
+    std::atomic<std::uint64_t> library_misses_{0};
+    [[nodiscard]] core::Json command_stats_json();
+    [[nodiscard]] core::Json caches_json();
     unsigned end_attempts_ = 0;
     bool live_ = true;
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_notice_;

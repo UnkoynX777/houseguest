@@ -22,6 +22,7 @@ struct CatalogView {
     bool scanning = false;
     bool deep = false;
     std::int64_t updated_at = 0;
+    std::int64_t scan_ms = 0;
     std::uint64_t generation = 0;
 };
 

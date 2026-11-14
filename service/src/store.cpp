@@ -208,6 +208,7 @@ LoadResult Store::load() {
 
     if (auto loaded = read_verified(primary)) {
         state = std::move(*loaded);
+        revision_.fetch_add(1);
         return LoadResult::Loaded;
     }
     std::error_code ec;
@@ -216,6 +217,7 @@ LoadResult Store::load() {
     }
     if (auto loaded = read_verified(previous)) {
         state = std::move(*loaded);
+        revision_.fetch_add(1);
         return LoadResult::Recovered;
     }
     return LoadResult::Tampered;
@@ -231,6 +233,7 @@ void Store::save() {
     const auto payload = state_to_json(state);
     const core::Json envelope{{"state", payload}, {"mac", mac_of(mac_key_, payload.dump())}};
     write_durably(primary, envelope.dump(2));
+    revision_.fetch_add(1);
 }
 
 std::filesystem::path Store::create_backup() {
@@ -268,6 +271,7 @@ bool Store::restore_backup(const std::string& name) {
     auto restored = read_verified(file);
     if (!restored) return false;
     state = std::move(*restored);
+    revision_.fetch_add(1);
     return true;
 }
 
