@@ -55,3 +55,54 @@ jobs:
         run: cmake --build build
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  static-analysis:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+      - name: clang-tidy
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem core/src, system/src, service/src, host -Include *.cpp -Recurse | Where-Object { $_.FullName -notmatch 'webview2|tests' }
+          clang-tidy -p build --quiet --warnings-as-errors='*' --extra-arg=-Wno-missing-field-initializers --header-filter='(core|system|service|host|cli)/.*' $files.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  sanitizers:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      - name: Configure with AddressSanitizer and fuzz targets
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DHOUSEGUEST_FUZZ=ON
+      - name: Build
+        run: cmake --build build
+      - name: Unit tests under AddressSanitizer
+        run: ctest --test-dir build --output-on-failure
+      - name: Fuzz smoke run
+        shell: pwsh
+        run: ./scripts/fuzz.ps1 -Seconds 30 -Build build
+
+  dependencies:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+      - name: Audit interface dependencies
+        working-directory: ui
+        run: npm audit --audit-level=moderate
+      - name: Review new dependencies
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate

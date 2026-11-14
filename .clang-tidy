@@ -6,6 +6,7 @@ Checks: >
   -bugprone-empty-catch,
   performance-*,
   -performance-enum-size,
+  -performance-no-int-to-ptr,
   modernize-use-nullptr,
   modernize-use-override,
   modernize-use-using,

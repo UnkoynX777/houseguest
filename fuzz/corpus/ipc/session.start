@@ -1,0 +1,1 @@
+3{"id":1,"cmd":"session.start","args":{"profile_id":"p-1","guest_sids":["S-1-5-21-1-2-3-1002"],"duration_minutes":30}}

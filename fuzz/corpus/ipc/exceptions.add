@@ -1,0 +1,1 @@
+3{"id":1,"cmd":"exceptions.add","args":{"app":{"path":"c:/x.exe"},"minutes":5}}

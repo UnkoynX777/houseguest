@@ -1,0 +1,1 @@
+{"id":"x","name":"x","default_action":"allow","rules":[{"id":"a","action":"deny","priority":-5,"match":{"type":"path","value":"relative/**/**/**/**/**"}}]}

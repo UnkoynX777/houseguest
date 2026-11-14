@@ -18,7 +18,7 @@ using core::Json;
 using Microsoft::WRL::ComPtr;
 using system::to_wide;
 
-constexpr std::size_t kMaxFileBytes = 2 * 1024 * 1024;
+constexpr std::size_t kMaxFileBytes = std::size_t{2} * 1024 * 1024;
 constexpr wchar_t kRuntimePage[] = L"https://developer.microsoft.com/microsoft-edge/webview2/";
 
 std::optional<std::wstring> chosen_path(IFileDialog* dialog, HWND owner) {

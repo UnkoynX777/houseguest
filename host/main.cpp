@@ -491,7 +491,7 @@ bool start_requested_hidden() {
     LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
     bool hidden = false;
     for (int i = 1; i < count; ++i) hidden = hidden || std::wstring_view(arguments[i]) == L"--tray";
-    LocalFree(arguments);
+    LocalFree(reinterpret_cast<HLOCAL>(arguments));
     return hidden;
 }
 

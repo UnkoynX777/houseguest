@@ -75,11 +75,11 @@ SIZE minimum_for(const RECT& area, UINT dpi) {
 InitialWindow initial_window(const std::optional<SavedPlacement>& saved) {
     if (saved) {
         const RECT wanted{saved->x, saved->y, saved->x + saved->width, saved->y + saved->height};
-        if (const HMONITOR monitor = MonitorFromRect(&wanted, MONITOR_DEFAULTTONULL)) {
+        if (HMONITOR monitor = MonitorFromRect(&wanted, MONITOR_DEFAULTTONULL)) {
             return {clamp_to(work_area(monitor), wanted), saved->maximized};
         }
     }
-    const HMONITOR monitor = monitor_under_cursor();
+    HMONITOR monitor = monitor_under_cursor();
     return {preferred_bounds(work_area(monitor), monitor_dpi(monitor)), false};
 }
 

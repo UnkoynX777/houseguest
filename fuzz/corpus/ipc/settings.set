@@ -1,0 +1,1 @@
+3{"id":1,"cmd":"settings.set","args":{"language":"pt-BR","default_on_expiry":"logoff"}}

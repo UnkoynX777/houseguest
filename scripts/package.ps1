@@ -1,5 +1,8 @@
 # Builds the Release tree and produces the MSI, a portable zip and SHA-256 checksums in dist\.
-param([string] $Version = '0.2.0')
+param(
+    [string] $Version = '0.2.0',
+    [string[]] $ExtraFiles = @()
+)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $root 'dist'
@@ -32,6 +35,7 @@ Copy-Item (Join-Path $root 'ui\dist') (Join-Path $stage 'ui') -Recurse
 Compress-Archive -Path $stage -DestinationPath (Join-Path $out "Houseguest-$Version-x64-portable.zip")
 Remove-Item (Join-Path $out 'portable') -Recurse -Force
 
+foreach ($extra in $ExtraFiles) { Copy-Item $extra $out }
 Remove-Item (Join-Path $out '*.wixpdb') -ErrorAction SilentlyContinue
 $sums = Get-ChildItem $out -File | ForEach-Object {
     "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
