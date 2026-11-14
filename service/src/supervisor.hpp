@@ -62,6 +62,7 @@ struct SupervisorStats {
     std::uint64_t reconciliations = 0;
     std::uint64_t unreadable = 0;
     std::uint64_t protection_spared = 0;
+    std::uint64_t policy_revision = 0;
     std::uint64_t lineage_saturated = 0;
     std::size_t lineage_records = 0;
     std::size_t queue_depth = 0;
@@ -147,7 +148,7 @@ private:
     FailureHandler on_failure_;
     ProcessTrace trace_;
 
-    std::mutex policy_mutex_;
+    mutable std::mutex policy_mutex_;
     std::shared_ptr<const EnforcementPolicy> policy_;
 
     mutable std::mutex queue_mutex_;

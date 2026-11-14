@@ -203,6 +203,7 @@ Controller::Compiled Controller::compile(const core::Profile& source,
                                                           system::expand_known_folders("%ProgramFiles%"));
     policy.guest_sids.insert(guests.begin(), guests.end());
     policy.audit_only = audit_only;
+    policy.revision = store_.revision();
     policy.profile_id = source.id;
     policy.profile_name = source.name;
 
@@ -609,6 +610,7 @@ Json Controller::supervisor_json() const {
             {"tracked_processes", stats.tracked},
             {"identity_cache_entries", resolver_.cached()},
             {"protection_spared", stats.protection_spared},
+            {"policy_revision", stats.policy_revision},
             {"lineage_records", stats.lineage_records},
             {"lineage_saturated", stats.lineage_saturated},
             {"assessment_us",

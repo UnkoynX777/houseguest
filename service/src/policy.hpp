@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <set>
 #include <string>
 
@@ -15,6 +16,7 @@ struct EnforcementPolicy {
     std::string profile_id;
     std::string profile_name;
     bool audit_only = false;
+    std::uint64_t revision = 0;
 };
 
 }  // namespace houseguest::service

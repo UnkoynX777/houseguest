@@ -353,6 +353,10 @@ void Controller::register_app_commands() {
             std::size_t allowed = 0, blocked = 0;
             for (const auto& installed : view.apps) {
                 Json row = to_json(installed);
+                if (installed.resolution == system::Resolution::Resolved) {
+                    row.erase("evidence");
+                    row.erase("candidates");
+                }
                 const auto seen = view.first_seen.find(installed.id);
                 row["first_seen"] = seen == view.first_seen.end() ? 0 : seen->second;
                 const auto key = core::normalize_path(installed.path);

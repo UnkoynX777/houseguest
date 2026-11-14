@@ -118,6 +118,10 @@ Guests are existing Windows accounts, which Houseguest never disables or alters,
 
 Each process-start event is queued (events first, reconciliation sweeps second, 8192 entries each), inspected through one handle, and tracked per process id and creation time as in flight, retrying or settled. Transient failures (handle, token, image path, hash, a termination that fails while the process is still alive) are retried with backoff from 25 ms to 1 s up to seven times, and a failure never counts as permission: when retries are exhausted it is reported and the decision uses what is known (path only, for a missing hash). Dropped events are counted and trigger an immediate reconciliation of running processes. Files on network locations are never opened by the service, so a guest cannot make a SYSTEM process authenticate to a server it chooses; hash and publisher rules cannot be evaluated for such programs and the audit log says so. The package family comes from the process token.
 
+## Caches, invalidation and interface state
+
+Every cache, its owner, what makes it stale, and the rule that no cache decides what may run are in [caching.md](caching.md), together with how Windows components are classified and the measurements taken for them.
+
 ## Performance
 
 Measured numbers and how to reproduce them are in [performance.md](performance.md).

@@ -28,3 +28,5 @@ Measured by the service while it assessed every process of a busy desktop sessio
 ## Fallback mode
 
 When Event Tracing is unavailable the service checks running programs once per second. CPU stays low, and blocking can be about a second slower.
+
+Library scan, request latency, cache hit rate and the service memory with a populated catalog are measured by `scripts\measure-library.ps1`; the results and the before/after comparison are in [caching.md](caching.md#measurements).

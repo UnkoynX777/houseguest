@@ -129,6 +129,10 @@ SupervisorStats Supervisor::stats() const {
     stats.reconciliations = reconciliations_;
     stats.unreadable = unreadable_;
     stats.protection_spared = spared_;
+    {
+        std::scoped_lock lock(policy_mutex_);
+        stats.policy_revision = policy_ ? policy_->revision : 0;
+    }
     stats.lineage_saturated = lineage_.saturated();
     stats.lineage_records = lineage_.size();
     {

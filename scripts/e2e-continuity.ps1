@@ -95,6 +95,7 @@ try {
     $mine = @($blocked | Where-Object { $_.detail.path -like "$apps*" })
     $names = @($mine | ForEach-Object { (Split-Path $_.detail.path -Leaf) })
     Write-Host ("would_block under test folder: {0}" -f ($names -join ', '))
+    Write-Host ('supervisor after the chain: ' + ((HgJson call diagnostics).supervisor | Select-Object inspected, terminated, retried, inspection_failed, unreadable, pid_reuse_skipped, events_dropped, queue_high_water, retries_waiting, tracked_processes | ConvertTo-Json -Compress))
 
     Write-Host ($preview.continuity | ConvertTo-Json -Compress)
     $blocked | Where-Object { $_.detail.path -like '*webview*' -or $_.detail.path -like "$apps*" } | ForEach-Object { Write-Host ("  blocked: {0} | parent={1} | reason={2} note={3}" -f $_.detail.path, $_.detail.parent, $_.detail.reason, $_.detail.note) }

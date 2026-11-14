@@ -5,11 +5,19 @@ All notable changes are documented here. The project follows [Semantic Versionin
 ## [Unreleased]
 
 ### Fixed
+- Windows components that Windows itself starts were treated like any other program and could be stopped under a restrictive profile, among them the component package server, the first-run experience broker, Sync Center and the BitLocker prompt. System infrastructure is now recognised by its location together with the Windows signing identity, and Windows-signed programs that an administrator registered as COM servers are recognised when the DCOM launcher starts them. A program that only sits in System32, or is signed by someone else, is still decided by the profile, and administrative tools are never granted by this rule.
+- A scan of the library took 18 s and a refresh with nothing changed 23 s because every path was resolved again for every entry; it now takes 2.4 s, and the library answers in 8 ms instead of 215 ms.
+- A file replaced under the same name, size and write time kept its cached hash and signer. The identity cache now also compares the file system's change time and the file id.
+- Returning to Applications, Rules, History or any other page reset its filters, view mode and scroll position and reloaded everything.
 - The library missed whole classes of programs: per-user installs, games whose registration names only a folder and an icon, Steam games on other drives, and entries whose executable differs from the product name. Discovery now builds installations from independent sources and resolves the main program from evidence, with no depth limit and no name matching.
 - Executables inside an install folder are found with a time and entry budget, never following junctions or symlinks, so deep layouts such as `game\bin\win64` no longer depend on a fixed depth.
 - Packaged apps are read from `WindowsApps` manifests, and uninstall entries without an install folder are correlated with install folders by name.
 
 ### Added
+- Cache and invalidation architecture (see `docs/caching.md`): per-page data that goes stale when the service reports a new policy, catalog or history generation, a library that refreshes when the machine changes (watching the Start menu, program folders, volumes, packaged apps, Steam manifests, registered portable folders and the Uninstall keys), and decisions for the library kept for one revision of the stored policy.
+- Placeholders shaped like the content, shown only when a page has nothing to display, with a windowed list for Applications.
+- Versioned, validated view preferences: last page, profile, filters, sort, view mode and history filters survive restarts; search text, selections and dialogs do not.
+- Diagnostics shows decision reuse, watched places, page cache size and the slowest requests; blocked Windows-signed programs are marked in History so they can be allowed.
 - Providers for Steam (libraries on every drive, app manifests and launch configuration), Epic, GOG, Ubisoft Connect, EA, Xbox games, winget, Scoop and Chocolatey, each reporting what it found, what only it found, what merged and what it set aside.
 - Resolution states: entries whose main program is ambiguous or missing stay in the library with ranked candidates and the owner can choose the executable.
 - Dynamic volume enumeration, offline volumes kept and marked, a setting for removable drives, and an opt-in deep scan.
