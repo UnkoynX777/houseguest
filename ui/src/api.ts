@@ -59,3 +59,16 @@ function send<T>(cmd: string, args: object, token?: string): Promise<T> {
 
 export const call = <T = any>(cmd: string, args: object = {}) => send<T>(cmd, args, auth.token || undefined);
 export const host = <T = any>(cmd: string, args: object = {}) => send<T>(`host.${cmd}`, args);
+
+const icons = new Map<string, Promise<string>>();
+
+export function icon(path: string, size = 48): Promise<string> {
+  const key = `${size}|${path.toLowerCase()}`;
+  let known = icons.get(key);
+  if (!known) {
+    if (icons.size > 1500) icons.clear();
+    known = host<{ png: string }>('icon', { path, size }).then((reply) => reply.png, () => '');
+    icons.set(key, known);
+  }
+  return known;
+}

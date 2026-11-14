@@ -8,7 +8,7 @@ import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import PreviewPanel from '../components/PreviewPanel.vue';
 import { t } from '../i18n';
-import { app, attempt, formatTime, loadProfiles, randomId } from '../store';
+import { app, attempt, formatTime, loadProfiles, profileLabel, randomId } from '../store';
 import type { Action, MatchType, Preview, Profile, Rule } from '../types';
 
 const draft = ref<Profile>();
@@ -79,7 +79,7 @@ const setAction = (action: Action) => editing.value && (editing.value.action = a
   <div class="page">
     <PageHeader :title="t('Rules')" :subtitle="t('Higher priority wins. At equal priority, Block wins over Allow.')">
       <select v-model="app.ruleProfileId" class="select" style="width: 220px" :aria-label="t('Profile')">
-      <option v-for="p in app.profiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+      <option v-for="p in app.profiles" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
       </select>
     </PageHeader>
 

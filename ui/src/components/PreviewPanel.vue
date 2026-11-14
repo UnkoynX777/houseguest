@@ -20,6 +20,10 @@ const rows = computed(() =>
 <template>
   <div class="stack">
     <Findings :findings="preview.findings" />
+    <div v-if="preview.continuity" class="banner" :class="preview.continuity.install_trusted ? '' : 'warn'">
+      <Icon :name="preview.continuity.install_trusted ? 'check' : 'alert'" />
+      <span>{{ preview.continuity.install_trusted ? t('Houseguest, its window and the Windows essentials stay available under this profile.') : t('Houseguest cannot recognize its own files under this profile. See the warnings above.') }}</span>
+    </div>
     <div class="row wrap">
       <span class="badge ok">{{ t('{n} would run', { n: preview.allowed }) }}</span>
       <span class="badge bad">{{ t('{n} would be blocked', { n: preview.denied }) }}</span>
@@ -44,7 +48,7 @@ const rows = computed(() =>
             <td style="width: 1%">
               <span class="badge" :class="app.action === 'allow' ? 'ok' : 'bad'">{{ app.action === 'allow' ? t('Allowed') : t('Blocked') }}</span>
             </td>
-            <td class="faint" style="width: 1%">{{ app.source === 'baseline' ? t('System essential') : app.source === 'rule' ? t('Rule') : t('Default') }}</td>
+            <td class="faint" style="width: 1%; white-space: nowrap">{{ ({ protected: t('System essential'), continuity: t('Houseguest'), rule: t('Rule'), application: t('Application'), dependency: t('Dependency'), related: t('Related'), default: t('Default'), unresolved: t('Unidentified') } as Record<string, string>)[app.source] ?? app.source }}</td>
           </tr>
           <tr v-if="!rows.length"><td class="faint">{{ t('Nothing to show.') }}</td></tr>
         </tbody>

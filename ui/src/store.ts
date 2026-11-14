@@ -64,6 +64,11 @@ export async function attempt<T>(action: () => Promise<T>, success?: string): Pr
   }
 }
 
+export function profileLabel(profile?: { id?: string; name: string }): string {
+  if (!profile) return '';
+  return profile.id?.startsWith('builtin-') ? t(profile.name) : profile.name;
+}
+
 export const unlocked = computed(() => !!auth.token);
 
 export const serverNow = computed(() => (app.status ? app.status.now + (app.clock - app.fetchedAt) / 1000 : 0));

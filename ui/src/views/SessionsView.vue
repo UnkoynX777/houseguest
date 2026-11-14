@@ -9,7 +9,7 @@ import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import PreviewPanel from '../components/PreviewPanel.vue';
 import { t } from '../i18n';
-import { app, attempt, describe, formatDuration, formatTime, loadProfiles, notify, refreshStatus, remaining } from '../store';
+import { app, attempt, describe, formatDuration, formatTime, loadProfiles, notify, profileLabel, refreshStatus, remaining } from '../store';
 import type { Dashboard, Finding, LocalUser, Preview } from '../types';
 
 const users = ref<LocalUser[]>([]);
@@ -114,7 +114,7 @@ async function extend(add: number) {
       <div class="card stack">
         <h2>{{ t('1. Choose a profile') }}</h2>
         <select v-model="profileId" class="select" :aria-label="t('Profile')">
-          <option v-for="profile in app.profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+          <option v-for="profile in app.profiles" :key="profile.id" :value="profile.id">{{ profileLabel(profile) }}</option>
         </select>
         <h2 style="margin-top: 8px">{{ t('2. Who is the guest?') }}</h2>
         <div v-if="!users.length" class="skeleton" />

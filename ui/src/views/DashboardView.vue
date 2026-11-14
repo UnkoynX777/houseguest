@@ -3,19 +3,23 @@ import PageHeader from '../components/PageHeader.vue';
 import EmptyState from '../components/EmptyState.vue';
 import { computed, onMounted, ref } from 'vue';
 
-import { call } from '../api';
+import { call, host } from '../api';
 import Icon from '../components/Icon.vue';
 import { t } from '../i18n';
-import { app, attempt, formatDuration, formatTime, go, refreshStatus, remaining } from '../store';
-import type { Dashboard } from '../types';
+import { app, attempt, formatDuration, formatTime, go, profileLabel, refreshStatus, remaining } from '../store';
+import type { ContinuityReport, Dashboard, PendingReview } from '../types';
 import { eventLabel } from './events';
 
 const data = ref<Dashboard>();
+const reviews = ref<PendingReview[]>([]);
+const continuity = ref<ContinuityReport>();
 const loading = ref(true);
 
 async function load() {
   data.value = await attempt(() => call<Dashboard>('dashboard'));
   loading.value = false;
+  reviews.value = (await call<PendingReview[]>('reviews.list').catch(() => [])) ?? [];
+  continuity.value = await call<ContinuityReport>('continuity.report').catch(() => undefined);
 }
 onMounted(load);
 
@@ -66,7 +70,7 @@ async function stop() {
             {{ data.session ? (data.session.audit_only ? t('Observing (audit mode)') : t('Protection active')) : t('Protection is off') }}
           </div>
           <p v-if="data.session" class="muted">
-            {{ t('Profile “{name}” · {n} guest account(s) · ends {time}', { name: data.session.profile_name, n: data.session.guest_sids.length, time: formatTime(data.session.ends_at) }) }}
+            {{ t('Profile “{name}” · {n} guest account(s) · ends {time}', { name: profileLabel({ id: data.session.profile_id, name: data.session.profile_name }), n: data.session.guest_sids.length, time: formatTime(data.session.ends_at) }) }}
           </p>
           <p v-else class="muted">{{ t('No guest session is running. Start one to restrict an account to the apps you choose.') }}</p>
           <div v-if="data.session" class="row wrap" style="margin-top: 8px">
@@ -86,6 +90,27 @@ async function stop() {
           <div class="value" style="font-size: 20px; padding: 5px 0"><span class="badge" :class="{ supervised: 'ok', polling: 'warn', unavailable: 'bad' }[data.enforcement]">{{ { supervised: t('Supervised'), polling: t('Polling'), unavailable: t('Unavailable') }[data.enforcement] }}</span></div>
           <div class="label">{{ t('Enforcement level') }}</div>
         </div>
+      </div>
+
+      <div v-if="reviews.length" class="card stack" style="gap: 8px">
+        <div class="row"><h2 class="grow">{{ t('Waiting for your decision') }}</h2><span class="badge warn">{{ reviews.length }}</span></div>
+        <p class="muted">{{ t('Allowed programs asked for these, and they are blocked until you decide.') }}</p>
+        <div v-for="review in reviews.slice(0, 5)" :key="review.id" class="row">
+          <div class="grow" style="min-width: 0"><strong>{{ review.path.split(/[\\/]/).pop() }}</strong><div class="hint mono truncate">{{ review.path }}</div></div>
+          <span class="faint">{{ t('Blocked {n} times', { n: review.count }) }}</span>
+          <button class="btn sm" @click="go('apps', review.profile_id)">{{ t('Review') }}</button>
+        </div>
+      </div>
+
+      <div class="card stack" style="gap: 10px">
+        <div class="row"><h2 class="grow">{{ t('Recovery and continuity') }}</h2><button class="btn sm" @click="host('recovery')"><Icon name="shield" />{{ t('Open recovery console') }}</button></div>
+        <p class="muted">{{ t('Houseguest keeps its own window, its WebView2 processes and the Windows essentials available, even under the strictest profile.') }}</p>
+        <div v-if="continuity" class="row wrap">
+          <span class="badge" :class="continuity.install_trusted ? 'ok' : 'warn'">{{ continuity.install_trusted ? t('Program folder protected') : t('Program folder is writable by guests') }}</span>
+          <span class="badge" :class="continuity.pinned && !continuity.missing.length ? 'ok' : 'warn'">{{ continuity.pinned && !continuity.missing.length ? t('Program files pinned') : t('Program files incomplete') }}</span>
+          <span class="badge" :class="continuity.webview_runtimes.length ? 'ok' : 'warn'">{{ continuity.webview_runtimes.length ? t('WebView2 runtime found') : t('WebView2 runtime not found') }}</span>
+        </div>
+        <p class="hint">{{ t('Without this window an administrator can still run houseguest-cli from an elevated prompt.') }}</p>
       </div>
 
       <div class="card">

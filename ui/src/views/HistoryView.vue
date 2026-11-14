@@ -4,10 +4,12 @@ import PageHeader from '../components/PageHeader.vue';
 import { computed, onMounted, ref } from 'vue';
 
 import { call, host } from '../api';
+import BlockReview from '../components/BlockReview.vue';
 import Icon from '../components/Icon.vue';
+import { describeBlock } from '../explain';
 import { t } from '../i18n';
-import { app, attempt, formatTime, notify, refreshStatus } from '../store';
-import type { AuditEntry } from '../types';
+import { attempt, formatTime, notify } from '../store';
+import type { AuditEntry, BlockEntry } from '../types';
 import { eventLabel, groupOf, type EventGroup } from './events';
 
 const entries = ref<AuditEntry[]>([]);
@@ -26,16 +28,10 @@ const rows = computed(() =>
   entries.value.filter((e) => (filter.value === 'all' || groupOf(e) === filter.value) && `${eventLabel(e)} ${JSON.stringify(e.detail)}`.toLowerCase().includes(query.value.toLowerCase())),
 );
 
-async function allow(entry: AuditEntry, minutes: number) {
-  await refreshStatus();
-  if (!app.status?.armed) {
-    notify('info', t('Start a session first; exceptions apply to the running session.'));
-    return;
-  }
-  const app_ = { path: String(entry.detail.path), sha256: String(entry.detail.sha256 ?? ''), publisher: String(entry.detail.publisher ?? '') };
-  await attempt(() => call('exceptions.add', { app: app_, minutes, match: 'path' }), t('Allowed for {n} minutes.', { n: minutes }));
-  await load();
-}
+const reviewing = ref<BlockEntry>();
+const isBlock = (entry: AuditEntry) => entry.event === 'app.blocked' || entry.event === 'app.would_block' || entry.event === 'app.block_failed';
+const asBlock = (entry: AuditEntry): BlockEntry => ({ ...(entry.detail as unknown as BlockEntry), event: entry.event, ts: entry.ts });
+const reason = (entry: AuditEntry) => describeBlock(asBlock(entry));
 
 async function verify() {
   const result = await attempt(() => call<{ valid: boolean }>('audit.verify'));
@@ -72,17 +68,16 @@ async function exportCsv() {
             <td class="faint" style="width: 1%; white-space: nowrap">{{ formatTime(entry.ts) }}</td>
             <td style="max-width: 0">
               <div class="truncate">{{ eventLabel(entry) }}</div>
-              <div v-if="entry.event === 'app.blocked'" class="hint truncate mono">{{ entry.detail.path }}</div>
+              <div v-if="isBlock(entry)" class="hint truncate">{{ reason(entry) }}<template v-if="entry.detail.parent"> · {{ t('Started by {name}', { name: String(entry.detail.parent).split(/[\\/]/).pop() ?? '' }) }}</template></div>
+              <div v-if="isBlock(entry)" class="hint truncate mono">{{ entry.detail.path }}</div>
             </td>
             <td style="width: 1%; white-space: nowrap">
-              <template v-if="entry.event === 'app.blocked'">
-                <button class="btn sm" @click="allow(entry, 15)">{{ t('Allow 15 min') }}</button>
-                <button class="btn sm" @click="allow(entry, 60)">{{ t('Allow 1 h') }}</button>
-              </template>
+              <button v-if="isBlock(entry)" class="btn sm" @click="reviewing = asBlock(entry)">{{ t('Review') }}</button>
             </td>
           </tr>
         </tbody>
       </table>
     </div>
+    <BlockReview v-if="reviewing" :block="reviewing" @close="reviewing = undefined" @done="load" />
   </div>
 </template>

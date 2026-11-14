@@ -79,6 +79,10 @@ async function copy() {
           <div><dt class="label">{{ t('Programs stopped') }}</dt><dd class="kpi-number">{{ info.supervisor.terminated }}</dd></div>
           <div><dt class="label">{{ t('Median-to-95th stop delay') }}</dt><dd class="kpi-number">{{ latency && latency.samples ? Math.round(latency.average) + ' / ' + Math.round(latency.p95) + ' ms' : '—' }}</dd></div>
           <div><dt class="label">{{ t('Slowest stop') }}</dt><dd class="kpi-number">{{ latency && latency.samples ? Math.round(latency.max) + ' ms' : '—' }}</dd></div>
+          <div><dt class="label">{{ t('Essential processes left running') }}</dt><dd class="kpi-number">{{ info.supervisor.protection_spared ?? 0 }}</dd></div>
+          <div><dt class="label">{{ t('Application processes tracked') }}</dt><dd class="kpi-number">{{ info.supervisor.lineage_records ?? 0 }}</dd></div>
+          <div><dt class="label">{{ t('Decision time (average / 95th)') }}</dt><dd class="kpi-number">{{ info.supervisor.assessment_us?.samples ? Math.round(info.supervisor.assessment_us.average) + ' / ' + Math.round(info.supervisor.assessment_us.p95) + ' µs' : '—' }}</dd></div>
+          <div v-if="info.supervisor.lineage_saturated"><dt class="label">{{ t('Tracking table was full') }}</dt><dd class="kpi-number">{{ info.supervisor.lineage_saturated }}</dd></div>
         </dl>
         <p v-if="info.supervisor.degraded_reason" class="hint">{{ info.supervisor.degraded_reason }}</p>
         <p class="hint">{{ t('Houseguest stops a program after it starts, so a blocked program can run for a short moment. These figures are measured on this computer.') }}</p>

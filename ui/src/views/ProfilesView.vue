@@ -5,7 +5,7 @@ import { call, host } from '../api';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import { t } from '../i18n';
-import { app, attempt, go, loadProfiles, notify, randomId } from '../store';
+import { app, attempt, go, loadProfiles, notify, profileLabel, randomId } from '../store';
 import type { Profile } from '../types';
 
 const creating = ref(false);
@@ -18,7 +18,11 @@ onMounted(() => attempt(loadProfiles));
 const builtin = (profile: Profile) => profile.id.startsWith('builtin-');
 const describeBuiltin = (profile: Profile) =>
   ({ 'builtin-guest': t('Only what you pick. Admin tools are blocked.'), 'builtin-gaming': t('For game nights: add your launchers and games.'),
-     'builtin-work': t('Everything allowed except admin tools.'), 'builtin-restricted': t('Like Guest, and installers are blocked too.') })[profile.id] ?? '';
+     'builtin-work': t('Everything allowed except admin tools.'), 'builtin-restricted': t('Like Guest, and installers are blocked too.'), 'builtin-custom': t('A clean base for your own choices.') })[profile.id] ?? '';
+
+const cloneApps = (profile: Profile) =>
+  (profile.apps ?? []).map((a) => ({ ...a, id: randomId('app-'), components: a.components.map((c) => ({ ...c, id: randomId('c-') })) }));
+const dependencies = (profile: Profile) => (profile.apps ?? []).reduce((sum, a) => sum + Math.max(0, a.components.length - 1), 0);
 
 async function create() {
   const source = app.profiles.find((p) => p.id === base.value);
@@ -27,6 +31,7 @@ async function create() {
     name: name.value.trim(),
     default_action: source?.default_action ?? 'deny',
     rules: source ? source.rules.map((r) => ({ ...r, id: randomId('r-') })) : [],
+    apps: source ? cloneApps(source) : [],
   };
   if (await attempt(() => call('profiles.save', { profile }), t('Profile created.'))) {
     creating.value = false;
@@ -37,7 +42,7 @@ async function create() {
 }
 
 async function duplicate(profile: Profile) {
-  const copy = { ...profile, id: randomId('p-'), name: t('{name} (copy)', { name: profile.name }), rules: profile.rules.map((r) => ({ ...r, id: randomId('r-') })) };
+  const copy = { ...profile, id: randomId('p-'), name: t('{name} (copy)', { name: profile.name }), rules: profile.rules.map((r) => ({ ...r, id: randomId('r-') })), apps: cloneApps(profile) };
   await attempt(() => call('profiles.save', { profile: copy }), t('Profile duplicated.'));
   await loadProfiles();
 }
@@ -80,16 +85,19 @@ async function remove() {
     <div class="grid cols-3">
       <div v-for="profile in app.profiles" :key="profile.id" class="card stack" style="gap: 10px">
         <div class="row">
-          <h2 class="grow truncate">{{ profile.name }}</h2>
+          <h2 class="grow truncate">{{ profileLabel(profile) }}</h2>
           <span v-if="builtin(profile)" class="badge">{{ t('Template') }}</span>
         </div>
         <p class="muted" style="min-height: 42px">{{ describeBuiltin(profile) || t('Custom profile.') }}</p>
         <div class="row wrap">
           <span class="badge" :class="profile.default_action === 'deny' ? 'bad' : 'ok'">{{ profile.default_action === 'deny' ? t('Blocks by default') : t('Allows by default') }}</span>
           <span class="badge">{{ t('{n} rules', { n: profile.rules.length }) }}</span>
+          <span class="badge info">{{ t('{n} applications', { n: profile.apps?.length ?? 0 }) }}</span>
+          <span v-if="dependencies(profile)" class="badge">{{ t('{n} dependencies', { n: dependencies(profile) }) }}</span>
         </div>
         <div class="row" style="margin-top: 4px">
-          <button class="btn sm primary" @click="go('rules', profile.id)"><Icon name="edit" />{{ t('Edit rules') }}</button>
+          <button class="btn sm primary" @click="go('apps', profile.id)"><Icon name="apps" />{{ t('Applications') }}</button>
+          <button class="btn sm" @click="go('rules', profile.id)"><Icon name="edit" />{{ t('Edit rules') }}</button>
           <button class="btn sm icon ghost right" :aria-label="t('Duplicate')" :title="t('Duplicate')" @click="duplicate(profile)"><Icon name="copy" /></button>
           <button class="btn sm icon ghost" :aria-label="t('Export')" :title="t('Export')" @click="exportProfile(profile)"><Icon name="download" /></button>
           <button class="btn sm icon ghost" :aria-label="t('Delete')" :title="t('Delete')" @click="deleting = profile"><Icon name="trash" /></button>
@@ -100,7 +108,7 @@ async function remove() {
     <Modal v-if="creating" :title="t('New profile')" @close="creating = false">
       <div class="field"><label for="pname">{{ t('Name') }}</label><input id="pname" v-model="name" class="input" maxlength="60" @keyup.enter="name.trim() && create()" /></div>
       <div class="field"><label>{{ t('Start from') }}</label>
-        <select v-model="base" class="select"><option value="">{{ t('Empty profile') }}</option><option v-for="p in app.profiles" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
+        <select v-model="base" class="select"><option value="">{{ t('Empty profile') }}</option><option v-for="p in app.profiles" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option></select></div>
       <template #footer><button class="btn" @click="creating = false">{{ t('Cancel') }}</button><button class="btn primary" :disabled="!name.trim()" @click="create">{{ t('Create') }}</button></template>
     </Modal>
 

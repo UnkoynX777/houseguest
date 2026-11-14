@@ -7,8 +7,12 @@ import {
   Download,
   ExternalLink,
   Eye,
+  FlaskConical,
   Info,
   LayoutDashboard,
+  LayoutGrid,
+  Link2,
+  List,
   ListChecks,
   Lock,
   Package,
@@ -58,6 +62,10 @@ const icons: Record<string, Component> = {
   edit: Pencil,
   eye: Eye,
   external: ExternalLink,
+  grid: LayoutGrid,
+  list: List,
+  link: Link2,
+  flask: FlaskConical,
 };
 
 defineProps<{ name: string }>();

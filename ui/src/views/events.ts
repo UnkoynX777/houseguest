@@ -6,6 +6,8 @@ export type EventGroup = 'blocked' | 'sessions' | 'security' | 'changes';
 const groups: Record<string, EventGroup> = {
   'app.blocked': 'blocked',
   'app.would_block': 'blocked',
+  'app.block_failed': 'blocked',
+  'protection.spared': 'blocked',
   'session.started': 'sessions',
   'session.ended': 'sessions',
   'session.extended': 'sessions',
@@ -51,6 +53,15 @@ export function eventLabel(entry: AuditEntry): string {
     case 'state.recovered': return t('Settings recovered from the previous snapshot');
     case 'supervisor.unavailable': return t('Process monitoring could not start');
     case 'supervisor.mode': return d.mode === 'supervised' ? t('Process monitoring uses process events') : d.mode === 'polling' ? t('Process monitoring switched to polling') : t('Process monitoring stopped');
+    case 'protection.spared': return t('Left running: {name} (essential to Windows)', { name: String(d.process ?? '') });
+    case 'app.saved': return t('Application settings changed');
+    case 'app.removed': return t('Application removed from a profile');
+    case 'app.dependency_approved': return t('Dependency approved');
+    case 'app.component_reauthorized': return t('Changed file approved again');
+    case 'discovery.started': return t('Observation of an application started');
+    case 'discovery.stopped': return t('Observation of an application stopped');
+    case 'library.saved': return t('Dependency set saved');
+    case 'library.deleted': return t('Dependency set deleted');
     case 'app.block_failed': return t('Could not stop {name}', { name: String(d.path).split(/[\\/]/).pop() ?? '' });
     default: return entry.event;
   }

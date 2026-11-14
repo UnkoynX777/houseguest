@@ -9,11 +9,38 @@ export interface Rule {
   expires_at?: number;
 }
 
+export type Role = 'main' | 'launcher' | 'helper' | 'runtime' | 'updater' | 'service' | 'component';
+export type Scope = 'descendant' | 'independent';
+export type DependencyMode = 'selected_only' | 'approved' | 'related';
+
+export interface Component {
+  id: string;
+  label: string;
+  role: Role;
+  scope: Scope;
+  path: string;
+  sha256: string;
+  publisher: string;
+  package_family: string;
+  follow_updates: boolean;
+  expires_at?: number;
+}
+
+export interface Application {
+  id: string;
+  name: string;
+  mode: DependencyMode;
+  unknown: 'deny' | 'review';
+  priority: number;
+  components: Component[];
+}
+
 export interface Profile {
   id: string;
   name: string;
   default_action: Action;
   rules: Rule[];
+  apps?: Application[];
 }
 
 export interface Status {
@@ -55,6 +82,121 @@ export interface AppEntry {
   name: string;
   path: string;
   company: string;
+  version?: string;
+  description?: string;
+  source?: string;
+  package_family?: string;
+}
+
+export interface LibraryApp extends Required<AppEntry> {
+  status: 'allowed' | 'blocked';
+  via: string;
+  reason: string;
+  rule_id: string;
+  app_id: string;
+  blocks: number;
+  listed?: string;
+  dependencies?: number;
+  pending?: number;
+  conflicts?: number;
+}
+
+export interface DecisionInfo {
+  action: Action;
+  source: string;
+  reason: string;
+  rule_id: string;
+  app_id: string;
+  component_id: string;
+  note: string;
+  review_app: string;
+}
+
+export type ComponentState = 'approved' | 'updated' | 'changed' | 'missing' | 'unpinned' | 'expired' | 'pattern' | 'unknown';
+
+export interface ComponentView extends Component {
+  state: ComponentState;
+  on_disk?: { sha256: string; publisher: string };
+  effective: DecisionInfo | null;
+}
+
+export interface BlockEntry {
+  event: string;
+  ts: number;
+  path: string;
+  process: string;
+  sha256: string;
+  publisher: string;
+  profile: string;
+  rule: string;
+  source: string;
+  reason: string;
+  note: string;
+  related_app: string;
+  parent: string;
+  recommendation: string;
+}
+
+export interface PendingReview {
+  id: string;
+  app_id: string;
+  kind: 'unknown_dependency' | 'component_changed';
+  path: string;
+  sha256: string;
+  publisher: string;
+  parent: string;
+  profile_id: string;
+  count: number;
+  first: number;
+  last: number;
+}
+
+export interface Explanation {
+  path: string;
+  sha256: string;
+  publisher: string;
+  decision: DecisionInfo;
+  application?: { id: string; name: string; mode: DependencyMode; unknown: 'deny' | 'review'; priority: number };
+  components: ComponentView[];
+  summary: { approved: number; changed: number; missing: number; unpinned: number; pending: number };
+  pending: PendingReview[];
+  history: BlockEntry[];
+  findings: Finding[];
+}
+
+export interface ObservedItem {
+  path: string;
+  name: string;
+  sha256: string;
+  publisher: string;
+  package_family: string;
+  parent: string;
+  runs: number;
+  first_seen_ms: number;
+  descendant: boolean;
+  role: Role | 'tool';
+  verdict: 'main' | 'recommended' | 'review' | 'avoid' | 'windows';
+  risks: string[];
+}
+
+export interface DiscoveryReport {
+  running: boolean;
+  label: string;
+  path: string;
+  ends_at: number;
+  elapsed_ms: number;
+  dropped: number;
+  items: ObservedItem[];
+}
+
+export interface ContinuityReport {
+  install_directory: string;
+  install_trusted: boolean;
+  pinned: boolean;
+  missing: string[];
+  webview_runtimes: string[];
+  webview_trusted: boolean;
+  cli: string;
 }
 
 export interface LocalUser {
@@ -76,7 +218,9 @@ export interface Preview {
   warnings: boolean;
   allowed: number;
   denied: number;
-  apps: { name: string; path: string; action: Action; rule: string; source: string }[];
+  apps: { name: string; path: string; action: Action; rule: string; source: string; app_id?: string; reason?: string }[];
+  applications?: number;
+  continuity?: Omit<ContinuityReport, 'cli'>;
 }
 
 export interface CapabilityCheck {
@@ -107,6 +251,10 @@ export interface Diagnostics {
     termination_failed: number;
     pid_reuse_skipped: number;
     identity_cache_entries: number;
+    protection_spared?: number;
+    lineage_records?: number;
+    lineage_saturated?: number;
+    assessment_us?: { samples: number; average: number; p95: number; max: number };
     latency_ms: { samples: number; average: number; p95: number; max: number };
   };
   audit_chain_valid: boolean;
