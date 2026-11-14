@@ -7,6 +7,7 @@
 #include <string>
 
 #include "houseguest/core/evaluator.hpp"
+#include "houseguest/system/com_servers.hpp"
 #include "houseguest/system/process.hpp"
 
 #include "continuity.hpp"
@@ -45,13 +46,17 @@ public:
 
     void resolve_fully(Assessment& assessment, const system::ProcessRef& process, bool with_publisher = true);
 
+    [[nodiscard]] system::ComServerIndex& com_servers() { return com_servers_; }
+
 private:
     std::optional<std::uint32_t> parent_of(std::uint32_t pid, std::uint64_t created);
+    void gather_activation_facts(Assessment& a, std::uint64_t created, const core::Protection& protection);
 
     IdentityResolver& resolver_;
     ContinuityGuard& continuity_;
     Lineage& lineage_;
     core::Protection protection_;
+    system::ComServerIndex com_servers_;
     std::mutex snapshot_mutex_;
     system::ProcessSnapshot snapshot_;
 };

@@ -6,6 +6,7 @@
 
 #include "houseguest/system/app_catalog.hpp"
 #include "houseguest/system/capabilities.hpp"
+#include "houseguest/system/com_servers.hpp"
 #include "houseguest/system/crypto.hpp"
 #include "houseguest/system/process.hpp"
 #include "houseguest/system/text.hpp"
@@ -151,3 +152,28 @@ TEST_CASE("only local drive-letter paths are opened by the service", "[system][s
     CHECK_FALSE(houseguest::system::is_local_disk_path(R"(1:\tool.exe)"));
     CHECK_FALSE(houseguest::system::is_local_disk_path(""));
 }
+
+TEST_CASE("a COM local server command names its program", "[com]") {
+    using houseguest::system::ComServerIndex;
+    const std::filesystem::path tool = LR"x(C:\Program Files\Tool\tool.exe)x";
+    const std::filesystem::path mobsync = LR"x(C:\Windows\System32\mobsync.EXE)x";
+    const auto quoted = ComServerIndex::executable_of(LR"x("C:\Program Files\Tool\tool.exe" /Embedding)x");
+    const auto bare = ComServerIndex::executable_of(LR"x(C:\Program Files\Tool\tool.exe /Embedding)x");
+    const auto upper = ComServerIndex::executable_of(LR"x(C:\Windows\System32\mobsync.EXE -Embedding)x");
+    CHECK(quoted == tool);
+    CHECK(bare == tool);
+    CHECK(upper == mobsync);
+    CHECK(ComServerIndex::executable_of(L"   ").empty());
+    CHECK(ComServerIndex::executable_of(L"").empty());
+}
+
+TEST_CASE("the COM server index reads the machine registrations once and reuses them", "[com]") {
+    houseguest::system::ComServerIndex index;
+    const std::filesystem::path unregistered = LR"x(C:\Users\guest\Downloads\not-registered.exe)x";
+    CHECK(index.size() > 50);
+    CHECK(index.rebuilds() == 1);
+    CHECK_FALSE(index.registered(unregistered));
+    CHECK(index.size() > 50);
+    CHECK(index.rebuilds() == 1);
+}
+

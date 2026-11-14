@@ -115,6 +115,7 @@ Assessment Assessor::assess(const system::ProcessRef& process, std::uint64_t cre
     const auto& profile = policy ? policy->profile : kEmpty;
     const auto& protection = policy ? policy->protection : protection_;
     const auto now = std::chrono::system_clock::now();
+    gather_activation_facts(a, created, protection);
 
     for (int round = 0; round < 3; ++round) {
         a.decision = core::evaluate(profile, protection, f, now);
@@ -142,6 +143,19 @@ Assessment Assessor::assess(const system::ProcessRef& process, std::uint64_t cre
         if (!members.empty()) lineage_.remember(process, created, sid, std::move(members));
     }
     return a;
+}
+
+void Assessor::gather_activation_facts(Assessment& a, std::uint64_t created, const core::Protection& protection) {
+    auto& f = a.facts;
+    if (!f.image_known || f.remote_image || a.parent_pid == 0 || protection.covers(f.app.path) ||
+        !protection.may_be_com_server(f.app.path))
+        return;
+    if (!com_servers_.registered(system::path_from_utf8(f.app.path)) || !older_than(a.parent_pid, created)) return;
+    const auto parent = system::ProcessRef::open(a.parent_pid);
+    const auto path = parent ? parent->image_path() : std::nullopt;
+    if (!path) return;
+    f.com_server = true;
+    f.parent_path = resolver_.resolve_checked(*path, false, false).identity.path;
 }
 
 void Assessor::resolve_fully(Assessment& assessment, const system::ProcessRef& process, bool with_publisher) {

@@ -97,6 +97,8 @@ struct ProcessFacts {
     bool publisher_resolved = false;
     bool kernel_critical = false;
     bool protected_process = false;
+    bool com_server = false;
+    std::string parent_path;
     Continuity continuity = Continuity::None;
     std::vector<std::string> lineage;
 };

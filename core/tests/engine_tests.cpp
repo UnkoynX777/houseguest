@@ -118,6 +118,96 @@ TEST_CASE("directory-wide protection needs a valid signature", "[protection][saf
     CHECK(d.reason == "driver_package");
 }
 
+TEST_CASE("Windows infrastructure needs the Windows signing identity", "[protection][safety]") {
+    Profile p{"p", "x", Action::Deny, {}, {}};
+    const std::string windows = "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
+    const std::string office = "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, C=US";
+    auto f = facts("C:\\Windows\\System32\\CompPkgSrv.exe");
+    f.publisher_resolved = false;
+    auto d = evaluate(p, kProtection, f, kNow);
+    CHECK(d.source == DecisionSource::Protected);
+    CHECK(d.needs_publisher);
+    f.publisher_resolved = true;
+    f.app.publisher = windows;
+    d = evaluate(p, kProtection, f, kNow);
+    CHECK(d.action == Action::Allow);
+    CHECK(d.reason == "system_infrastructure");
+    f.app.publisher = office;
+    CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+    f.app.publisher = "CN=Sordum Software";
+    CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+    f.app.publisher.clear();
+    CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+}
+
+TEST_CASE("a program that merely sits in System32 stays under the profile", "[protection][safety]") {
+    Profile p{"p", "x", Action::Deny, {}, {}};
+    const std::string windows = "CN=Microsoft Windows, O=Microsoft Corporation";
+    for (const auto* name : {"ReduceMemory_x64.exe", "wallpaperservice64.exe", "calc.exe", "mobsync.exe"}) {
+        INFO(name);
+        auto f = facts(std::string("C:\\Windows\\System32\\") + name, {}, windows);
+        CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+    }
+}
+
+TEST_CASE("a registered COM server started by the DCOM launcher is system infrastructure", "[protection][safety]") {
+    Profile p{"p", "x", Action::Deny, {}, {}};
+    const std::string windows = "CN=Microsoft Windows, O=Microsoft Corporation";
+    const std::string svchost = "C:\\Windows\\System32\\svchost.exe";
+    auto f = facts("C:\\Windows\\System32\\mobsync.exe", {}, windows);
+    f.com_server = true;
+    f.parent_path = svchost;
+    auto d = evaluate(p, kProtection, f, kNow);
+    CHECK(d.action == Action::Allow);
+    CHECK(d.reason == "windows_com_server");
+
+    SECTION("a profile rule cannot turn it off") {
+        Profile deny{"p", "x", Action::Deny, {Rule{"d", Action::Deny, PathMatcher{"c:/**"}, 1000, std::nullopt}}, {}};
+        CHECK(evaluate(deny, kProtection, f, kNow).action == Action::Allow);
+    }
+    SECTION("without registration it is an ordinary program") {
+        f.com_server = false;
+        CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+    }
+    SECTION("started by the user's shell it is an ordinary program") {
+        f.parent_path = "C:\\Windows\\explorer.exe";
+        CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+        f.parent_path = "C:\\Users\\guest\\svchost.exe";
+        CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+        f.parent_path.clear();
+        CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+    }
+    SECTION("the signer must be Windows itself") {
+        f.app.publisher = "CN=Microsoft Corporation, O=Microsoft Corporation";
+        CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+        f.app.publisher = "CN=Skutta Software GmbH";
+        CHECK(evaluate(p, kProtection, f, kNow).action == Action::Deny);
+        f.publisher_resolved = false;
+        CHECK(evaluate(p, kProtection, f, kNow).needs_publisher);
+    }
+    SECTION("tools that run arbitrary code never qualify") {
+        for (const auto* name : {"cmd.exe", "powershell.exe", "rundll32.exe", "msiexec.exe", "mmc.exe"}) {
+            INFO(name);
+            auto tool = facts(std::string("C:\\Windows\\System32\\") + name, {}, windows);
+            tool.com_server = true;
+            tool.parent_path = svchost;
+            CHECK(evaluate(p, kProtection, tool, kNow).action == Action::Deny);
+        }
+    }
+    SECTION("only the operating system folders are considered") {
+        auto elsewhere = facts("C:\\Windows\\Temp\\mobsync.exe", {}, windows);
+        elsewhere.com_server = true;
+        elsewhere.parent_path = svchost;
+        CHECK(evaluate(p, kProtection, elsewhere, kNow).action == Action::Deny);
+        elsewhere.app.path = "C:\\Users\\guest\\System32\\mobsync.exe";
+        CHECK(evaluate(p, kProtection, elsewhere, kNow).action == Action::Deny);
+    }
+    SECTION("SysWOW64 servers qualify the same way") {
+        f.app.path = "C:\\Windows\\SysWOW64\\mobsync.exe";
+        CHECK(evaluate(p, kProtection, f, kNow).action == Action::Allow);
+    }
+}
+
 TEST_CASE("Houseguest continuity is granted only through the verified facts", "[continuity][safety]") {
     Profile p{"p", "x", Action::Deny, {}, {}};
     auto f = facts("C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\1\\msedgewebview2.exe");
@@ -328,7 +418,7 @@ TEST_CASE("analysis reports an application blocked by a stronger deny rule", "[a
 
 TEST_CASE("the protected table is reviewed, not accidental", "[protection][safety]") {
     const auto patterns = kProtection.patterns();
-    CHECK(patterns.size() == 39);
+    CHECK(patterns.size() == 60);
     for (const auto& pattern : patterns) {
         INFO(pattern);
         CHECK(pattern != "c:/windows/system32/**");
