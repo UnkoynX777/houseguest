@@ -1,0 +1,9 @@
+<template>
+  <svg viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="15" fill="#0f1420" />
+    <path d="M18 49V30a14 14 0 0 1 28 0v19" fill="none" stroke="#f3b544" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M12 49h40" stroke="#f3b544" stroke-width="4.5" stroke-linecap="round" />
+    <circle cx="32" cy="31" r="4.6" fill="#f3b544" />
+    <path d="M30 34h4l1.6 9h-7.2z" fill="#f3b544" />
+  </svg>
+</template>
