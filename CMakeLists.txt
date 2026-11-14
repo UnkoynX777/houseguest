@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Houseguest VERSION 0.1.0 LANGUAGES CXX)
+project(Houseguest VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,8 @@ endif()
 if(HOUSEGUEST_BUILD_TESTS)
   enable_testing()
 endif()
+
+configure_file(cmake/version.hpp.in ${CMAKE_BINARY_DIR}/generated/houseguest/version.hpp @ONLY)
 
 add_subdirectory(core)
 

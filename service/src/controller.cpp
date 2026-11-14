@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "houseguest/core/analysis.hpp"
+#include "houseguest/system/capabilities.hpp"
 #include "houseguest/system/crypto.hpp"
 #include "houseguest/system/text.hpp"
 #include "houseguest/system/windows_info.hpp"
@@ -62,6 +63,18 @@ std::filesystem::path executable_directory() {
     return std::filesystem::path(buffer).parent_path();
 }
 
+const char* enforcement_name(SupervisionMode mode) {
+    switch (mode) {
+        case SupervisionMode::Events:
+            return "supervised";
+        case SupervisionMode::Polling:
+            return "polling";
+        case SupervisionMode::Stopped:
+            break;
+    }
+    return "unavailable";
+}
+
 }  // namespace
 
 Controller::Controller(std::filesystem::path data_directory, bool enable_enforcement)
@@ -79,10 +92,11 @@ Controller::Controller(std::filesystem::path data_directory, bool enable_enforce
             break;
     }
 
-    supervisor_ = std::make_unique<Supervisor>(resolver_, [this](const Denial& d) { on_denial(d); });
-    if (enable_enforcement && !supervisor_->start(supervisor_error_)) {
-        audit_->append("service", "supervisor.unavailable", {{"reason", supervisor_error_}});
-    }
+    capabilities_ = system::probe_capabilities();
+    supervisor_ = std::make_unique<Supervisor>(
+        resolver_, [this](const Denial& d) { on_denial(d); },
+        [this](SupervisionMode mode, const std::string& reason) { on_mode(mode, reason); });
+    if (enable_enforcement) supervisor_->start();
     register_commands();
 
     {
@@ -215,7 +229,10 @@ void Controller::on_denial(const Denial& denial) {
         last_notice_[key] = now;
     }
     audit_->append(
-        "supervisor", denial.enforced ? "app.blocked" : "app.would_block",
+        "supervisor",
+        denial.enforced     ? "app.blocked"
+        : denial.audit_only ? "app.would_block"
+                            : "app.block_failed",
         {{"path", denial.app.path},
          {"sha256", denial.app.sha256},
          {"publisher", denial.app.publisher},
@@ -227,6 +244,26 @@ void Controller::on_denial(const Denial& denial) {
         system::notify_session(denial.session_id, L"Houseguest",
                                name + L" is not allowed on this computer right now.");
     }
+}
+
+void Controller::on_mode(SupervisionMode mode, const std::string& reason) {
+    audit_->append("service", "supervisor.mode", {{"mode", enforcement_name(mode)}, {"reason", reason}});
+}
+
+Json Controller::supervisor_json() const {
+    const auto stats = supervisor_->stats();
+    return {{"mode", enforcement_name(stats.mode)},
+            {"degraded_reason", stats.degraded_reason},
+            {"inspected", stats.inspected},
+            {"terminated", stats.terminated},
+            {"termination_failed", stats.termination_failed},
+            {"pid_reuse_skipped", stats.pid_reuse_skipped},
+            {"identity_cache_entries", resolver_.cached()},
+            {"latency_ms",
+             {{"samples", stats.latency_samples},
+              {"average", stats.latency_average_ms},
+              {"p95", stats.latency_p95_ms},
+              {"max", stats.latency_max_ms}}}};
 }
 
 core::Profile& Controller::find_profile(const std::string& id) {
@@ -307,7 +344,7 @@ Json Controller::status_json() const {
                 {"configured", state.configured()},
                 {"armed", state.session.has_value()},
                 {"now", now_seconds()},
-                {"enforcement", supervisor_->running() ? "supervised" : "unavailable"},
+                {"enforcement", enforcement_name(supervisor_->mode())},
                 {"store_tampered", load_result_ == LoadResult::Tampered},
                 {"language", state.language}};
     if (state.session) {

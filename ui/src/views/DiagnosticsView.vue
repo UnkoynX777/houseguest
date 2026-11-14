@@ -18,17 +18,37 @@ async function load() {
 }
 onMounted(load);
 
+const titles: Record<string, string> = {
+  windows_build: 'Windows version',
+  cryptography: 'Cryptography',
+  process_inspection: 'Process inspection',
+  process_events: 'Process creation events',
+  signature_verification: 'Publisher verification',
+  session_control: 'Session control',
+  local_accounts: 'Local accounts',
+  webview2_runtime: 'WebView2 runtime',
+  defender_independent: 'Independence from Windows security features',
+};
+
 const checks = computed(() => {
   const d = info.value;
   if (!d) return [];
-  return [
-    { ok: d.supervisor_running, label: t('Process monitoring'), detail: d.supervisor_running ? t('Running') : d.supervisor_error || t('Not running') },
+  const own = [
+    { ok: d.supervisor.mode !== 'unavailable', soft: d.supervisor.mode === 'polling', label: t('Process monitoring'), detail: { supervised: t('Running'), polling: t('Running in polling mode'), unavailable: t('Not running') }[d.supervisor.mode] },
     { ok: d.audit_chain_valid, label: t('Audit log integrity'), detail: d.audit_chain_valid ? t('Chain verified') : t('Chain broken') },
     { ok: d.state === 'loaded' || d.state === 'fresh', label: t('Settings integrity'), detail: { loaded: t('Verified'), fresh: t('New installation'), recovered: t('Recovered from snapshot'), tampered: t('Failed verification') }[d.state] },
-    { ok: d.capabilities.webview2, label: t('WebView2 runtime'), detail: d.capabilities.webview2 ? t('Installed') : t('Missing') },
     { ok: d.backups > 0, label: t('Backups'), detail: d.backups > 0 ? t('{n} available', { n: d.backups }) : t('None yet'), soft: true },
   ];
+  const probes = d.capabilities.checks.map((check) => ({
+    ok: check.health === 'ok',
+    soft: check.health === 'degraded' || (check.health === 'missing' && !check.critical),
+    label: t(titles[check.id] ?? check.id),
+    detail: check.detail,
+  }));
+  return [...own, ...probes];
 });
+
+const latency = computed(() => info.value?.supervisor.latency_ms);
 
 async function copy() {
   if (!info.value) return;
@@ -53,9 +73,20 @@ async function copy() {
         </tbody></table>
       </div>
       <div class="card stack">
+        <h2>{{ t('Monitoring performance') }}</h2>
+        <dl class="grid cols-4" style="margin: 0">
+          <div><dt class="label">{{ t('Programs inspected') }}</dt><dd class="kpi-number">{{ info.supervisor.inspected }}</dd></div>
+          <div><dt class="label">{{ t('Programs stopped') }}</dt><dd class="kpi-number">{{ info.supervisor.terminated }}</dd></div>
+          <div><dt class="label">{{ t('Median-to-95th stop delay') }}</dt><dd class="kpi-number">{{ latency && latency.samples ? Math.round(latency.average) + ' / ' + Math.round(latency.p95) + ' ms' : '—' }}</dd></div>
+          <div><dt class="label">{{ t('Slowest stop') }}</dt><dd class="kpi-number">{{ latency && latency.samples ? Math.round(latency.max) + ' ms' : '—' }}</dd></div>
+        </dl>
+        <p v-if="info.supervisor.degraded_reason" class="hint">{{ info.supervisor.degraded_reason }}</p>
+        <p class="hint">{{ t('Houseguest stops a program after it starts, so a blocked program can run for a short moment. These figures are measured on this computer.') }}</p>
+      </div>
+      <div class="card stack">
         <h2>{{ t('System') }}</h2>
         <dl class="grid cols-2" style="margin: 0">
-          <div><dt class="label">{{ t('Windows') }}</dt><dd style="margin: 0">{{ info.capabilities.edition }} · {{ info.capabilities.build }}</dd></div>
+          <div><dt class="label">{{ t('Windows') }}</dt><dd style="margin: 0">{{ info.capabilities.product_name }} {{ info.capabilities.display_version }} · {{ info.capabilities.edition }} · build {{ info.capabilities.build }}</dd></div>
           <div><dt class="label">{{ t('Service version') }}</dt><dd style="margin: 0">{{ info.version }}</dd></div>
           <div><dt class="label">{{ t('Data folder') }}</dt><dd class="mono" style="margin: 0">{{ info.data_directory }}</dd></div>
           <div><dt class="label">{{ t('Install folder') }}</dt><dd class="mono" style="margin: 0">{{ info.install_directory }}</dd></div>

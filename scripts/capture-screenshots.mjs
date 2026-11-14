@@ -19,7 +19,8 @@ let sequence = 0;
 const waiting = new Map();
 socket.addEventListener('message', (event) => {
   const message = JSON.parse(event.data);
-  waiting.get(message.id)?.(message);
+  const waiter = typeof message.id === 'number' ? waiting.get(message.id) : undefined;
+  if (waiter) waiter(message);
 });
 const send = (method, params = {}) =>
   new Promise((resolve, reject) => {
@@ -33,6 +34,18 @@ const evaluate = async (expression) => {
   if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? 'evaluation failed');
   return result.result.value;
 };
+const globalObject = (await send('Runtime.evaluate', { expression: 'globalThis' })).result.objectId;
+const run = async (fn, ...args) => {
+  const result = await send('Runtime.callFunctionOn', {
+    objectId: globalObject,
+    functionDeclaration: fn.toString(),
+    arguments: args.map((value) => ({ value })),
+    returnByValue: true,
+    awaitPromise: true,
+  });
+  if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? 'call failed');
+  return result.result.value;
+};
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const waitFor = async (expression, label, timeout = 15000) => {
   const start = Date.now();
@@ -43,9 +56,26 @@ const waitFor = async (expression, label, timeout = 15000) => {
   throw new Error(`Timed out waiting for ${label}`);
 };
 const clickText = (text, selector = 'button') =>
-  evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.textContent.trim().includes(${JSON.stringify(text)})); if (!el) return false; el.click(); return true; })()`);
+  run(
+    (sel, wanted) => {
+      const el = [...document.querySelectorAll(sel)].find((b) => b.textContent.trim().includes(wanted));
+      if (!el) return false;
+      el.click();
+      return true;
+    },
+    selector,
+    text,
+  );
 const fill = (selector, value) =>
-  evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  run(
+    (sel, text) => {
+      const el = document.querySelector(sel);
+      el.value = text;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    },
+    selector,
+    value,
+  );
 const shot = async (name) => {
   await sleep(450);
   const { data } = await send('Page.captureScreenshot', { format: 'png' });
@@ -56,7 +86,7 @@ const nav = async (label, marker) => {
   await clickText(label, '.nav');
   await waitFor(marker, label);
 };
-const theme = (value) => evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(value)}`);
+const theme = (value) => run((name) => { document.documentElement.dataset.theme = name; }, value);
 const labels = ['Dashboard', 'Sessions', 'Applications', 'Profiles', 'Rules', 'History', 'Security', 'Diagnostics', 'Settings', 'About'];
 const clipped = () =>
   evaluate(`(() => {
@@ -81,7 +111,7 @@ const sweep = async (width, height) => {
   await sleep(300);
   for (const label of labels) {
     const index = labels.indexOf(label);
-    await evaluate(`document.querySelectorAll('.nav')[${index}].click()`);
+    await run((position) => document.querySelectorAll('.nav')[position].click(), index);
     await sleep(450);
     const result = await clipped();
     check(`${label} fits ${width}x${height}`, !result.horizontal && result.cut === 0);
@@ -114,8 +144,8 @@ await waitFor("document.querySelector('.hero')", 'dashboard');
 await shot('dashboard-idle');
 
 await nav('Sessions', "document.querySelector('.check')");
-check('guest account is listed', await evaluate(`[...document.querySelectorAll('.check')].some((c) => c.textContent.includes(${JSON.stringify(GUEST_USER)}))`));
-await evaluate(`[...document.querySelectorAll('.check')].find((c) => c.textContent.includes(${JSON.stringify(GUEST_USER)})).querySelector('input').click()`);
+check('guest account is listed', await run((name) => [...document.querySelectorAll('.check')].some((c) => c.textContent.includes(name)), GUEST_USER));
+await run((name) => [...document.querySelectorAll('.check')].find((c) => c.textContent.includes(name)).querySelector('input').click(), GUEST_USER);
 await shot('sessions-new');
 await clickText('Preview');
 await waitFor("document.querySelector('.modal.wide table')", 'policy preview');

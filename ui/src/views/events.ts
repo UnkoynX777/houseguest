@@ -50,6 +50,8 @@ export function eventLabel(entry: AuditEntry): string {
     case 'state.integrity_failure': return t('Settings failed their integrity check');
     case 'state.recovered': return t('Settings recovered from the previous snapshot');
     case 'supervisor.unavailable': return t('Process monitoring could not start');
+    case 'supervisor.mode': return d.mode === 'supervised' ? t('Process monitoring uses process events') : d.mode === 'polling' ? t('Process monitoring switched to polling') : t('Process monitoring stopped');
+    case 'app.block_failed': return t('Could not stop {name}', { name: String(d.path).split(/[\\/]/).pop() ?? '' });
     default: return entry.event;
   }
 }

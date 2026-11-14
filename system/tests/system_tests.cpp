@@ -2,7 +2,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "houseguest/system/capabilities.hpp"
 #include "houseguest/system/crypto.hpp"
+#include "houseguest/system/process.hpp"
 #include "houseguest/system/text.hpp"
 #include "houseguest/system/windows_info.hpp"
 
@@ -75,7 +77,22 @@ TEST_CASE("discovery finds applications with existing paths", "[discovery]") {
 }
 
 TEST_CASE("current process is introspectable", "[process]") {
-    const auto pid = static_cast<std::uint32_t>(GetCurrentProcessId());
-    CHECK(process_user_sid(pid).has_value());
-    CHECK(process_image_path(pid).has_value());
+    const auto self = ProcessRef::open(static_cast<std::uint32_t>(GetCurrentProcessId()));
+    REQUIRE(self.has_value());
+    CHECK(self->user_sid().has_value());
+    CHECK(self->image_path().has_value());
+    CHECK(self->creation_ticks().has_value());
+    CHECK(self->creation_ticks().value() <= ProcessRef::now_ticks());
+}
+
+TEST_CASE("capability probe reports every check with a verdict", "[capabilities]") {
+    const auto capabilities = probe_capabilities();
+    CHECK_FALSE(capabilities.build.empty());
+    CHECK(capabilities.checks.size() >= 8);
+    for (const auto& check : capabilities.checks) {
+        CHECK_FALSE(check.id.empty());
+        CHECK_FALSE(check.detail.empty());
+    }
+    CHECK_FALSE(capabilities.critical_failure());
+    CHECK(to_json(capabilities)["ready"].get<bool>());
 }

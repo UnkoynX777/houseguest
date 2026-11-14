@@ -1,5 +1,5 @@
 # Builds the Release tree and produces the MSI, a portable zip and SHA-256 checksums in dist\.
-param([string] $Version = '0.1.0')
+param([string] $Version = '0.2.0')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $root 'dist'

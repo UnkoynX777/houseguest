@@ -8,7 +8,6 @@
 #include <sddl.h>
 #include <shobjidl.h>
 #include <softpub.h>
-#include <tlhelp32.h>
 #include <wincrypt.h>
 #include <mscat.h>
 #include <wintrust.h>
@@ -22,35 +21,10 @@
 
 #include "houseguest/system/text.hpp"
 
+#include "win_util.hpp"
+
 namespace houseguest::system {
 namespace {
-
-struct HandleCloser {
-    void operator()(HANDLE h) const {
-        if (h && h != INVALID_HANDLE_VALUE) CloseHandle(h);
-    }
-};
-using Handle = std::unique_ptr<void, HandleCloser>;
-
-struct LocalFreeDeleter {
-    void operator()(void* p) const { LocalFree(p); }
-};
-
-std::optional<std::string> sid_string(PSID sid) {
-    LPWSTR text = nullptr;
-    if (!ConvertSidToStringSidW(sid, &text)) return std::nullopt;
-    std::unique_ptr<void, LocalFreeDeleter> guard(text);
-    return to_utf8(text);
-}
-
-std::optional<std::string> token_user_sid(HANDLE token) {
-    DWORD size = 0;
-    GetTokenInformation(token, TokenUser, nullptr, 0, &size);
-    if (size == 0) return std::nullopt;
-    std::vector<std::uint8_t> buffer(size);
-    if (!GetTokenInformation(token, TokenUser, buffer.data(), size, &size)) return std::nullopt;
-    return sid_string(reinterpret_cast<TOKEN_USER*>(buffer.data())->User.Sid);
-}
 
 std::string lower(std::string value) {
     std::ranges::transform(value, value.begin(),
@@ -196,41 +170,6 @@ std::vector<LocalUser> list_local_users() {
     return users;
 }
 
-std::optional<std::string> process_user_sid(std::uint32_t pid) {
-    Handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
-    if (!process) return std::nullopt;
-    HANDLE raw = nullptr;
-    if (!OpenProcessToken(process.get(), TOKEN_QUERY, &raw)) return std::nullopt;
-    Handle token(raw);
-    return token_user_sid(token.get());
-}
-
-std::optional<std::filesystem::path> process_image_path(std::uint32_t pid) {
-    Handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
-    if (!process) return std::nullopt;
-    std::wstring buffer(32768, L'\0');
-    DWORD size = static_cast<DWORD>(buffer.size());
-    if (!QueryFullProcessImageNameW(process.get(), 0, buffer.data(), &size)) return std::nullopt;
-    buffer.resize(size);
-    return std::filesystem::path(buffer);
-}
-
-std::vector<std::uint32_t> running_process_ids() {
-    std::vector<std::uint32_t> ids;
-    Handle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
-    if (snapshot.get() == INVALID_HANDLE_VALUE) return ids;
-    PROCESSENTRY32W entry{sizeof(entry)};
-    for (BOOL ok = Process32FirstW(snapshot.get(), &entry); ok; ok = Process32NextW(snapshot.get(), &entry)) {
-        ids.push_back(entry.th32ProcessID);
-    }
-    return ids;
-}
-
-bool terminate_process(std::uint32_t pid) {
-    Handle process(OpenProcess(PROCESS_TERMINATE, FALSE, pid));
-    return process && TerminateProcess(process.get(), 1);
-}
-
 namespace {
 
 std::string verified_signer_subject(WINTRUST_DATA& data) {
@@ -346,35 +285,6 @@ std::vector<InstalledApp> discover_installed_apps() {
     std::ranges::sort(
         apps, [](const InstalledApp& a, const InstalledApp& b) { return lower(a.name) < lower(b.name); });
     return apps;
-}
-
-core::Json detect_capabilities() {
-    core::Json caps;
-    wchar_t edition[64] = {};
-    DWORD size = sizeof(edition);
-    RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", L"EditionID",
-                 RRF_RT_REG_SZ, nullptr, edition, &size);
-    wchar_t build[32] = {};
-    size = sizeof(build);
-    RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-                 L"CurrentBuildNumber", RRF_RT_REG_SZ, nullptr, build, &size);
-    caps["edition"] = to_utf8(edition);
-    caps["build"] = to_utf8(build);
-
-    const auto edition_text = lower(to_utf8(edition));
-    const bool enterprise = edition_text.find("enterprise") != std::string::npos ||
-                            edition_text.find("education") != std::string::npos;
-    caps["applocker_enforced"] = enterprise;
-    caps["supervised"] = true;
-
-    wchar_t runtime[64] = {};
-    size = sizeof(runtime);
-    const bool webview = RegGetValueW(HKEY_LOCAL_MACHINE,
-                                      L"SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\"
-                                      L"{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
-                                      L"pv", RRF_RT_REG_SZ, nullptr, runtime, &size) == ERROR_SUCCESS;
-    caps["webview2"] = webview;
-    return caps;
 }
 
 void disconnect_sessions(const std::vector<std::string>& user_sids, bool logoff) {

@@ -1,7 +1,7 @@
 {
   "name": "houseguest-ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "5.2.4",
-    "typescript": "5.7.2",
+    "typescript": "5.9.3",
     "vite": "6.4.6",
     "vue-tsc": "3.3.14"
   }

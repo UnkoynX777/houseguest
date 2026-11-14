@@ -47,6 +47,10 @@ async function stop() {
         <Icon name="alert" />
         <div><strong>{{ t('Enforcement is unavailable') }}</strong><p>{{ t('The service could not start process monitoring. See Diagnostics.') }}</p></div>
       </div>
+      <div v-else-if="data.enforcement === 'polling'" class="banner warn" role="status">
+        <Icon name="alert" />
+        <div><strong>{{ t('Reduced monitoring mode') }}</strong><p>{{ t('Process events are unavailable, so Houseguest checks running programs every second. Blocking can be about a second slower. See Diagnostics.') }}</p></div>
+      </div>
       <div v-if="data.store_tampered" class="banner bad" role="alert">
         <Icon name="alert" /><div><strong>{{ t('Settings failed their integrity check') }}</strong><p>{{ t('Houseguest started from a clean state. Review Security and Diagnostics.') }}</p></div>
       </div>
@@ -79,7 +83,7 @@ async function stop() {
         <div class="card kpi"><div class="value">{{ data.session ? data.allowed_rules ?? 0 : '–' }}</div><div class="label">{{ t('Allow rules in profile') }}</div></div>
         <div class="card kpi"><div class="value">{{ data.profiles }}</div><div class="label">{{ t('Profiles') }}</div></div>
         <div class="card kpi">
-          <div class="value" style="font-size: 20px; padding: 5px 0"><span class="badge" :class="data.enforcement === 'supervised' ? 'ok' : 'bad'">{{ data.enforcement === 'supervised' ? t('Supervised') : t('Unavailable') }}</span></div>
+          <div class="value" style="font-size: 20px; padding: 5px 0"><span class="badge" :class="{ supervised: 'ok', polling: 'warn', unavailable: 'bad' }[data.enforcement]">{{ { supervised: t('Supervised'), polling: t('Polling'), unavailable: t('Unavailable') }[data.enforcement] }}</span></div>
           <div class="label">{{ t('Enforcement level') }}</div>
         </div>
       </div>

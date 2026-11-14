@@ -79,6 +79,8 @@ void usage() {
         "  status                      show service state\n"
         "  setup                       first-time owner setup (elevated prompt required)\n"
         "  recover [--reset-owner]     end the active session without the PIN (elevated)\n"
+        "  guard                       exit code 3 while a guest session is active (used by the "
+        "uninstaller)\n"
         "  call <cmd> [json-args]      run any owner command; PIN from HOUSEGUEST_PIN or prompt\n");
 }
 
@@ -106,6 +108,18 @@ int main(int argc, char** argv) {
         auto reply = call(client, "setup", {{"pin", pin}});
         if (reply.value("ok", false)) reply["data"].erase("token");
         return print_result(reply);
+    }
+
+    if (command == "guard") {
+        const auto reply = call(client, "status");
+        const bool active = reply.value("ok", false) && reply["data"].value("armed", false);
+        if (active) {
+            std::fputs(
+                "A guest session is active. Stop it from Houseguest, or run the uninstaller with "
+                "FORCE_UNINSTALL=1.\n",
+                stderr);
+        }
+        return active ? 3 : 0;
     }
 
     if (command == "recover") {

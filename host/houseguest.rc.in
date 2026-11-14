@@ -3,8 +3,8 @@
 1 ICON "houseguest.ico"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 0,1,0,0
-PRODUCTVERSION 0,1,0,0
+FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -12,7 +12,7 @@ BEGIN
     BEGIN
       VALUE "FileDescription", "Houseguest"
       VALUE "ProductName", "Houseguest"
-      VALUE "ProductVersion", "0.1.0"
+      VALUE "ProductVersion", "@PROJECT_VERSION@"
       VALUE "LegalCopyright", "Apache License 2.0"
     END
   END

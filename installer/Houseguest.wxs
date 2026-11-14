@@ -45,6 +45,15 @@
       <Files Include="$(UiDist)\**" />
     </ComponentGroup>
 
+    <CustomAction Id="GuardActiveSession" FileRef="CliExeFile" ExeCommand="guard" Execute="immediate" Impersonate="no"
+                  Return="check" />
+    <InstallExecuteSequence>
+      <Custom Action="GuardActiveSession" Before="InstallValidate"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND NOT FORCE_UNINSTALL" />
+    </InstallExecuteSequence>
+    <util:CloseApplication Id="CloseInterface" Target="houseguest.exe" EndSessionMessage="yes" CloseMessage="no"
+                           RebootPrompt="no" />
+
     <Feature Id="Main" Title="Houseguest" Level="1">
       <ComponentGroupRef Id="ServiceFiles" />
       <ComponentGroupRef Id="ApplicationFiles" />

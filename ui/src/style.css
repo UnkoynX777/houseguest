@@ -271,3 +271,4 @@ tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent);
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 .table-wrap td .btn + .btn { margin-left: 6px; }
+.kpi-number { margin: 0; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }

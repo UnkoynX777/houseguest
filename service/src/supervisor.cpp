@@ -2,223 +2,230 @@
 
 #include <windows.h>
 
-#include <evntcons.h>
-#include <evntrace.h>
-
 #include <algorithm>
 #include <chrono>
+#include <unordered_set>
 
 #include "houseguest/core/glob.hpp"
-#include "houseguest/system/crypto.hpp"
+#include "houseguest/system/process.hpp"
 #include "houseguest/system/text.hpp"
-#include "houseguest/system/windows_info.hpp"
 
 namespace houseguest::service {
 namespace {
 
-constexpr wchar_t kSessionName[] = L"HouseguestProcessTrace";
 constexpr unsigned kWorkerCount = 2;
-constexpr std::size_t kMaxCacheEntries = 4096;
-constexpr std::uint16_t kProcessStartEventId = 1;
-constexpr ULONGLONG kProcessKeyword = 0x10;
-constexpr GUID kKernelProcessProvider = {
-    0x22fb2cd6, 0x0e7b, 0x422b, {0xa0, 0xc7, 0x2f, 0xad, 0x1f, 0xd0, 0xe7, 0x16}};
+constexpr std::size_t kMaxQueue = 8192;
+constexpr std::size_t kLatencyWindow = 512;
+constexpr std::uint64_t kTicksPerMillisecond = 10000;
+constexpr std::uint64_t kReuseTolerance = 50 * kTicksPerMillisecond;
+constexpr auto kEventSweepInterval = std::chrono::seconds(5);
+constexpr auto kPollingSweepInterval = std::chrono::seconds(1);
+constexpr auto kRestartInterval = std::chrono::seconds(15);
 
-Supervisor* g_supervisor = nullptr;
-
-std::vector<std::uint8_t> trace_properties_buffer() {
-    const std::size_t size = sizeof(EVENT_TRACE_PROPERTIES) + sizeof(kSessionName);
-    std::vector<std::uint8_t> buffer(size);
-    auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(buffer.data());
-    properties->Wnode.BufferSize = static_cast<ULONG>(size);
-    properties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
-    properties->Wnode.ClientContext = 1;
-    properties->LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
-    properties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
-    return buffer;
-}
-
-void WINAPI trace_callback(PEVENT_RECORD record) {
-    Supervisor::on_event(record);
-}
-
-std::string lowered(std::string value) {
-    std::ranges::transform(value, value.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return value;
+bool decided_by_path(const EnforcementPolicy& policy, const core::Decision& decision) {
+    if (decision.source == core::DecisionSource::Baseline) return true;
+    if (decision.source != core::DecisionSource::Rule) return false;
+    return decision.priority > policy.highest_expensive_priority ||
+           (decision.priority == policy.highest_expensive_priority && decision.action == core::Action::Deny);
 }
 
 }  // namespace
 
-core::AppIdentity IdentityResolver::resolve(const std::filesystem::path& file, bool with_hash,
-                                            bool with_publisher) {
-    core::AppIdentity identity;
-    identity.path = system::path_to_utf8(file);
-
-    std::error_code ec;
-    const auto size = std::filesystem::file_size(file, ec);
-    const auto modified = std::filesystem::last_write_time(file, ec);
-    const auto key = lowered(identity.path);
-
-    std::scoped_lock lock(mutex_);
-    if (cache_.size() > kMaxCacheEntries) cache_.clear();
-    auto& entry = cache_[key];
-    if (entry.size != size || entry.modified != modified) entry = Entry{size, modified, {}, {}};
-    if (with_hash && !entry.sha256) entry.sha256 = system::sha256_file(file).value_or("");
-    if (with_publisher && !entry.publisher) entry.publisher = system::trusted_publisher(file);
-    identity.sha256 = entry.sha256.value_or("");
-    identity.publisher = entry.publisher.value_or("");
-    return identity;
-}
-
-Supervisor::Supervisor(IdentityResolver& resolver, DenialHandler on_denial)
-    : resolver_(resolver), on_denial_(std::move(on_denial)) {}
+Supervisor::Supervisor(IdentityResolver& resolver, DenialHandler on_denial, ModeHandler on_mode)
+    : resolver_(resolver),
+      on_denial_(std::move(on_denial)),
+      on_mode_(std::move(on_mode)),
+      trace_([this](std::uint32_t pid, std::uint64_t ticks) { enqueue(pid, ticks); }) {}
 
 Supervisor::~Supervisor() {
     stop();
 }
 
-bool Supervisor::start(std::string& error) {
-    if (running_) return true;
-    g_supervisor = this;
-
-    auto buffer = trace_properties_buffer();
-    auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(buffer.data());
-    TRACEHANDLE session = 0;
-    ULONG status = StartTraceW(&session, kSessionName, properties);
-    if (status == ERROR_ALREADY_EXISTS) {
-        auto stale = trace_properties_buffer();
-        ControlTraceW(0, kSessionName, reinterpret_cast<EVENT_TRACE_PROPERTIES*>(stale.data()),
-                      EVENT_TRACE_CONTROL_STOP);
-        status = StartTraceW(&session, kSessionName, properties);
+bool Supervisor::start() {
+    if (running()) return true;
+    std::string error;
+    if (trace_.start(error)) {
+        set_mode(SupervisionMode::Events, "");
+    } else {
+        set_mode(SupervisionMode::Polling, error);
     }
-    if (status != ERROR_SUCCESS) {
-        error = "StartTrace failed with code " + std::to_string(status);
-        return false;
-    }
-    session_handle_ = session;
-
-    status = EnableTraceEx2(session, &kKernelProcessProvider, EVENT_CONTROL_CODE_ENABLE_PROVIDER,
-                            TRACE_LEVEL_INFORMATION, kProcessKeyword, 0, 0, nullptr);
-    if (status != ERROR_SUCCESS) {
-        error = "EnableTraceEx2 failed with code " + std::to_string(status);
-        ControlTraceW(session, nullptr, properties, EVENT_TRACE_CONTROL_STOP);
-        return false;
-    }
-
-    EVENT_TRACE_LOGFILEW log{};
-    log.LoggerName = const_cast<LPWSTR>(kSessionName);
-    log.ProcessTraceMode = PROCESS_TRACE_MODE_REAL_TIME | PROCESS_TRACE_MODE_EVENT_RECORD;
-    log.EventRecordCallback = trace_callback;
-    const TRACEHANDLE consumer = OpenTraceW(&log);
-    if (consumer == INVALID_PROCESSTRACE_HANDLE) {
-        error = "OpenTrace failed";
-        ControlTraceW(session, nullptr, properties, EVENT_TRACE_CONTROL_STOP);
-        return false;
-    }
-    trace_handle_ = consumer;
-
-    running_ = true;
     for (unsigned i = 0; i < kWorkerCount; ++i) {
         workers_.emplace_back([this](const std::stop_token& stop) { work(stop); });
     }
-    trace_thread_ = std::thread([consumer] {
-        TRACEHANDLE handle = consumer;
-        ProcessTrace(&handle, 1, nullptr, nullptr);
-    });
+    maintenance_ = std::jthread([this](const std::stop_token& stop) { maintain(stop); });
     return true;
 }
 
 void Supervisor::stop() {
-    if (!running_.exchange(false)) return;
-    auto buffer = trace_properties_buffer();
-    ControlTraceW(session_handle_, nullptr, reinterpret_cast<EVENT_TRACE_PROPERTIES*>(buffer.data()),
-                  EVENT_TRACE_CONTROL_STOP);
-    if (trace_thread_.joinable()) trace_thread_.join();
-    CloseTrace(trace_handle_);
+    if (mode_.exchange(SupervisionMode::Stopped) == SupervisionMode::Stopped) return;
+    trace_.stop();
+    maintenance_.request_stop();
     for (auto& worker : workers_) worker.request_stop();
+    wake_.notify_all();
     queue_ready_.notify_all();
+    maintenance_ = {};
     workers_.clear();
-    g_supervisor = nullptr;
 }
 
 void Supervisor::apply(std::shared_ptr<const EnforcementPolicy> policy) {
-    std::scoped_lock lock(policy_mutex_);
-    policy_ = std::move(policy);
+    {
+        std::scoped_lock lock(policy_mutex_);
+        policy_ = std::move(policy);
+    }
+    std::scoped_lock lock(handled_mutex_);
+    handled_.clear();
 }
 
 void Supervisor::sweep() {
     for (const auto pid : system::running_process_ids()) {
-        if (pid > 4) enqueue(pid);
+        if (pid > 4) enqueue(pid, 0);
     }
 }
 
-void Supervisor::on_event(void* raw) {
-    const auto* record = static_cast<const EVENT_RECORD*>(raw);
-    if (!g_supervisor || record->EventHeader.EventDescriptor.Id != kProcessStartEventId ||
-        !IsEqualGUID(record->EventHeader.ProviderId, kKernelProcessProvider) ||
-        record->UserDataLength < sizeof(std::uint32_t)) {
-        return;
+SupervisorStats Supervisor::stats() const {
+    SupervisorStats stats;
+    stats.mode = mode_;
+    stats.inspected = inspected_;
+    stats.terminated = terminated_;
+    stats.termination_failed = termination_failed_;
+    stats.pid_reuse_skipped = pid_reuse_skipped_;
+    std::scoped_lock lock(stats_mutex_);
+    stats.degraded_reason = degraded_reason_;
+    stats.latency_samples = latencies_.size();
+    if (!latencies_.empty()) {
+        std::vector<double> sorted(latencies_.begin(), latencies_.end());
+        std::ranges::sort(sorted);
+        double total = 0;
+        for (const double value : sorted) total += value;
+        stats.latency_average_ms = total / static_cast<double>(sorted.size());
+        stats.latency_p95_ms = sorted[(sorted.size() - 1) * 95 / 100];
+        stats.latency_max_ms = sorted.back();
     }
-    g_supervisor->enqueue(*static_cast<const std::uint32_t*>(record->UserData));
+    return stats;
 }
 
-void Supervisor::enqueue(std::uint32_t pid) {
+void Supervisor::enqueue(std::uint32_t pid, std::uint64_t event_ticks) {
     {
         std::scoped_lock lock(queue_mutex_);
-        queue_.push(pid);
+        if (queue_.size() >= kMaxQueue) return;
+        queue_.push({pid, event_ticks});
     }
     queue_ready_.notify_one();
 }
 
+void Supervisor::set_mode(SupervisionMode mode, const std::string& reason) {
+    const auto previous = mode_.exchange(mode);
+    {
+        std::scoped_lock lock(stats_mutex_);
+        degraded_reason_ = reason;
+    }
+    if (previous != mode && on_mode_) on_mode_(mode, reason);
+}
+
 void Supervisor::work(const std::stop_token& stop) {
     for (;;) {
-        std::uint32_t pid = 0;
+        Pending pending{};
         {
             std::unique_lock lock(queue_mutex_);
             if (!queue_ready_.wait(lock, stop, [this] { return !queue_.empty(); })) return;
-            pid = queue_.front();
+            pending = queue_.front();
             queue_.pop();
         }
         try {
-            inspect(pid);
+            inspect(pending);
         } catch (const std::exception&) {
         }
     }
 }
 
-void Supervisor::inspect(std::uint32_t pid) {
+void Supervisor::maintain(const std::stop_token& stop) {
+    auto last_restart = std::chrono::steady_clock::now();
+    std::unique_lock lock(wake_mutex_);
+    while (!stop.stop_requested()) {
+        const auto interval = mode_ == SupervisionMode::Events ? kEventSweepInterval : kPollingSweepInterval;
+        wake_.wait_for(lock, stop, interval, [] { return false; });
+        if (stop.stop_requested() || mode_ == SupervisionMode::Stopped) return;
+
+        if (mode_ == SupervisionMode::Events && !trace_.alive()) {
+            set_mode(SupervisionMode::Polling, "The process event session ended unexpectedly.");
+            last_restart = std::chrono::steady_clock::now();
+        } else if (mode_ == SupervisionMode::Polling &&
+                   std::chrono::steady_clock::now() - last_restart >= kRestartInterval) {
+            last_restart = std::chrono::steady_clock::now();
+            std::string error;
+            if (trace_.start(error)) set_mode(SupervisionMode::Events, "");
+        }
+
+        forget_exited();
+        sweep();
+    }
+}
+
+bool Supervisor::claim(std::uint32_t pid, std::uint64_t created_ticks) {
+    std::scoped_lock lock(handled_mutex_);
+    auto [it, inserted] = handled_.try_emplace(pid, created_ticks);
+    if (inserted) return true;
+    if (it->second == created_ticks) return false;
+    it->second = created_ticks;
+    return true;
+}
+
+void Supervisor::forget_exited() {
+    const auto alive = system::running_process_ids();
+    const std::unordered_set<std::uint32_t> present(alive.begin(), alive.end());
+    std::scoped_lock lock(handled_mutex_);
+    std::erase_if(handled_, [&](const auto& entry) { return !present.contains(entry.first); });
+}
+
+void Supervisor::record_latency(std::uint64_t event_ticks) {
+    const auto now = system::ProcessRef::now_ticks();
+    if (event_ticks == 0 || now < event_ticks) return;
+    std::scoped_lock lock(stats_mutex_);
+    latencies_.push_back(static_cast<double>(now - event_ticks) / static_cast<double>(kTicksPerMillisecond));
+    if (latencies_.size() > kLatencyWindow) latencies_.pop_front();
+}
+
+void Supervisor::inspect(const Pending& pending) {
     std::shared_ptr<const EnforcementPolicy> policy;
     {
         std::scoped_lock lock(policy_mutex_);
         policy = policy_;
     }
-    if (!policy || pid == GetCurrentProcessId()) return;
+    if (!policy || pending.pid <= 4 || pending.pid == GetCurrentProcessId()) return;
 
-    const auto sid = system::process_user_sid(pid);
+    const auto process = system::ProcessRef::open(pending.pid);
+    if (!process) return;
+    const auto created = process->creation_ticks();
+    if (!created) return;
+    if (pending.event_ticks != 0 && *created > pending.event_ticks + kReuseTolerance) {
+        ++pid_reuse_skipped_;
+        return;
+    }
+    if (!claim(pending.pid, *created)) return;
+    ++inspected_;
+
+    const auto sid = process->user_sid();
     if (!sid || !policy->guest_sids.contains(*sid)) return;
-    const auto image = system::process_image_path(pid);
+    const auto image = process->image_path();
     if (!image) return;
 
     const auto now = std::chrono::system_clock::now();
     auto identity = resolver_.resolve(*image, false, false);
     auto decision = core::evaluate(policy->profile, policy->baseline, identity, now);
-    const bool settled_by_path = decision.source == core::DecisionSource::Baseline ||
-                                 (decision.source == core::DecisionSource::Rule &&
-                                  (decision.priority > policy->highest_expensive_priority ||
-                                   (decision.priority == policy->highest_expensive_priority &&
-                                    decision.action == core::Action::Deny)));
-    if (!settled_by_path && (policy->needs_hash || policy->needs_publisher)) {
+    if (!decided_by_path(*policy, decision) && (policy->needs_hash || policy->needs_publisher)) {
         identity = resolver_.resolve(*image, policy->needs_hash, policy->needs_publisher);
         decision = core::evaluate(policy->profile, policy->baseline, identity, now);
     }
     if (decision.action == core::Action::Allow) return;
 
-    DWORD session_id = 0;
-    ProcessIdToSessionId(pid, &session_id);
-    const bool enforce = !policy->audit_only;
-    if (enforce) system::terminate_process(pid);
-    on_denial_({pid, session_id, *sid, identity, decision, enforce});
+    bool terminated = false;
+    if (!policy->audit_only) {
+        terminated = process->terminate();
+        ++(terminated ? terminated_ : termination_failed_);
+        if (terminated) record_latency(pending.event_ticks);
+    }
+    on_denial_(
+        {pending.pid, process->session_id(), *sid, identity, decision, terminated, policy->audit_only});
 }
 
 }  // namespace houseguest::service

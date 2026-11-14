@@ -9,6 +9,8 @@
 #include <thread>
 #include <unordered_map>
 
+#include "houseguest/system/capabilities.hpp"
+
 #include "audit.hpp"
 #include "store.hpp"
 #include "supervisor.hpp"
@@ -65,6 +67,8 @@ private:
     void end_session(const std::string& reason, bool apply_expiry_action);
     void timer_loop(const std::stop_token& stop);
     void on_denial(const Denial& denial);
+    void on_mode(SupervisionMode mode, const std::string& reason);
+    core::Json supervisor_json() const;
     core::Json status_json() const;
     core::Profile& find_profile(const std::string& id);
     bool session_uses(const std::string& profile_id) const;
@@ -80,7 +84,7 @@ private:
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_notice_;
     std::mutex notice_mutex_;
     std::filesystem::path install_dir_;
-    std::string supervisor_error_;
+    system::Capabilities capabilities_;
     LoadResult load_result_ = LoadResult::Fresh;
     std::atomic<std::uint64_t> blocked_ = 0;
     std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();

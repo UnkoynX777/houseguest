@@ -45,6 +45,15 @@ void Controller::register_session_commands() {
             throw Failure("confirmation_required", "Review the warnings before activating.",
                           {{"findings", compiled.findings}});
         }
+        if (capabilities_.critical_failure()) {
+            throw Failure("compatibility_blocked",
+                          "A component Houseguest depends on is missing. Open Diagnostics for details.");
+        }
+        if (!session.audit_only && !supervisor_->running()) {
+            throw Failure("enforcement_unavailable",
+                          "Process supervision is not running, so restrictions cannot be enforced. "
+                          "Use audit mode or open Diagnostics.");
+        }
         arm(session);
         store_.state.session = session;
         store_.save();

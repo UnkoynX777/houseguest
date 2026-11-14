@@ -21,7 +21,7 @@ export interface Status {
   configured: boolean;
   armed: boolean;
   now: number;
-  enforcement: 'supervised' | 'unavailable';
+  enforcement: 'supervised' | 'polling' | 'unavailable';
   store_tampered: boolean;
   language: string;
   ends_at?: number;
@@ -79,11 +79,36 @@ export interface Preview {
   apps: { name: string; path: string; action: Action; rule: string; source: string }[];
 }
 
+export interface CapabilityCheck {
+  id: string;
+  health: 'ok' | 'degraded' | 'missing';
+  critical: boolean;
+  detail: string;
+}
+
 export interface Diagnostics {
   version: string;
-  capabilities: { edition: string; build: string; applocker_enforced: boolean; supervised: boolean; webview2: boolean };
+  capabilities: {
+    product_name: string;
+    edition: string;
+    display_version: string;
+    build: string;
+    supported_build: boolean;
+    ready: boolean;
+    webview2: boolean;
+    checks: CapabilityCheck[];
+  };
   supervisor_running: boolean;
-  supervisor_error: string;
+  supervisor: {
+    mode: 'supervised' | 'polling' | 'unavailable';
+    degraded_reason: string;
+    inspected: number;
+    terminated: number;
+    termination_failed: number;
+    pid_reuse_skipped: number;
+    identity_cache_entries: number;
+    latency_ms: { samples: number; average: number; p95: number; max: number };
+  };
   audit_chain_valid: boolean;
   state: 'loaded' | 'fresh' | 'recovered' | 'tampered';
   data_directory: string;

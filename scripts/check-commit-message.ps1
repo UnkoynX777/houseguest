@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $attribution = @(
-    '(?im)^\s*co-authored-by:.*(claude|anthropic|openai|copilot|codex|gemini|chatgpt|\bgpt\b|\bai\b|\bbot\b)',
+    '(?im)^\s*co-authored-by:.*(claude|anthropic|openai|copilot|codex|gemini|chatgpt|\bgpt\b|\bai\b)',
     '(?im)^\s*co-authored-by:.*noreply@anthropic\.com',
     '(?i)generated (with|by) .*(claude|anthropic|openai|copilot|codex|gemini|chatgpt|\bai\b)',
     '(?i)claude\.com/claude-code',

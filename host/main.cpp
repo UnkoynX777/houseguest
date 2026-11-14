@@ -387,6 +387,14 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             }
             resize_view();
             return 0;
+        case WM_QUERYENDSESSION:
+            return TRUE;
+        case WM_ENDSESSION:
+            if (wparam != FALSE) {
+                g.exiting = true;
+                DestroyWindow(window);
+            }
+            return 0;
         case WM_EXITSIZEMOVE:
             save_settings();
             return 0;

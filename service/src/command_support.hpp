@@ -6,10 +6,9 @@
 
 #include "houseguest/core/serialization.hpp"
 #include "houseguest/core/types.hpp"
+#include "houseguest/version.hpp"
 
 namespace houseguest::service {
-
-inline constexpr const char* kVersion = "0.1.0";
 
 struct Failure : std::runtime_error {
     Failure(std::string error_code, const std::string& message, core::Json extra = core::Json::object())

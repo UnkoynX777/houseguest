@@ -2,13 +2,15 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <filesystem>
+#include <cstdint>
+#include <deque>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <set>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -16,22 +18,10 @@
 #include "houseguest/core/evaluator.hpp"
 #include "houseguest/core/types.hpp"
 
+#include "identity_resolver.hpp"
+#include "process_trace.hpp"
+
 namespace houseguest::service {
-
-class IdentityResolver {
-public:
-    core::AppIdentity resolve(const std::filesystem::path& file, bool with_hash, bool with_publisher);
-
-private:
-    struct Entry {
-        std::uintmax_t size = 0;
-        std::filesystem::file_time_type modified;
-        std::optional<std::string> sha256;
-        std::optional<std::string> publisher;
-    };
-    std::mutex mutex_;
-    std::unordered_map<std::string, Entry> cache_;
-};
 
 struct EnforcementPolicy {
     core::Profile profile;
@@ -49,46 +39,84 @@ struct Denial {
     std::string user_sid;
     core::AppIdentity app;
     core::Decision decision;
-    bool enforced = true;
+    bool enforced = false;
+    bool audit_only = false;
 };
 
-// Process creation is observed through ETW and offending processes are terminated afterwards.
-// This is reactive: a process can execute briefly before it is stopped.
+enum class SupervisionMode { Stopped, Events, Polling };
+
+struct SupervisorStats {
+    SupervisionMode mode = SupervisionMode::Stopped;
+    std::string degraded_reason;
+    std::uint64_t inspected = 0;
+    std::uint64_t terminated = 0;
+    std::uint64_t termination_failed = 0;
+    std::uint64_t pid_reuse_skipped = 0;
+    std::size_t latency_samples = 0;
+    double latency_average_ms = 0;
+    double latency_p95_ms = 0;
+    double latency_max_ms = 0;
+};
+
 class Supervisor {
 public:
     using DenialHandler = std::function<void(const Denial&)>;
+    using ModeHandler = std::function<void(SupervisionMode, const std::string&)>;
 
-    Supervisor(IdentityResolver& resolver, DenialHandler on_denial);
+    Supervisor(IdentityResolver& resolver, DenialHandler on_denial, ModeHandler on_mode);
     ~Supervisor();
 
-    bool start(std::string& error);
+    bool start();
     void stop();
     void apply(std::shared_ptr<const EnforcementPolicy> policy);
     void sweep();
-    [[nodiscard]] bool running() const { return running_; }
-
-    static void on_event(void* record);
+    [[nodiscard]] SupervisionMode mode() const { return mode_; }
+    [[nodiscard]] bool running() const { return mode_ != SupervisionMode::Stopped; }
+    [[nodiscard]] SupervisorStats stats() const;
 
 private:
-    void enqueue(std::uint32_t pid);
+    struct Pending {
+        std::uint32_t pid;
+        std::uint64_t event_ticks;
+    };
+
+    void enqueue(std::uint32_t pid, std::uint64_t event_ticks);
     void work(const std::stop_token& stop);
-    void inspect(std::uint32_t pid);
+    void maintain(const std::stop_token& stop);
+    void inspect(const Pending& pending);
+    bool claim(std::uint32_t pid, std::uint64_t created_ticks);
+    void forget_exited();
+    void set_mode(SupervisionMode mode, const std::string& reason);
+    void record_latency(std::uint64_t event_ticks);
 
     IdentityResolver& resolver_;
     DenialHandler on_denial_;
+    ModeHandler on_mode_;
+    ProcessTrace trace_;
 
     std::mutex policy_mutex_;
     std::shared_ptr<const EnforcementPolicy> policy_;
 
     std::mutex queue_mutex_;
     std::condition_variable_any queue_ready_;
-    std::queue<std::uint32_t> queue_;
-    std::vector<std::jthread> workers_;
+    std::queue<Pending> queue_;
 
-    std::uint64_t session_handle_ = 0;
-    std::uint64_t trace_handle_ = 0;
-    std::thread trace_thread_;
-    std::atomic<bool> running_ = false;
+    std::mutex handled_mutex_;
+    std::unordered_map<std::uint32_t, std::uint64_t> handled_;
+
+    mutable std::mutex stats_mutex_;
+    std::deque<double> latencies_;
+    std::string degraded_reason_;
+    std::atomic<std::uint64_t> inspected_ = 0;
+    std::atomic<std::uint64_t> terminated_ = 0;
+    std::atomic<std::uint64_t> termination_failed_ = 0;
+    std::atomic<std::uint64_t> pid_reuse_skipped_ = 0;
+
+    std::mutex wake_mutex_;
+    std::condition_variable_any wake_;
+    std::vector<std::jthread> workers_;
+    std::jthread maintenance_;
+    std::atomic<SupervisionMode> mode_ = SupervisionMode::Stopped;
 };
 
 }  // namespace houseguest::service

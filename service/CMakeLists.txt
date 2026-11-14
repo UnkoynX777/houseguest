@@ -2,6 +2,8 @@ add_library(houseguest_service_lib STATIC
   src/store.cpp
   src/audit.cpp
   src/supervisor.cpp
+  src/identity_resolver.cpp
+  src/process_trace.cpp
   src/controller.cpp
   src/command_support.cpp
   src/commands_account.cpp
@@ -9,7 +11,7 @@ add_library(houseguest_service_lib STATIC
   src/commands_session.cpp
   src/commands_system.cpp
   src/pipe_server.cpp)
-target_include_directories(houseguest_service_lib PUBLIC src)
+target_include_directories(houseguest_service_lib PUBLIC src ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(houseguest_service_lib PUBLIC houseguest::system PRIVATE houseguest_warnings advapi32 wtsapi32)
 
 add_executable(houseguest-service src/main.cpp)

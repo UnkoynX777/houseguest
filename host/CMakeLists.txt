@@ -10,9 +10,11 @@ if(NOT EXISTS ${WEBVIEW2_DIR}/build/native/include/WebView2.h)
   file(ARCHIVE_EXTRACT INPUT ${webview2_SOURCE_DIR}/microsoft.web.webview2.1.0.4314.35.nupkg DESTINATION ${WEBVIEW2_DIR})
 endif()
 
+configure_file(houseguest.rc.in ${CMAKE_CURRENT_BINARY_DIR}/houseguest.rc @ONLY)
+
 add_executable(houseguest WIN32 main.cpp dialogs.cpp geometry.cpp service_monitor.cpp tray.cpp ui_settings.cpp
-  houseguest.manifest houseguest.rc)
-target_include_directories(houseguest PRIVATE ${WEBVIEW2_DIR}/build/native/include)
+  houseguest.manifest ${CMAKE_CURRENT_BINARY_DIR}/houseguest.rc)
+target_include_directories(houseguest PRIVATE ${WEBVIEW2_DIR}/build/native/include ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(houseguest PRIVATE houseguest::system houseguest_warnings
   ${WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib dwmapi shcore shell32 ole32 user32 advapi32 version)
 if(HOUSEGUEST_DEVTOOLS)

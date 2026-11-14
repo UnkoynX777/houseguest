@@ -40,10 +40,11 @@ void Controller::register_system_commands() {
     add("audit.verify", Access::Owner, [this](Who, Args) { return Json{{"valid", audit_->verify_chain()}}; });
 
     add("diagnostics", Access::Owner, [this](Who, Args) {
+        capabilities_ = system::probe_capabilities();
         return Json{{"version", kVersion},
-                    {"capabilities", system::detect_capabilities()},
+                    {"capabilities", system::to_json(capabilities_)},
                     {"supervisor_running", supervisor_->running()},
-                    {"supervisor_error", supervisor_error_},
+                    {"supervisor", supervisor_json()},
                     {"audit_chain_valid", audit_->verify_chain()},
                     {"state", load_result_ == LoadResult::Loaded      ? "loaded"
                               : load_result_ == LoadResult::Fresh     ? "fresh"

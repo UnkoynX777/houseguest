@@ -60,9 +60,9 @@ const limits = [
       <div class="card stack">
         <div class="row"><Icon name="shield" /><h2>{{ t('Protection level') }}</h2></div>
         <template v-if="info">
-          <div class="row"><span class="badge" :class="info.supervisor_running ? 'warn' : 'bad'">{{ info.supervisor_running ? t('Supervised (reactive)') : t('Unavailable') }}</span><span class="muted">{{ info.capabilities.edition }} · build {{ info.capabilities.build }}</span></div>
+          <div class="row"><span class="badge" :class="{ supervised: 'warn', polling: 'warn', unavailable: 'bad' }[info.supervisor.mode]">{{ { supervised: t('Supervised (reactive)'), polling: t('Polling (reactive, reduced)'), unavailable: t('Unavailable') }[info.supervisor.mode] }}</span><span class="muted">{{ info.capabilities.product_name }} · build {{ info.capabilities.build }}</span></div>
           <p class="muted">{{ t('Houseguest watches every program the guest account starts and stops the ones your rules do not allow. It works on every Windows edition.') }}</p>
-          <div class="banner"><Icon name="about" /><span>{{ info.capabilities.applocker_enforced ? t('This edition can also enforce AppLocker, but Houseguest does not use it yet.') : t('Preventive enforcement (AppLocker) is not supported on this Windows edition.') }}</span></div>
+          <div class="banner"><Icon name="about" /><span>{{ t('Houseguest uses its own process supervision. It does not depend on Windows Defender, AppLocker or App Control, so it behaves the same on every edition.') }}</span></div>
         </template>
         <div v-else class="skeleton" style="height: 80px" />
       </div>

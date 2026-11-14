@@ -65,6 +65,19 @@ try {
     Check 'denial is recorded in the audit log' ([bool]($audit | Where-Object { $_.event -eq 'app.blocked' -and $_.detail.path -like '*choice.exe' }))
     Check 'audit hash chain verifies' ((Hg call audit.verify) -match '"valid": true')
 
+    $burst = 1..12 | ForEach-Object {
+        Start-Process "$env:SystemRoot\System32\choice.exe" -ArgumentList '/T', '30', '/D', 'y' -Credential $credential -PassThru -WindowStyle Hidden
+    }
+    Start-Sleep -Seconds 8
+    $survivors = @($burst | ForEach-Object { $_.Refresh(); $_ } | Where-Object { -not $_.HasExited })
+    Check 'twelve simultaneous denied launches are all terminated' ($survivors.Count -eq 0)
+
+    $diag = (Hg call diagnostics) | ConvertFrom-Json
+    Check 'diagnostics reports event-based monitoring' ($diag.supervisor.mode -eq 'supervised')
+    Check 'capability probe reports a ready system' ($diag.capabilities.ready)
+    Check 'stop latency was measured' ($diag.supervisor.latency_ms.samples -ge 1)
+    Write-Host ("       stop latency over {0} samples: average {1:N0} ms, p95 {2:N0} ms, max {3:N0} ms" -f $diag.supervisor.latency_ms.samples, $diag.supervisor.latency_ms.average, $diag.supervisor.latency_ms.p95, $diag.supervisor.latency_ms.max)
+
     Hg call session.stop | Out-Null
     Check 'session stops' (-not (HgJson status).armed)
     if (-not $allowed.HasExited) { Stop-Process -Id $allowed.Id -Force -ErrorAction SilentlyContinue }
