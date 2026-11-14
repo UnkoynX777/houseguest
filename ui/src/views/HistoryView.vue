@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, toRef, watch } from 'vue';
 
 import { ApiError, call, host } from '../api';
 import AppIcon from '../components/AppIcon.vue';
@@ -8,11 +8,14 @@ import EmptyState from '../components/EmptyState.vue';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import PageHeader from '../components/PageHeader.vue';
+import Skeleton from '../components/Skeleton.vue';
 import { describeBlock, describeDecision } from '../explain';
 import { t } from '../i18n';
 import { attempt, describe, formatTime, notify } from '../store';
 import type { AuditEntry, BlockEntry } from '../types';
-import { eventLabel, eventsOf, groupOf, type EventGroup } from './events';
+import { preferences } from '../ui-state';
+import { useResource } from '../use-resource';
+import { eventLabel, eventsOf, groupOf } from './events';
 
 const pageSize = 50;
 const entries = ref<AuditEntry[]>([]);
@@ -20,15 +23,23 @@ const more = ref(false);
 const loading = ref(true);
 const loadingMore = ref(false);
 const failure = ref('');
-const filter = ref<'all' | EventGroup>('all');
-const range = ref(0);
+const filter = toRef(preferences.history, 'filter');
+const range = toRef(preferences.history, 'range');
 const query = ref('');
-const sort = ref<'new' | 'old'>('new');
+const sort = toRef(preferences.history, 'sort');
 const selected = ref<AuditEntry>();
 const reviewing = ref<BlockEntry>();
 
 let generation = 0;
 let debounce: ReturnType<typeof setTimeout> | undefined;
+
+function criteria(): Record<string, unknown> {
+  const args: Record<string, unknown> = { limit: pageSize };
+  if (filter.value !== 'all') args.events = eventsOf(filter.value);
+  if (range.value) args.since = Math.floor(Date.now() / 1000) - range.value;
+  if (query.value.trim()) args.text = query.value.trim();
+  return args;
+}
 
 async function load(append = false) {
   const mine = ++generation;
@@ -36,10 +47,7 @@ async function load(append = false) {
   else loading.value = true;
   failure.value = '';
   try {
-    const args: Record<string, unknown> = { limit: pageSize };
-    if (filter.value !== 'all') args.events = eventsOf(filter.value);
-    if (range.value) args.since = Math.floor(Date.now() / 1000) - range.value;
-    if (query.value.trim()) args.text = query.value.trim();
+    const args = criteria();
     if (append && entries.value.length) args.before = entries.value[entries.value.length - 1].seq;
     const page = await call<{ entries: AuditEntry[]; more: boolean }>('audit.query', args);
     if (mine !== generation) return;
@@ -64,6 +72,33 @@ watch(query, () => {
 });
 onMounted(() => load());
 onBeforeUnmount(() => clearTimeout(debounce));
+onDeactivated(() => {
+  selected.value = undefined;
+  reviewing.value = undefined;
+});
+
+// The service counts audit entries. When the newest one changes, only what is new is fetched and put in front,
+// so the list neither reloads nor loses its place.
+const latest = useResource<{ entries: AuditEntry[] }>(() => 'history:latest', () => call('audit.query', { limit: 1 }), ['history'], 30_000);
+async function fetchNewer() {
+  if (loading.value || loadingMore.value || !entries.value.length) return;
+  const top = entries.value[0].seq;
+  const mine = generation;
+  try {
+    const page = await call<{ entries: AuditEntry[]; more: boolean }>('audit.query', criteria());
+    if (mine !== generation) return;
+    const fresh = page.entries.filter((entry) => entry.seq > top);
+    if (!fresh.length) return;
+    if (fresh.length === page.entries.length && page.more) await load();
+    else entries.value = [...fresh, ...entries.value];
+  } catch {
+    /* the next change or a manual refresh will try again */
+  }
+}
+watch(
+  () => latest.data.value?.entries[0]?.seq,
+  (seq, previous) => seq !== undefined && previous !== undefined && seq !== previous && void fetchNewer(),
+);
 
 const rows = computed(() => (sort.value === 'new' ? entries.value : [...entries.value].reverse()));
 
@@ -99,6 +134,7 @@ const details = computed(() => {
     [t('Event'), eventLabel(entry)],
   ];
   if (isApp(entry)) {
+    if (d.windows_component) lines.push([t('Note'), t('This program is signed by Windows but is not one of the components Houseguest protects, so your profile decided. If something stopped working, allow it in the profile.')]);
     lines.push([t('Program'), d.path ?? ''], [t('Started by'), parent ? `${parent} (${d.parent})` : t('Unknown')], [t('Profile'), d.profile || ''], [t('Rule'), d.rule || d.source || ''], [t('Publisher'), d.publisher || t('Unsigned')], [t('SHA-256'), d.sha256 || ''], [t('Technical reason'), `${d.source ?? ''} · ${d.reason ?? ''}${d.note ? ` · ${d.note}` : ''}`]);
   } else {
     for (const [key, value] of Object.entries(d)) lines.push([key, typeof value === 'string' ? value : JSON.stringify(value)]);
@@ -156,7 +192,7 @@ const filtered = computed(() => filter.value !== 'all' || !!query.value.trim() |
       <div class="grow"><strong>{{ t('The history could not be loaded.') }}</strong><div>{{ failure }}</div></div>
       <button class="btn sm" @click="load()">{{ t('Try again') }}</button>
     </div>
-    <div v-else-if="loading" class="history-list"><div v-for="n in 7" :key="n" class="event"><span class="bar" /><span class="skeleton" style="height: 34px; width: 34px" /><span class="skeleton" style="height: 30px" /><span /></div></div>
+    <Skeleton v-else-if="loading" kind="events" :count="9" />
     <EmptyState v-else-if="!rows.length" :icon="filtered ? 'search' : 'history'" :text="filtered ? t('No events match these filters.') : t('Nothing has been recorded yet. Programs that Houseguest allows or blocks during a session will appear here.')">
       <button v-if="filtered" class="btn sm" @click="filter = 'all'; query = ''; range = 0">{{ t('Clear filters') }}</button>
     </EmptyState>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, type Component } from 'vue';
+import { computed, nextTick, onMounted, ref, watch, type Component } from 'vue';
 
 import Icon from './components/Icon.vue';
 import Mark from './components/Mark.vue';
@@ -51,6 +51,26 @@ const protection = computed(() => {
 });
 
 onMounted(boot);
+
+// The page area is one scroll container shared by every view. Each view keeps its own position while it is away.
+const mainElement = ref<HTMLElement>();
+const scrollTops = new Map<Route, number>();
+watch(
+  () => app.route,
+  (_next, previous) => {
+    if (mainElement.value) scrollTops.set(previous, mainElement.value.scrollTop);
+  },
+  { flush: 'pre' },
+);
+watch(
+  () => app.route,
+  async (next) => {
+    await nextTick();
+    requestAnimationFrame(() => {
+      if (mainElement.value) mainElement.value.scrollTop = scrollTops.get(next) ?? 0;
+    });
+  },
+);
 </script>
 
 <template>
@@ -74,7 +94,7 @@ onMounted(boot);
       </button>
       <button class="nav" :title="t('Lock')" @click="lockNow"><Icon name="lock" /><span>{{ t('Lock') }}</span></button>
     </nav>
-    <main class="main"><component :is="views[app.route]" :key="app.route" /></main>
+    <main ref="mainElement" class="main"><KeepAlive><component :is="views[app.route]" /></KeepAlive></main>
   </div>
 
   <div class="toasts" role="status" aria-live="polite">

@@ -1,12 +1,12 @@
 import { computed, reactive, ref, watch } from 'vue';
 
 import { ApiError, auth, call, host, onHostEvent } from './api';
+import { clearAll, markStale, resetGenerations, resource, syncGenerations } from './cache';
 import { lang, t } from './i18n';
 import type { Profile, Status } from './types';
+import { preferences, type RouteName } from './ui-state';
 
-export type Route =
-  | 'dashboard' | 'apps' | 'profiles' | 'rules' | 'sessions' | 'history'
-  | 'security' | 'settings' | 'diagnostics' | 'about';
+export type Route = RouteName;
 
 export type Theme = 'system' | 'light' | 'dark';
 
@@ -28,12 +28,14 @@ export const app = reactive({
   status: null as Status | null,
   fetchedAt: 0,
   profiles: [] as Profile[],
-  route: 'dashboard' as Route,
-  ruleProfileId: '',
+  route: preferences.route as Route,
+  ruleProfileId: preferences.rulesProfileId,
   clock: Date.now(),
   theme: 'system' as Theme,
   prefs: { minimize_to_tray: true, start_with_windows: false } as HostPrefs,
 });
+
+const statusInterval = 5000;
 
 export const toasts = ref<Toast[]>([]);
 let toastId = 0;
@@ -77,16 +79,47 @@ export const remaining = computed(() =>
   app.status?.armed && app.status.ends_at ? Math.max(0, Math.floor(app.status.ends_at - serverNow.value)) : 0,
 );
 
+let sessionSignature = '';
+
 export async function refreshStatus() {
-  app.status = await call<Status>('status');
+  const status = await call<Status>('status');
+  const signature = `${status.armed}|${status.ends_at ?? ''}|${status.profile ?? ''}|${status.ending ?? ''}`;
+  if (sessionSignature && signature !== sessionSignature) markStale('session');
+  sessionSignature = signature;
+  syncGenerations(status.generations);
+  app.status = status;
   app.fetchedAt = Date.now();
   app.clock = app.fetchedAt;
   if (app.status.language === 'en' || app.status.language === 'pt-BR') lang.value = app.status.language;
 }
 
-export async function loadProfiles() {
-  app.profiles = await call<Profile[]>('profiles.list');
+const profiles = resource<Profile[]>('profiles', () => call<Profile[]>('profiles.list'), ['policy'], 300_000);
+
+// Profiles are read by most pages, so they live in the store once. A page that only needs them to be there asks
+// without forcing; anything that just changed them forces a read.
+export async function loadProfiles(force = true) {
+  await profiles.load(force);
+  if (profiles.slot.data && profiles.slot.data !== app.profiles) app.profiles = profiles.slot.data;
 }
+
+export const ensureProfiles = () => loadProfiles(false);
+
+watch(
+  () => profiles.slot.stale,
+  (stale) => stale && unlocked.value && void loadProfiles(false).catch(() => undefined),
+);
+watch(
+  () => app.route,
+  (route) => {
+    preferences.route = route;
+  },
+);
+watch(
+  () => app.ruleProfileId,
+  (id) => {
+    preferences.rulesProfileId = id;
+  },
+);
 
 export function go(route: Route, profileId?: string) {
   if (profileId) app.ruleProfileId = profileId;
@@ -154,6 +187,9 @@ export async function boot() {
     if (!document.hidden && app.status?.armed) app.clock = Date.now();
   }, 1000);
   window.addEventListener('focus', () => app.status && refreshStatus().catch(() => undefined));
+  setInterval(() => {
+    if (!document.hidden && unlocked.value) refreshStatus().catch(() => undefined);
+  }, statusInterval);
   watch(remaining, (value) => {
     if (value === 0 && app.status?.armed) setTimeout(() => refreshStatus().catch(() => undefined), 1500);
   });
@@ -175,4 +211,8 @@ export async function lockNow() {
   if (auth.token) await call('lock').catch(() => undefined);
   auth.token = '';
   app.route = 'dashboard';
+  app.profiles = [];
+  sessionSignature = '';
+  clearAll();
+  resetGenerations();
 }

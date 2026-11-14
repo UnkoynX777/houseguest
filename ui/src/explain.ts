@@ -9,6 +9,8 @@ const protectedKinds: Record<string, string> = {
   input_and_accessibility: 'Input or accessibility component needed to use and recover the computer.',
   driver_package: 'Program from a signed driver package (graphics, audio, input hardware).',
   shell_app: 'Signed Windows system app.',
+  system_infrastructure: 'Windows infrastructure signed by Windows itself (error reporting, search, printing, updates).',
+  windows_com_server: 'Windows program registered as a system COM server and started by the system, not by the user.',
 };
 
 export function describeDecision(decision: DecisionInfo, applicationName = ''): string {

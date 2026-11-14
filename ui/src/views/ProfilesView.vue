@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onActivated, onDeactivated, ref } from 'vue';
 
 import { call, host } from '../api';
 import Icon from '../components/Icon.vue';
 import Menu from '../components/Menu.vue';
 import Modal from '../components/Modal.vue';
 import PageHeader from '../components/PageHeader.vue';
+import Skeleton from '../components/Skeleton.vue';
 import { t } from '../i18n';
-import { app, attempt, go, loadProfiles, notify, profileLabel, randomId } from '../store';
+import { app, attempt, ensureProfiles, go, loadProfiles, notify, profileLabel, randomId } from '../store';
 import type { Profile } from '../types';
 
 const creating = ref(false);
@@ -30,7 +31,16 @@ async function rename() {
   await loadProfiles();
 }
 
-onMounted(() => attempt(loadProfiles));
+const waiting = ref(app.profiles.length === 0);
+onActivated(async () => {
+  await attempt(ensureProfiles);
+  waiting.value = false;
+});
+onDeactivated(() => {
+  creating.value = false;
+  deleting.value = undefined;
+  renaming.value = undefined;
+});
 
 const builtin = (profile: Profile) => profile.id.startsWith('builtin-');
 const describeBuiltin = (profile: Profile) =>
@@ -99,7 +109,8 @@ async function remove() {
       <button class="btn primary" @click="creating = true"><Icon name="plus" />{{ t('New profile') }}</button>
     </PageHeader>
 
-    <div class="cards">
+    <Skeleton v-if="waiting && !app.profiles.length" kind="cards" :count="3" />
+    <div v-else class="cards">
       <article v-for="profile in app.profiles" :key="profile.id" class="card profile-card">
         <div class="title">
           <span class="profile-glyph"><Icon :name="profile.default_action === 'deny' ? 'shield' : 'allowed'" /></span>

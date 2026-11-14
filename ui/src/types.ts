@@ -52,6 +52,9 @@ export interface Status {
   store_tampered: boolean;
   language: string;
   ends_at?: number;
+  ending?: boolean;
+  profile?: string;
+  generations?: { policy: number; catalog: number; history: number };
 }
 
 export interface AuditEntry {
@@ -339,6 +342,9 @@ export interface Diagnostics {
     latency_ms: { samples: number; average: number; p95: number; max: number };
   };
   audit_chain_valid: boolean;
+  commands?: { cmd: string; count: number; run_avg_ms: number; run_max_ms: number; encode_avg_ms: number; bytes_avg: number }[];
+  caches?: { library?: { hits: number; misses: number; hit_rate: number; decisions: number; revision: number } };
+  watcher?: { signals?: number; reports?: number; watching?: number };
   state: 'loaded' | 'fresh' | 'recovered' | 'tampered';
   data_directory: string;
   install_directory: string;

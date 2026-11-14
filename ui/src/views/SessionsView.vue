@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue';
 import Toggle from '../components/Toggle.vue';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onActivated, onDeactivated, ref, toRef } from 'vue';
 
 import { ApiError, call } from '../api';
 import Findings from '../components/Findings.vue';
@@ -9,12 +9,16 @@ import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import PreviewPanel from '../components/PreviewPanel.vue';
 import { t } from '../i18n';
-import { app, attempt, describe, formatDuration, formatTime, loadProfiles, notify, profileLabel, refreshStatus, remaining } from '../store';
+import { app, attempt, describe, ensureProfiles, formatDuration, formatTime, loadProfiles, notify, profileLabel, refreshStatus, remaining } from '../store';
 import type { Dashboard, Finding, LocalUser, Preview } from '../types';
+import { preferences } from '../ui-state';
+import { useResource } from '../use-resource';
 
-const users = ref<LocalUser[]>([]);
-const detail = ref<Dashboard>();
-const profileId = ref('');
+const dashboard = useResource<Dashboard>(() => 'dashboard', () => call<Dashboard>('dashboard'), ['policy', 'history', 'session'], 60_000);
+const accounts = useResource<LocalUser[]>(() => 'users', () => call<LocalUser[]>('users.list'), ['session'], 60_000);
+const users = computed(() => accounts.data.value ?? []);
+const detail = dashboard.data;
+const profileId = toRef(preferences, 'sessionsProfileId');
 const guests = ref<string[]>([]);
 const minutes = ref(60);
 const custom = ref(false);
@@ -30,11 +34,18 @@ const presets = [15, 30, 60, 120, 240, 480];
 
 async function load() {
   await loadProfiles();
-  profileId.value ||= app.profiles[0]?.id ?? '';
-  detail.value = await attempt(() => call<Dashboard>('dashboard'));
-  if (!app.status?.armed) users.value = (await attempt(() => call<LocalUser[]>('users.list'))) ?? [];
+  if (!app.profiles.some((p) => p.id === profileId.value)) profileId.value = app.profiles[0]?.id ?? '';
+  await Promise.all([dashboard.load(true), app.status?.armed ? undefined : accounts.load(true)]);
 }
-onMounted(load);
+onActivated(async () => {
+  await attempt(ensureProfiles);
+  if (!app.profiles.some((p) => p.id === profileId.value)) profileId.value = app.profiles[0]?.id ?? '';
+});
+onDeactivated(() => {
+  confirmNeeded.value = false;
+  previewing.value = false;
+  preview.value = undefined;
+});
 
 const valid = computed(() => profileId.value && guests.value.length > 0 && minutes.value >= 1 && minutes.value <= 10080);
 
@@ -117,7 +128,7 @@ async function extend(add: number) {
           <option v-for="profile in app.profiles" :key="profile.id" :value="profile.id">{{ profileLabel(profile) }}</option>
         </select>
         <h2 style="margin-top: 8px">{{ t('2. Who is the guest?') }}</h2>
-        <div v-if="!users.length" class="skeleton" />
+        <div v-if="!users.length" class="skeleton" style="height: 40px" />
         <div v-else class="stack" style="gap: 2px">
           <label v-for="user in users" :key="user.sid" class="check">
             <input v-model="guests" type="checkbox" :value="user.sid" />

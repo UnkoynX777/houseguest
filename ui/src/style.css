@@ -128,7 +128,7 @@ a:hover { text-decoration: underline; }
 .nav[aria-current='page'] { background: var(--accent-soft); color: var(--text); font-weight: 600; }
 .nav[aria-current='page']::before { content: ''; position: absolute; left: -12px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: var(--accent); }
 .sidebar .spacer { flex: 1; }
-.main { overflow-x: hidden; overflow-y: auto; min-width: 0; padding: 26px 32px 44px; scrollbar-gutter: stable; }
+.main { overflow-anchor: none; overflow-x: hidden; overflow-y: auto; min-width: 0; padding: 26px 32px 44px; scrollbar-gutter: stable; }
 .page { min-width: 0; max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; animation: enter 0.28s var(--ease); }
 .page-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -204,7 +204,7 @@ tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent);
 
 .empty { background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius-m); text-align: center; padding: 44px 20px; color: var(--text-2); display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .empty svg { width: 34px; height: 34px; color: var(--text-3); }
-.skeleton { border-radius: var(--radius-s); background: linear-gradient(90deg, var(--surface-2), var(--sunken), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.3s linear infinite; height: 18px; }
+.skeleton { display: block; border-radius: var(--radius-s); background: linear-gradient(90deg, var(--surface-2), var(--sunken), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.8s ease-in-out infinite; height: 18px; }
 .spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--accent); animation: spin 0.7s linear infinite; display: inline-block; }
 .banner { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--radius-s); background: var(--info-soft); color: var(--text); }
 .banner.warn { background: var(--warning-soft); }
@@ -276,6 +276,7 @@ tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent);
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .skeleton { animation: none !important; }
 }
 .table-wrap td .btn + .btn { margin-left: 6px; }
 .kpi-number { margin: 0; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
@@ -292,7 +293,7 @@ tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent);
 .counters { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--text-2); font-size: 13px; }
 .counters strong { color: var(--text); font-variant-numeric: tabular-nums; }
 .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); gap: 12px; }
-.app-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 12px 14px; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m); cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 164px; transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), background 0.15s var(--ease); }
+.app-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 188px; padding: 20px 12px 14px; overflow: hidden; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m); cursor: pointer; transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), background 0.15s var(--ease); }
 .app-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-1); }
 .app-card[aria-selected='true'] { border-color: var(--accent); background: var(--accent-soft); }
 .app-card .name { font-weight: 600; max-width: 100%; }
@@ -308,9 +309,15 @@ tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent);
 .mini.warn { background: var(--warning-soft); color: var(--warning); }
 .mini.bad { background: var(--danger-soft); color: var(--danger); }
 .mini svg { width: 11px; height: 11px; }
-.app-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface); overflow: hidden; }
-.app-row { display: grid; grid-template-columns: 22px 36px minmax(0, 1.2fr) minmax(0, 1.5fr) auto auto; align-items: center; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--border); cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 54px; }
-.app-row:first-child { border-top: 0; }
+.app-list { border: 1px solid var(--border); border-bottom-width: 0; border-radius: var(--radius-m); background: var(--surface); overflow: hidden; }
+.app-card .minis { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; max-height: 48px; overflow: hidden; }
+.vlist { position: relative; }
+.vlist-body { display: grid; position: absolute; inset: 0 0 auto 0; will-change: transform; }
+.ghost-card { cursor: default; }
+.ghost-row { cursor: default; }
+.ghost-profile { min-height: 168px; display: flex; flex-direction: column; gap: 12px; }
+.ghost-kpi { min-height: 86px; display: flex; flex-direction: column; gap: 12px; }
+.app-row { display: grid; grid-template-columns: 22px 36px minmax(0, 1.2fr) minmax(0, 1.5fr) auto auto; align-items: center; gap: 12px; height: 56px; box-sizing: border-box; padding: 8px 14px; box-shadow: inset 0 -1px 0 var(--border); cursor: pointer; }
 .app-row:hover { background: var(--surface-2); }
 .app-row[aria-selected='true'] { background: var(--accent-soft); }
 .bulkbar { position: sticky; bottom: 16px; align-self: center; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-m); background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow-2); z-index: 5; }

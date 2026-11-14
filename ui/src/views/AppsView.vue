@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, toRef, watch } from 'vue';
 
 import { call, host } from '../api';
 import AppIcon from '../components/AppIcon.vue';
@@ -11,53 +11,58 @@ import LibraryTools from '../components/LibraryTools.vue';
 import Menu from '../components/Menu.vue';
 import Icon from '../components/Icon.vue';
 import PageHeader from '../components/PageHeader.vue';
+import Skeleton from '../components/Skeleton.vue';
+import VirtualList from '../components/VirtualList.vue';
 import { categoryLabel, categoryOf, kindLabel, platformLabel, sourceLabel } from '../explain';
 import { t } from '../i18n';
-import { app, attempt, describe, loadProfiles, notify, profileLabel, randomId } from '../store';
+import { app, attempt, loadProfiles, notify, profileLabel, randomId } from '../store';
 import type { Application, LibraryApp } from '../types';
+import { preferences } from '../ui-state';
+import { useResource } from '../use-resource';
 
-type View = 'grid' | 'list';
-type Status = 'all' | 'allowed' | 'blocked' | 'attention' | 'unresolved';
-type Sort = 'name' | 'publisher' | 'status' | 'blocks' | 'recent';
-type Kind = 'all' | 'installed' | 'portable' | 'store' | 'manual' | 'recent' | 'dependencies' | 'uncategorized';
+type Library = { apps: LibraryApp[]; scanning: boolean };
 
-const library = ref<LibraryApp[]>([]);
-const loading = ref(true);
-const profileId = ref('');
-const view = ref<View>(readView());
+const prefs = preferences.apps;
+const profileId = toRef(prefs, 'profileId');
+const view = toRef(prefs, 'view');
+const status = toRef(prefs, 'status');
+const category = toRef(prefs, 'category');
+const sort = toRef(prefs, 'sort');
+const kind = toRef(prefs, 'kind');
+const platform = toRef(prefs, 'platform');
+const volume = toRef(prefs, 'volume');
+const showTools = toRef(prefs, 'showTools');
 const query = ref('');
-const status = ref<Status>('all');
-const category = ref('');
-const sort = ref<Sort>('name');
+const search = ref('');
 const selected = ref(new Set<string>());
 const active = ref<LibraryApp>();
 const observing = ref<LibraryApp>();
 const working = ref(false);
-const kind = ref<Kind>('all');
-const platform = ref('');
-const volume = ref('');
-const showTools = ref(false);
-const scanning = ref(false);
-const failure = ref('');
+const starting = ref(false);
 const tools = ref<'sources' | 'added' | 'folder' | 'diagnose'>();
 let poller: ReturnType<typeof setTimeout> | undefined;
+let typing: ReturnType<typeof setTimeout> | undefined;
+let handledProfile = '';
 const recentWindow = 7 * 86400;
 
-function readView(): View {
-  try {
-    return localStorage.getItem('apps.view') === 'list' ? 'list' : 'grid';
-  } catch {
-    return 'grid';
-  }
+// The stored profile is kept until the profiles are known; only then is it checked against them.
+function settleProfile() {
+  if (!app.profiles.length || app.profiles.some((p) => p.id === profileId.value)) return;
+  profileId.value = app.profiles.find((p) => p.id === app.ruleProfileId)?.id ?? app.profiles[0].id;
 }
+settleProfile();
+watch(() => app.profiles, settleProfile);
 
-watch(view, (value) => {
-  try {
-    localStorage.setItem('apps.view', value);
-  } catch {
-    /* storage can be unavailable */
-  }
-});
+const library = useResource<Library>(
+  () => `apps.library:${profileId.value}`,
+  async () => (profileId.value ? await call<Library>('apps.library', { profile_id: profileId.value }) : { apps: [], scanning: false }),
+  ['policy', 'catalog'],
+  300_000,
+);
+const entries = computed(() => library.data.value?.apps ?? []);
+const scanning = computed(() => starting.value || (library.data.value?.scanning ?? false));
+const loading = computed(() => library.initial.value || !profileId.value);
+const failure = library.failed;
 
 const profile = computed(() => app.profiles.find((p) => p.id === profileId.value));
 const key = (entry: LibraryApp) => entry.id;
@@ -66,30 +71,45 @@ const resolved = (entry: LibraryApp) => entry.resolution === 'resolved' && !!ent
 const iconPath = (entry: LibraryApp) => entry.path || entry.candidates?.[0]?.path || '';
 const stateText = (entry: LibraryApp) => (entry.status === 'allowed' ? t('Allowed') : entry.status === 'blocked' ? t('Blocked') : t('Choose program'));
 
-async function load(quiet = false) {
-  if (!profileId.value) return;
-  if (!quiet) loading.value = true;
-  try {
-    const result = await call<{ apps: LibraryApp[]; scanning: boolean }>('apps.library', { profile_id: profileId.value });
-    library.value = result.apps;
-    scanning.value = result.scanning;
-    failure.value = '';
-  } catch (error) {
-    failure.value = describe(error);
-    scanning.value = false;
-  }
-  loading.value = false;
-  if (active.value) active.value = library.value.find((entry) => key(entry) === key(active.value!)) ?? active.value;
+const load = (_quiet = false) => library.load(true);
+
+function poll() {
   clearTimeout(poller);
-  if (scanning.value) poller = setTimeout(() => load(true), 1500);
+  if (scanning.value && library.active.value) {
+    poller = setTimeout(async () => {
+      await library.load(true);
+      starting.value = false;
+      poll();
+    }, 1500);
+  }
 }
+watch([scanning, library.active], poll);
+watch(entries, (list) => {
+  if (active.value) active.value = list.find((entry) => key(entry) === key(active.value!)) ?? active.value;
+});
+watch(query, (value) => {
+  clearTimeout(typing);
+  typing = setTimeout(() => (search.value = value), 120);
+});
+watch(profileId, () => (selected.value = new Set()));
+
+onActivated(() => {
+  if (app.ruleProfileId && app.ruleProfileId !== handledProfile && app.profiles.some((p) => p.id === app.ruleProfileId)) {
+    profileId.value = app.ruleProfileId;
+  }
+  handledProfile = app.ruleProfileId;
+});
+onDeactivated(() => {
+  active.value = undefined;
+  observing.value = undefined;
+  tools.value = undefined;
+});
 
 async function refresh() {
   const started = await attempt(() => call('apps.refresh'));
   if (started) {
-    scanning.value = true;
-    clearTimeout(poller);
-    poller = setTimeout(() => load(true), 600);
+    starting.value = true;
+    setTimeout(() => library.load(true).then(() => (starting.value = false)), 600);
   }
 }
 
@@ -107,21 +127,15 @@ async function addPrograms() {
   }
 }
 
-onMounted(async () => {
-  await attempt(loadProfiles);
-  profileId.value = app.profiles.find((p) => p.id === app.ruleProfileId)?.id ?? app.profiles[0]?.id ?? '';
-  await load();
-});
-onBeforeUnmount(() => clearTimeout(poller));
-watch(profileId, () => {
-  selected.value = new Set();
-  load();
+onBeforeUnmount(() => {
+  clearTimeout(poller);
+  clearTimeout(typing);
 });
 
-const listed = computed(() => library.value.filter((entry) => showTools.value || entry.role === 'application'));
+const listed = computed(() => entries.value.filter((entry) => showTools.value || entry.role === 'application'));
 const platforms = computed(() => [...new Set(listed.value.map((entry) => entry.platform))].filter(Boolean).sort());
 const volumes = computed(() => [...new Set(listed.value.map((entry) => entry.volume))].filter(Boolean).sort());
-const hiddenCount = computed(() => library.value.length - library.value.filter((entry) => entry.role === 'application').length);
+const hiddenCount = computed(() => entries.value.length - entries.value.filter((entry) => entry.role === 'application').length);
 const isRecent = (entry: LibraryApp) => entry.first_seen > 0 && Date.now() / 1000 - entry.first_seen < recentWindow;
 
 const categories = computed(() => {
@@ -142,7 +156,7 @@ function matchesKind(entry: LibraryApp): boolean {
 }
 
 const visible = computed(() => {
-  const needle = query.value.trim().toLowerCase();
+  const needle = search.value.trim().toLowerCase();
   const rows = listed.value.filter(
     (entry) =>
       matchesKind(entry) &&
@@ -152,7 +166,7 @@ const visible = computed(() => {
       (!category.value || categoryOf(entry) === category.value) &&
       (!needle || `${entry.name} ${entry.company} ${entry.path} ${entry.description}`.toLowerCase().includes(needle)),
   );
-  const order: Record<Sort, (a: LibraryApp, b: LibraryApp) => number> = {
+  const order: Record<typeof sort.value, (a: LibraryApp, b: LibraryApp) => number> = {
     recent: (a, b) => b.first_seen - a.first_seen || b.modified - a.modified || a.name.localeCompare(b.name),
     name: (a, b) => a.name.localeCompare(b.name),
     publisher: (a, b) => a.company.localeCompare(b.company) || a.name.localeCompare(b.name),
@@ -180,7 +194,7 @@ const kindCounts = computed(() => ({
   uncategorized: listed.value.filter((e) => categoryOf(e) === 'other').length,
 }));
 
-const chosen = computed(() => library.value.filter((e) => selected.value.has(key(e))));
+const chosen = computed(() => entries.value.filter((e) => selected.value.has(key(e))));
 
 function toggle(entry: LibraryApp) {
   const next = new Set(selected.value);
@@ -319,14 +333,15 @@ function afterObservation() {
       <span><strong>{{ totals.withDependencies }}</strong> {{ t('with dependencies') }}</span>
       <span v-if="totals.attention"><strong>{{ totals.attention }}</strong> {{ t('need attention') }}</span>
       <span class="faint">{{ t('Showing {n}', { n: visible.length }) }}</span>
+      <span v-if="library.refreshing.value && !loading" class="spinner" role="status" :aria-label="t('Updating library…')" />
       <button v-if="visible.length" class="btn sm ghost" @click="selectAllVisible">{{ t('Select all shown') }}</button>
     </div>
 
-    <div v-if="loading || (scanning && !library.length)" class="app-grid"><div v-for="n in 12" :key="n" class="skeleton" style="height: 150px" /></div>
+    <Skeleton v-if="loading || (scanning && !entries.length)" :kind="view === 'grid' ? 'app-grid' : 'app-list'" :count="view === 'grid' ? 12 : 9" />
     <EmptyState v-else-if="!visible.length" icon="apps" :text="t('No applications match your filters.')" />
 
-    <div v-else-if="view === 'grid'" class="app-grid">
-      <div v-for="entry in visible" :key="entry.id" class="app-card" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
+    <VirtualList v-else-if="view === 'grid'" :items="visible" :item-key="key" :item-height="188" :min-width="172" :gap="12" v-slot="{ item: entry }">
+      <div class="app-card" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
         <input class="pick" type="checkbox" :checked="selected.has(key(entry))" :aria-label="t('Select {name}', { name: entry.name })" @click.stop @change="toggle(entry)" />
         <span class="state">
           <span v-if="entry.pending" class="mini warn" :title="t('Waiting for your decision')"><Icon name="alert" />{{ entry.pending }}</span>
@@ -336,17 +351,20 @@ function afterObservation() {
         <AppIcon :path="iconPath(entry)" :name="entry.name" :size="52" />
         <div class="name truncate" :title="entry.name">{{ entry.name }}</div>
         <div class="sub truncate" :title="entry.company">{{ entry.company || sourceLabel(entry.source) }}</div>
-        <span v-if="entry.offline" class="mini warn">{{ t('Drive offline') }}</span>
-        <span v-else-if="!resolved(entry)" class="mini warn">{{ t('Choose program') }}</span>
-        <span v-if="entry.platform && entry.platform !== 'store'" class="mini">{{ platformLabel(entry.platform) }}</span>
-        <span v-if="entry.volume" class="mini">{{ entry.volume }}</span>
-        <span v-if="entry.listed" class="mini"><Icon name="link" />{{ t('{n} dependencies', { n: entry.dependencies ?? 0 }) }}</span>
-        <span v-if="entry.kind !== 'installed' && !entry.platform" class="mini">{{ kindLabel(entry.kind) }}</span>
+        <div class="minis">
+          <span v-if="entry.offline" class="mini warn">{{ t('Drive offline') }}</span>
+          <span v-else-if="!resolved(entry)" class="mini warn">{{ t('Choose program') }}</span>
+          <span v-if="entry.platform && entry.platform !== 'store'" class="mini">{{ platformLabel(entry.platform) }}</span>
+          <span v-if="entry.volume" class="mini">{{ entry.volume }}</span>
+          <span v-if="entry.listed" class="mini"><Icon name="link" />{{ t('{n} dependencies', { n: entry.dependencies ?? 0 }) }}</span>
+          <span v-if="entry.kind !== 'installed' && !entry.platform" class="mini">{{ kindLabel(entry.kind) }}</span>
+        </div>
       </div>
-    </div>
+    </VirtualList>
 
     <div v-else class="app-list">
-      <div v-for="entry in visible" :key="entry.id" class="app-row" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
+     <VirtualList :items="visible" :item-key="key" :item-height="56" v-slot="{ item: entry }">
+      <div class="app-row" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
         <input class="pick" type="checkbox" :checked="selected.has(key(entry))" :aria-label="t('Select {name}', { name: entry.name })" @click.stop @change="toggle(entry)" />
         <AppIcon :path="iconPath(entry)" :name="entry.name" :size="34" />
         <div style="min-width: 0"><strong class="truncate" style="display: block">{{ entry.name }}</strong><span class="hint truncate" style="display: block">{{ entry.company || sourceLabel(entry.source) }}</span></div>
@@ -360,6 +378,7 @@ function afterObservation() {
         </div>
         <span class="badge" :class="entry.status === 'allowed' ? 'ok' : entry.status === 'blocked' ? 'bad' : 'warn'">{{ stateText(entry) }}</span>
       </div>
+     </VirtualList>
     </div>
 
     <div v-if="selected.size" class="bulkbar" role="toolbar" :aria-label="t('Selected programs')">

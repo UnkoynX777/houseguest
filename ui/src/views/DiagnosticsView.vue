@@ -1,22 +1,24 @@
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue';
-import { computed, onMounted, ref } from 'vue';
+import { computed } from 'vue';
+
+import { cacheSize } from '../cache';
 
 import { call } from '../api';
 import Icon from '../components/Icon.vue';
+import Skeleton from '../components/Skeleton.vue';
 import { t } from '../i18n';
 import { attempt, notify } from '../store';
 import type { Diagnostics } from '../types';
+import { useResource } from '../use-resource';
 
-const info = ref<Diagnostics>();
-const loading = ref(true);
+const report = useResource<Diagnostics>(() => 'diagnostics', () => call<Diagnostics>('diagnostics'), ['policy', 'session'], 30_000);
+const info = report.data;
+const loading = report.initial;
 
 async function load() {
-  loading.value = true;
-  info.value = await attempt(() => call<Diagnostics>('diagnostics'));
-  loading.value = false;
+  await attempt(() => report.load(true));
 }
-onMounted(load);
 
 const titles: Record<string, string> = {
   windows_build: 'Windows version',
@@ -29,6 +31,11 @@ const titles: Record<string, string> = {
   webview2_runtime: 'WebView2 runtime',
   defender_independent: 'Independence from Windows security features',
 };
+
+const slowest = computed(() =>
+  [...(info.value?.commands ?? [])].filter((c) => c.count > 0).sort((a, b) => b.run_avg_ms - a.run_avg_ms).slice(0, 5),
+);
+const hitRate = computed(() => info.value?.caches?.library?.hit_rate);
 
 const checks = computed(() => {
   const d = info.value;
@@ -60,9 +67,9 @@ async function copy() {
   <div class="page">
     <PageHeader :title="t('Diagnostics')" :subtitle="t('Check that everything Houseguest depends on is healthy.')">
       <button class="btn" :disabled="!info" @click="copy"><Icon name="copy" />{{ t('Copy report') }}</button>
-      <button class="btn primary" :disabled="loading" @click="load"><Icon name="refresh" />{{ t('Run checks') }}</button>
+      <button class="btn primary" :disabled="loading || report.refreshing.value" @click="load"><Icon name="refresh" />{{ t('Run checks') }}</button>
     </PageHeader>
-    <div v-if="loading" class="stack"><div v-for="n in 5" :key="n" class="skeleton" style="height: 52px" /></div>
+    <Skeleton v-if="loading" kind="lines" :count="6" />
     <template v-else-if="info">
       <div class="table-wrap">
         <table><tbody>
@@ -86,6 +93,18 @@ async function copy() {
         </dl>
         <p v-if="info.supervisor.degraded_reason" class="hint">{{ info.supervisor.degraded_reason }}</p>
         <p class="hint">{{ t('Houseguest stops a program after it starts, so a blocked program can run for a short moment. These figures are measured on this computer.') }}</p>
+      </div>
+      <div class="card stack">
+        <h2>{{ t('Caches and responsiveness') }}</h2>
+        <dl class="grid cols-4" style="margin: 0">
+          <div><dt class="label">{{ t('Library decisions reused') }}</dt><dd class="kpi-number">{{ hitRate === undefined ? '—' : Math.round(hitRate * 100) + '%' }}</dd></div>
+          <div><dt class="label">{{ t('Decisions kept in memory') }}</dt><dd class="kpi-number">{{ info.caches?.library?.decisions ?? 0 }}</dd></div>
+          <div><dt class="label">{{ t('Places watched for changes') }}</dt><dd class="kpi-number">{{ info.watcher?.watching ?? 0 }}</dd></div>
+          <div><dt class="label">{{ t('Pages kept ready') }}</dt><dd class="kpi-number">{{ cacheSize() }}</dd></div>
+        </dl>
+        <table v-if="slowest.length"><thead><tr><th>{{ t('Request') }}</th><th>{{ t('Average') }}</th><th>{{ t('Slowest') }}</th><th>{{ t('Size') }}</th></tr></thead>
+          <tbody><tr v-for="row in slowest" :key="row.cmd"><td class="mono">{{ row.cmd }}</td><td>{{ row.run_avg_ms.toFixed(1) }} ms</td><td>{{ row.run_max_ms.toFixed(1) }} ms</td><td>{{ Math.round(row.bytes_avg / 1024) }} KB</td></tr></tbody></table>
+        <p class="hint">{{ t('Cached data is only used to show pages quickly. Decisions about what may run never come from a cache.') }}</p>
       </div>
       <div class="card stack">
         <h2>{{ t('System') }}</h2>

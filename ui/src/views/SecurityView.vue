@@ -1,24 +1,25 @@
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue';
-import { onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import { call } from '../api';
 import Icon from '../components/Icon.vue';
 import { t } from '../i18n';
 import { attempt, formatTime, notify } from '../store';
 import type { Diagnostics } from '../types';
+import { useResource } from '../use-resource';
 
-const info = ref<Diagnostics>();
-const backups = ref<string[]>([]);
+const report = useResource<Diagnostics>(() => 'diagnostics', () => call<Diagnostics>('diagnostics'), ['policy', 'session'], 30_000);
+const saved = useResource<string[]>(() => 'backups', () => call<string[]>('backup.list'), ['policy'], 120_000);
+const info = report.data;
+const backups = computed(() => saved.data.value ?? []);
 const oldPin = ref('');
 const newPin = ref('');
 const busy = ref(false);
 
 async function load() {
-  info.value = await attempt(() => call<Diagnostics>('diagnostics'));
-  backups.value = (await attempt(() => call<string[]>('backup.list'))) ?? [];
+  await Promise.all([report.load(true), saved.load(true)]);
 }
-onMounted(load);
 
 async function changePin() {
   busy.value = true;

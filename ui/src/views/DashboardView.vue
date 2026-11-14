@@ -1,27 +1,26 @@
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue';
 import EmptyState from '../components/EmptyState.vue';
-import { computed, onMounted, ref } from 'vue';
+import { computed } from 'vue';
 
 import { call, host } from '../api';
 import Icon from '../components/Icon.vue';
+import Skeleton from '../components/Skeleton.vue';
 import { t } from '../i18n';
 import { app, attempt, formatDuration, formatTime, go, profileLabel, refreshStatus, remaining } from '../store';
 import type { ContinuityReport, Dashboard, PendingReview } from '../types';
+import { useResource } from '../use-resource';
 import { eventLabel } from './events';
 
-const data = ref<Dashboard>();
-const reviews = ref<PendingReview[]>([]);
-const continuity = ref<ContinuityReport>();
-const loading = ref(true);
+const dashboard = useResource<Dashboard>(() => 'dashboard', () => call<Dashboard>('dashboard'), ['policy', 'history', 'session'], 60_000);
+const pending = useResource<PendingReview[]>(() => 'reviews', () => call<PendingReview[]>('reviews.list'), ['history', 'policy'], 60_000);
+const checked = useResource<ContinuityReport>(() => 'continuity', () => call<ContinuityReport>('continuity.report'), ['session'], 120_000);
+const data = dashboard.data;
+const reviews = computed(() => pending.data.value ?? []);
+const continuity = checked.data;
+const loading = dashboard.initial;
 
-async function load() {
-  data.value = await attempt(() => call<Dashboard>('dashboard'));
-  loading.value = false;
-  reviews.value = (await call<PendingReview[]>('reviews.list').catch(() => [])) ?? [];
-  continuity.value = await call<ContinuityReport>('continuity.report').catch(() => undefined);
-}
-onMounted(load);
+const load = () => Promise.all([dashboard.load(true), pending.load(true), checked.load(true)]);
 
 const total = computed(() => (data.value?.session ? data.value.session.ends_at - data.value.session.started_at : 1));
 const circumference = 2 * Math.PI * 62;
@@ -44,7 +43,11 @@ async function stop() {
       <button class="btn primary" @click="go('sessions')"><Icon name="play" />{{ app.status?.armed ? t('Manage session') : t('Start a guest session') }}</button>
     </PageHeader>
 
-    <div v-if="loading" class="grid cols-3"><div v-for="n in 3" :key="n" class="card"><div class="skeleton" style="height: 70px" /></div></div>
+    <Skeleton v-if="loading" kind="kpis" :count="3" />
+    <div v-else-if="dashboard.failed.value && !data" class="banner bad" role="alert">
+      <Icon name="alert" /><div class="grow"><strong>{{ t('The dashboard could not be loaded.') }}</strong><div>{{ dashboard.failed.value }}</div></div>
+      <button class="btn sm" @click="load">{{ t('Try again') }}</button>
+    </div>
 
     <template v-else-if="data">
       <div v-if="data.enforcement === 'unavailable'" class="banner bad" role="alert">

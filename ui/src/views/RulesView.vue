@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import EmptyState from '../components/EmptyState.vue';
 import PageHeader from '../components/PageHeader.vue';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, ref, watch } from 'vue';
 
 import { call } from '../api';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import PreviewPanel from '../components/PreviewPanel.vue';
 import { t } from '../i18n';
-import { app, attempt, formatTime, loadProfiles, profileLabel, randomId } from '../store';
+import { app, attempt, ensureProfiles, formatTime, loadProfiles, profileLabel, randomId } from '../store';
 import type { Action, MatchType, Preview, Profile, Rule } from '../types';
 
 const draft = ref<Profile>();
@@ -18,10 +18,15 @@ const preview = ref<Preview>();
 const previewing = ref(false);
 const saving = ref(false);
 
-onMounted(async () => {
-  await attempt(loadProfiles);
+onActivated(async () => {
+  await attempt(ensureProfiles);
   if (!app.ruleProfileId || !app.profiles.some((p) => p.id === app.ruleProfileId)) app.ruleProfileId = app.profiles[0]?.id ?? '';
-  select();
+  if (!dirty.value) select();
+});
+onDeactivated(() => {
+  editing.value = undefined;
+  previewing.value = false;
+  preview.value = undefined;
 });
 watch(() => app.ruleProfileId, select);
 
