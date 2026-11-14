@@ -190,6 +190,7 @@ core::Json Discovery::report() {
         if (item.root && !item.identity.publisher.empty()) root_publisher = item.identity.publisher;
     }
     std::vector<core::Json> rows;
+    rows.reserve(items_.size());
     for (const auto& [key, item] : items_) rows.push_back(classify(item, root_directory_, root_publisher));
     std::ranges::sort(rows, {},
                       [](const core::Json& row) { return row["first_seen_ms"].get<std::int64_t>(); });

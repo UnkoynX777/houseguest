@@ -31,12 +31,6 @@ bool has_wildcard(const std::string& path) {
     return path.find_first_of("*?") != std::string::npos;
 }
 
-std::string lowered(std::string text) {
-    std::ranges::transform(text, text.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return text;
-}
-
 const char* state_name(core::MatchState state) {
     switch (state) {
         case core::MatchState::Exact:
@@ -109,11 +103,12 @@ core::Decision Controller::decide_file(const EnforcementPolicy& policy, const st
 
 void Controller::store_profile(const std::string& actor, core::Profile profile, const char* event) {
     const auto it = std::ranges::find(store_.state.profiles, profile.id, &core::Profile::id);
-    const bool active = session_uses(profile.id);
-    if (active && store_.state.session->ending())
+    const auto& current = store_.state.session;
+    const bool active = current && current->profile_id == profile.id;
+    if (active && current->ending())
         throw Failure("conflict", "The session is ending. Try again in a moment.");
     if (active) {
-        const auto& session = *store_.state.session;
+        const auto& session = *current;
         const auto compiled = compile(profile, session.exceptions, session.guest_sids, session.audit_only);
         if (compiled.has_errors)
             throw Failure("policy_invalid", "Policy has errors.", {{"findings", compiled.findings}});
@@ -285,7 +280,8 @@ Json Controller::approve_component(const std::string& actor, const std::string& 
                       "This is a tool that can run other programs. Confirm to approve it.");
 
     const auto minutes = args.value("minutes", std::int64_t{0});
-    if (minutes < 0 || minutes > 60 * 24 * 30) throw Failure("bad_request", "Invalid duration.");
+    if (minutes < 0 || minutes > std::int64_t{60} * 24 * 30)
+        throw Failure("bad_request", "Invalid duration.");
     const auto existing = std::ranges::find_if(app->components, [&](const core::Component& c) {
         return core::normalize_path(c.path) == core::normalize_path(identity.path);
     });

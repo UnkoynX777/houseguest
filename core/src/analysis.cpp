@@ -40,7 +40,12 @@ std::string matcher_key(const Matcher& m) {
             else if constexpr (std::is_same_v<T, HashMatcher>)
                 return key + v.sha256;
             else if constexpr (std::is_same_v<T, PublisherMatcher>) {
-                for (const auto& [name, value] : parse_subject(v.subject)) key += name + "=" + value + ";";
+                for (const auto& [name, value] : parse_subject(v.subject)) {
+                    key += name;
+                    key += '=';
+                    key += value;
+                    key += ';';
+                }
                 return key;
             } else
                 return key + v.family_name;
