@@ -15,23 +15,14 @@
 #include <unordered_map>
 #include <vector>
 
-#include "houseguest/core/evaluator.hpp"
 #include "houseguest/core/types.hpp"
 
-#include "identity_resolver.hpp"
+#include "assessor.hpp"
+#include "discovery.hpp"
+#include "policy.hpp"
 #include "process_trace.hpp"
 
 namespace houseguest::service {
-
-struct EnforcementPolicy {
-    core::Profile profile;
-    core::Baseline baseline;
-    std::set<std::string> guest_sids;
-    bool audit_only = false;
-    bool needs_hash = false;
-    bool needs_publisher = false;
-    int highest_expensive_priority = std::numeric_limits<int>::min();
-};
 
 struct Denial {
     std::uint32_t pid = 0;
@@ -39,8 +30,12 @@ struct Denial {
     std::string user_sid;
     core::AppIdentity app;
     core::Decision decision;
+    std::string parent_path;
+    std::string profile_id;
+    std::string profile_name;
     bool enforced = false;
     bool audit_only = false;
+    bool spared = false;
 };
 
 struct InspectionFailure {
@@ -66,6 +61,9 @@ struct SupervisorStats {
     std::uint64_t events_dropped = 0;
     std::uint64_t reconciliations = 0;
     std::uint64_t unreadable = 0;
+    std::uint64_t protection_spared = 0;
+    std::uint64_t lineage_saturated = 0;
+    std::size_t lineage_records = 0;
     std::size_t queue_depth = 0;
     std::size_t queue_high_water = 0;
     std::size_t retries_waiting = 0;
@@ -74,6 +72,10 @@ struct SupervisorStats {
     double latency_average_ms = 0;
     double latency_p95_ms = 0;
     double latency_max_ms = 0;
+    std::size_t assessment_samples = 0;
+    double assessment_average_us = 0;
+    double assessment_p95_us = 0;
+    double assessment_max_us = 0;
 };
 
 class Supervisor {
@@ -83,8 +85,8 @@ public:
     using FailureHandler = std::function<void(const InspectionFailure&)>;
     using Clock = std::chrono::steady_clock;
 
-    Supervisor(IdentityResolver& resolver, DenialHandler on_denial, ModeHandler on_mode,
-               FailureHandler on_failure);
+    Supervisor(Assessor& assessor, Lineage& lineage, Discovery& discovery, DenialHandler on_denial,
+               ModeHandler on_mode, FailureHandler on_failure);
     ~Supervisor();
 
     bool start();
@@ -123,10 +125,16 @@ private:
     void mark(std::uint32_t pid, std::uint64_t created_ticks, State state);
     void forget_exited();
     bool known(std::uint32_t pid);
+    bool in_flight(std::uint32_t pid, std::uint32_t except);
+    void finished(std::uint32_t pid);
+    void observe(const system::ProcessRef& process, const Assessment& assessment, std::uint64_t created);
+    void record_assessment(std::chrono::steady_clock::duration elapsed);
     void set_mode(SupervisionMode mode, const std::string& reason);
     void record_latency(std::uint64_t event_ticks);
 
-    IdentityResolver& resolver_;
+    Assessor& assessor_;
+    Lineage& lineage_;
+    Discovery& discovery_;
     DenialHandler on_denial_;
     ModeHandler on_mode_;
     FailureHandler on_failure_;
@@ -139,6 +147,7 @@ private:
     std::condition_variable_any queue_ready_;
     std::deque<Pending> events_;
     std::deque<Pending> sweeps_;
+    std::unordered_map<std::uint32_t, int> active_;
     std::size_t high_water_ = 0;
 
     mutable std::mutex retry_mutex_;
@@ -149,6 +158,7 @@ private:
 
     mutable std::mutex stats_mutex_;
     std::deque<double> latencies_;
+    std::deque<double> assessments_;
     std::string degraded_reason_;
     std::atomic<std::uint64_t> inspected_ = 0;
     std::atomic<std::uint64_t> terminated_ = 0;
@@ -160,6 +170,7 @@ private:
     std::atomic<std::uint64_t> events_dropped_ = 0;
     std::atomic<std::uint64_t> reconciliations_ = 0;
     std::atomic<std::uint64_t> unreadable_ = 0;
+    std::atomic<std::uint64_t> spared_ = 0;
     std::atomic<bool> reconcile_requested_ = false;
 
     std::mutex wake_mutex_;

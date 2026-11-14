@@ -45,6 +45,7 @@ struct State {
     std::string language = "en";
     std::string default_on_expiry = "disconnect";
     std::vector<core::Profile> profiles;
+    std::vector<core::Application> library;
     std::vector<ManagedAccount> managed;
     std::optional<Session> session;
 

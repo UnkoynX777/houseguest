@@ -35,8 +35,8 @@ TEST_CASE("malformed input is rejected", "[serialization]") {
         std::invalid_argument);
 }
 
-TEST_CASE("built-in templates never trip the baseline safety checks", "[serialization][safety]") {
-    const auto baseline = Baseline::windows_default("c:\\windows", "c:\\program files\\houseguest");
+TEST_CASE("built-in templates never trip the protection safety checks", "[serialization][safety]") {
+    const auto baseline = Protection::windows_default("c:/windows", "c:/program files");
     for (auto profile : builtin_profiles()) {
         for (auto& rule : profile.rules) {
             if (auto* path = std::get_if<PathMatcher>(&rule.matcher)) {

@@ -24,16 +24,7 @@ void Controller::register_policy_commands() {
 
     add("profiles.save", Access::Owner, [this](Who caller, Args args) {
         auto profile = core::profile_from_json(args.at("profile"));
-        if (session_uses(profile.id))
-            throw Failure("conflict", "This profile is used by the active session.");
-        const auto it = std::ranges::find(store_.state.profiles, profile.id, &core::Profile::id);
-        if (it == store_.state.profiles.end())
-            store_.state.profiles.push_back(profile);
-        else
-            *it = profile;
-        store_.save();
-        audit_->append(caller.sid, "profile.saved",
-                       {{"profile", profile.id}, {"name", profile.name}, {"rules", profile.rules.size()}});
+        store_profile(caller.sid, profile, "profile.saved");
         return core::to_json(profile);
     });
 
@@ -61,7 +52,13 @@ void Controller::register_policy_commands() {
         [](Who, Args) {
             Json list = Json::array();
             for (const auto& app : system::discover_installed_apps()) {
-                list.push_back({{"name", app.name}, {"path", app.path}, {"company", app.company}});
+                list.push_back({{"name", app.name},
+                                {"path", app.path},
+                                {"company", app.company},
+                                {"version", app.version},
+                                {"description", app.description},
+                                {"source", app.source},
+                                {"package_family", app.package_family}});
             }
             return list;
         },
@@ -123,22 +120,20 @@ void Controller::register_policy_commands() {
 
             Json apps = Json::array();
             std::size_t allowed = 0, denied = 0;
-            const auto now = std::chrono::system_clock::now();
             for (const auto& app : system::discover_installed_apps()) {
-                const auto identity =
-                    resolver_.resolve(system::path_from_utf8(app.path), compiled.policy->needs_hash,
-                                      compiled.policy->needs_publisher);
                 const auto decision =
-                    core::evaluate(compiled.policy->profile, compiled.policy->baseline, identity, now);
+                    decide_file(*compiled.policy, system::path_from_utf8(app.path), app.package_family, {});
                 (decision.action == core::Action::Allow ? allowed : denied)++;
                 apps.push_back({{"name", app.name},
                                 {"path", app.path},
                                 {"action", action_name(decision.action)},
                                 {"rule", decision.rule_id},
-                                {"source", decision.source == core::DecisionSource::Baseline ? "baseline"
-                                           : decision.source == core::DecisionSource::Rule   ? "rule"
-                                                                                             : "default"}});
+                                {"app_id", decision.app_id},
+                                {"reason", decision.reason},
+                                {"source", core::source_name(decision.source)}});
             }
+            result["applications"] = profile.apps.size();
+            result["continuity"] = continuity_.report_json(guests);
             result["allowed"] = allowed;
             result["denied"] = denied;
             result["apps"] = std::move(apps);

@@ -29,7 +29,7 @@ TEST_CASE("state round trips through the signed store", "[store]") {
     Store reopened(dir);
     REQUIRE(reopened.load() == LoadResult::Loaded);
     CHECK(reopened.state.owner_sid == "S-1-5-21-1");
-    CHECK(reopened.state.profiles.size() == 4);
+    CHECK(reopened.state.profiles.size() == 5);
     std::filesystem::remove_all(dir);
 }
 

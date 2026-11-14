@@ -65,6 +65,8 @@ std::string mac_of(const system::Bytes& key, const std::string& payload) {
 core::Json state_to_json(const State& state) {
     core::Json profiles = core::Json::array();
     for (const auto& profile : state.profiles) profiles.push_back(core::to_json(profile));
+    core::Json library = core::Json::array();
+    for (const auto& app : state.library) library.push_back(core::to_json(app));
     core::Json json{
         {"version", kStateVersion},
         {"owner_sid", state.owner_sid},
@@ -74,7 +76,8 @@ core::Json state_to_json(const State& state) {
         {"locked_until", state.locked_until},
         {"language", state.language},
         {"default_on_expiry", state.default_on_expiry},
-        {"profiles", std::move(profiles)}};
+        {"profiles", std::move(profiles)},
+        {"library", std::move(library)}};
     if (state.session) {
         core::Json exceptions = core::Json::array();
         for (const auto& rule : state.session->exceptions) exceptions.push_back(core::to_json(rule));
@@ -103,6 +106,9 @@ State state_from_json(const core::Json& json) {
     state.language = json.value("language", "en");
     state.default_on_expiry = json.value("default_on_expiry", "disconnect");
     for (const auto& item : json.at("profiles")) state.profiles.push_back(core::profile_from_json(item));
+    if (const auto it = json.find("library"); it != json.end() && it->is_array()) {
+        for (const auto& item : *it) state.library.push_back(core::application_from_json(item));
+    }
     if (const auto it = json.find("managed"); it != json.end()) {
         for (const auto& account : *it) {
             state.managed.push_back(

@@ -9,6 +9,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 add_library(houseguest_core STATIC
   src/glob.cpp
+  src/protection.cpp
   src/evaluator.cpp
   src/analysis.cpp
   src/serialization.cpp)
@@ -27,6 +28,7 @@ if(HOUSEGUEST_BUILD_TESTS)
     tests/glob_tests.cpp
     tests/evaluator_tests.cpp
     tests/analysis_tests.cpp
+    tests/engine_tests.cpp
     tests/serialization_tests.cpp)
   target_link_libraries(houseguest_core_tests PRIVATE houseguest::core houseguest_warnings Catch2::Catch2WithMain)
 

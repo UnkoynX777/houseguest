@@ -10,7 +10,7 @@ using namespace std::chrono_literals;
 namespace {
 
 const TimePoint kNow = TimePoint{} + 1000h;
-const Baseline kBaseline = Baseline::windows_default("C:\\Windows", "C:\\Program Files\\Houseguest");
+const Protection kBaseline = Protection::windows_default("C:/Windows", "C:/Program Files");
 
 Rule rule(std::string id, Action a, Matcher m, int priority = 0) {
     return Rule{std::move(id), a, std::move(m), priority, std::nullopt};

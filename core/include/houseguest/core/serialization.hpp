@@ -11,8 +11,12 @@ using Json = nlohmann::json;
 Json to_json(const Rule& rule);
 Json to_json(const Profile& profile);
 Json to_json(const AppIdentity& app);
+Json to_json(const Component& component);
+Json to_json(const Application& app);
 
 Rule rule_from_json(const Json& json);
+Component component_from_json(const Json& json);
+Application application_from_json(const Json& json);
 Profile profile_from_json(const Json& json);
 AppIdentity app_identity_from_json(const Json& json);
 

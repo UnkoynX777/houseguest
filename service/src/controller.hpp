@@ -4,6 +4,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -11,7 +12,11 @@
 
 #include "houseguest/system/capabilities.hpp"
 
+#include "assessor.hpp"
 #include "audit.hpp"
+#include "continuity.hpp"
+#include "discovery.hpp"
+#include "lineage.hpp"
 #include "store.hpp"
 #include "supervisor.hpp"
 
@@ -54,6 +59,7 @@ private:
     void register_policy_commands();
     void register_session_commands();
     void register_system_commands();
+    void register_app_commands();
     void add(const char* name, Access access, std::function<core::Json(const Caller&, const core::Json&)> run,
              bool unlocked = false);
     void require_owner(const Caller& caller, const core::Json& request);
@@ -63,7 +69,19 @@ private:
     std::string issue_token(const std::string& sid);
 
     Compiled compile(const core::Profile& profile, const std::vector<core::Rule>& exceptions,
-                     const std::vector<std::string>& guests, bool audit_only) const;
+                     const std::vector<std::string>& guests, bool audit_only);
+    void store_profile(const std::string& actor, core::Profile profile, const char* event);
+    core::Decision decide_file(const EnforcementPolicy& policy, const std::filesystem::path& file,
+                               const std::string& package_family, std::vector<std::string> lineage);
+    core::Json explain(const core::Profile& profile, const std::filesystem::path& file,
+                       const std::string& package_family);
+    core::Json blocks(std::size_t limit);
+    void remember_review(const Denial& denial);
+    struct Review {
+        std::string id, app_id, kind, path, sha256, publisher, package_family, parent_path, profile_id, note;
+        std::uint64_t count = 0;
+        std::int64_t first = 0, last = 0;
+    };
     void arm(const Session& session);
     void end_session(const std::string& reason, bool apply_expiry_action);
     bool finish_session();
@@ -87,9 +105,17 @@ private:
     std::mutex mutex_;
     std::condition_variable_any timer_wake_;
     Store store_;
+    std::filesystem::path install_dir_;
     std::unique_ptr<AuditLog> audit_;
     IdentityResolver resolver_;
+    ContinuityGuard continuity_;
+    Lineage lineage_;
+    Assessor assessor_;
+    Discovery discovery_;
     std::unique_ptr<Supervisor> supervisor_;
+    std::mutex review_mutex_;
+    std::map<std::string, Review> reviews_;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> notified_;
     std::unordered_map<std::string, Command> commands_;
     std::mutex token_mutex_;
     std::unordered_map<std::string, Token> tokens_;
@@ -104,7 +130,6 @@ private:
     bool live_ = true;
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_notice_;
     std::mutex notice_mutex_;
-    std::filesystem::path install_dir_;
     system::Capabilities capabilities_;
     LoadResult load_result_ = LoadResult::Fresh;
     std::atomic<std::uint64_t> blocked_ = 0;

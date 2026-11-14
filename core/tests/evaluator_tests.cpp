@@ -8,7 +8,7 @@ using namespace std::chrono_literals;
 namespace {
 
 const TimePoint kNow = TimePoint{} + 1000h;
-const Baseline kBaseline = Baseline::windows_default("C:\\Windows", "C:\\Program Files\\Houseguest");
+const Protection kBaseline = Protection::windows_default("C:/Windows", "C:/Program Files");
 
 Rule rule(std::string id, Action a, Matcher m, int priority = 0) {
     return Rule{std::move(id), a, std::move(m), priority, std::nullopt};
@@ -55,13 +55,19 @@ TEST_CASE("expired rules are ignored", "[evaluator]") {
     CHECK(evaluate(p, kBaseline, app("c:/t/a.exe"), kNow - 2h).action == Action::Allow);
 }
 
-TEST_CASE("baseline cannot be denied", "[evaluator][safety]") {
+TEST_CASE("protected Windows components cannot be denied", "[evaluator][safety]") {
     Profile p{"p", "x", Action::Deny, {rule("deny-all", Action::Deny, PathMatcher{"c:/**"}, 100)}};
-    const auto d = evaluate(p, kBaseline, app("C:\\Windows\\System32\\winlogon.exe"), kNow);
+    const auto d = evaluate(p, kBaseline, app("C:/Windows/System32/winlogon.exe"), kNow);
     CHECK(d.action == Action::Allow);
-    CHECK(d.source == DecisionSource::Baseline);
-    CHECK(evaluate(p, kBaseline, app("C:\\Program Files\\Houseguest\\houseguest-cli.exe"), kNow).action ==
-          Action::Allow);
+    CHECK(d.source == DecisionSource::Protected);
+    CHECK(d.reason == "windows_core");
+    CHECK(evaluate(p, kBaseline, app("C:/Windows/explorer.exe"), kNow).source == DecisionSource::Protected);
+}
+
+TEST_CASE("Houseguest install folder is not protected by path alone", "[evaluator][safety]") {
+    Profile p{"p", "x", Action::Deny, {}};
+    CHECK(evaluate(p, kBaseline, app("C:/Program Files/Houseguest/houseguest.exe"), kNow).action ==
+          Action::Deny);
 }
 
 TEST_CASE("admin tools are not part of the baseline", "[evaluator][safety]") {
@@ -79,9 +85,10 @@ TEST_CASE("hash, publisher and package matchers survive renaming", "[evaluator]"
                rule("pkg", Action::Allow, PackageMatcher{"Mojang.Minecraft_abc"})}};
     AppIdentity renamed{"c:/anywhere/renamed.exe", std::string(64, 'A'), {}, {}};
     CHECK(evaluate(p, kBaseline, renamed, kNow).rule_id == "h");
-    CHECK(evaluate(p, kBaseline, {"c:/x.exe", {}, "discord inc.", {}}, kNow).rule_id == "pub");
-    CHECK(evaluate(p, kBaseline, {"c:/x.exe", {}, {}, "Mojang.Minecraft_abc"}, kNow).rule_id == "pkg");
-    CHECK(evaluate(p, kBaseline, {"c:/x.exe", {}, {}, {}}, kNow).action == Action::Deny);
+    CHECK(evaluate(p, kBaseline, AppIdentity{"c:/x.exe", {}, "discord inc.", {}}, kNow).rule_id == "pub");
+    CHECK(evaluate(p, kBaseline, AppIdentity{"c:/x.exe", {}, {}, "Mojang.Minecraft_abc"}, kNow).rule_id ==
+          "pkg");
+    CHECK(evaluate(p, kBaseline, AppIdentity{"c:/x.exe", {}, {}, {}}, kNow).action == Action::Deny);
 }
 
 TEST_CASE("simulation counts decisions without side effects", "[evaluator]") {

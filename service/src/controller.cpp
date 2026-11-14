@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "houseguest/core/analysis.hpp"
+#include "houseguest/core/glob.hpp"
 #include "houseguest/system/accounts.hpp"
 #include "houseguest/system/capabilities.hpp"
 #include "houseguest/system/crypto.hpp"
@@ -53,6 +54,24 @@ const char* code_name(core::FindingCode code) {
             return "baseline_protected";
         case core::FindingCode::NoAllowances:
             return "no_allowances";
+        case core::FindingCode::InvalidComponent:
+            return "invalid_component";
+        case core::FindingCode::DuplicateComponentId:
+            return "duplicate_component_id";
+        case core::FindingCode::ApplicationWithoutMain:
+            return "application_without_main";
+        case core::FindingCode::WeakIndependent:
+            return "weak_independent";
+        case core::FindingCode::UnpinnedComponent:
+            return "unpinned_component";
+        case core::FindingCode::SensitiveComponent:
+            return "sensitive_component";
+        case core::FindingCode::ApplicationBlockedByRule:
+            return "application_blocked_by_rule";
+        case core::FindingCode::RelatedWithoutSigner:
+            return "related_without_signer";
+        case core::FindingCode::ExpiredComponent:
+            return "expired_component";
     }
     return "unknown";
 }
@@ -79,7 +98,11 @@ const char* enforcement_name(SupervisionMode mode) {
 }  // namespace
 
 Controller::Controller(std::filesystem::path data_directory, bool enable_enforcement)
-    : store_(std::move(data_directory)), install_dir_(executable_directory()) {
+    : store_(std::move(data_directory)),
+      install_dir_(executable_directory()),
+      continuity_(install_dir_),
+      assessor_(resolver_, continuity_, lineage_, system::expand_known_folders("%SystemRoot%"),
+                system::expand_known_folders("%ProgramFiles%")) {
     live_ = enable_enforcement;
     load_result_ = store_.load();
     audit_ = std::make_unique<AuditLog>(store_.directory() / L"audit.log",
@@ -96,8 +119,9 @@ Controller::Controller(std::filesystem::path data_directory, bool enable_enforce
     }
 
     capabilities_ = system::probe_capabilities();
+    continuity_.pin();
     supervisor_ = std::make_unique<Supervisor>(
-        resolver_, [this](const Denial& d) { on_denial(d); },
+        assessor_, lineage_, discovery_, [this](const Denial& d) { on_denial(d); },
         [this](SupervisionMode mode, const std::string& reason) { on_mode(mode, reason); },
         [this](const InspectionFailure& failure) { on_failure(failure); });
     if (enable_enforcement) supervisor_->start();
@@ -146,7 +170,7 @@ void Controller::shutdown() {
 
 Controller::Compiled Controller::compile(const core::Profile& source,
                                          const std::vector<core::Rule>& exceptions,
-                                         const std::vector<std::string>& guests, bool audit_only) const {
+                                         const std::vector<std::string>& guests, bool audit_only) {
     Compiled result;
     result.policy = std::make_shared<EnforcementPolicy>();
     auto& policy = *result.policy;
@@ -155,19 +179,28 @@ Controller::Compiled Controller::compile(const core::Profile& source,
     for (auto& rule : policy.profile.rules) {
         if (auto* path = std::get_if<core::PathMatcher>(&rule.matcher))
             path->pattern = system::expand_known_folders(path->pattern);
-        policy.needs_hash |= std::holds_alternative<core::HashMatcher>(rule.matcher);
-        policy.needs_publisher |= std::holds_alternative<core::PublisherMatcher>(rule.matcher);
-        if (std::holds_alternative<core::HashMatcher>(rule.matcher) ||
-            std::holds_alternative<core::PublisherMatcher>(rule.matcher)) {
-            policy.highest_expensive_priority = std::max(policy.highest_expensive_priority, rule.priority);
-        }
     }
-    policy.baseline = core::Baseline::windows_default(system::expand_known_folders("%SystemRoot%"),
-                                                      system::path_to_utf8(install_dir_));
+    for (auto& app : policy.profile.apps) {
+        for (auto& component : app.components) component.path = system::expand_known_folders(component.path);
+    }
+    policy.protection = core::Protection::windows_default(system::expand_known_folders("%SystemRoot%"),
+                                                          system::expand_known_folders("%ProgramFiles%"));
     policy.guest_sids.insert(guests.begin(), guests.end());
     policy.audit_only = audit_only;
+    policy.profile_id = source.id;
+    policy.profile_name = source.name;
 
-    const auto findings = core::analyze(policy.profile, policy.baseline, std::chrono::system_clock::now());
+    const auto add = [&](const char* severity, const char* code, std::string message,
+                         Json rules = Json::array()) {
+        result.has_errors |= std::string_view(severity) == "error";
+        result.has_warnings |= std::string_view(severity) == "warning";
+        result.findings.push_back({{"severity", severity},
+                                   {"code", code},
+                                   {"rules", std::move(rules)},
+                                   {"message", std::move(message)}});
+    };
+
+    const auto findings = core::analyze(policy.profile, policy.protection, std::chrono::system_clock::now());
     for (const auto& finding : findings) {
         result.has_errors |= finding.severity == core::Severity::Error;
         result.has_warnings |= finding.severity == core::Severity::Warning;
@@ -179,22 +212,50 @@ Controller::Compiled Controller::compile(const core::Profile& source,
     if (std::ranges::any_of(policy.profile.rules, [](const core::Rule& rule) {
             return std::holds_alternative<core::PackageMatcher>(rule.matcher);
         })) {
-        result.findings.push_back(
-            {{"severity", "info"},
-             {"code", "package_not_previewable"},
-             {"rules", Json::array()},
-             {"message",
-              "Package family rules are evaluated on running processes. The preview lists "
-              "installed apps by path and cannot show their package decisions."}});
+        add("info", "package_not_previewable",
+            "Package family rules are evaluated on running processes. The preview lists installed apps by "
+            "path "
+            "and cannot show their package decisions.");
     }
-    if (std::ranges::find(guests, store_.state.owner_sid) != guests.end()) {
-        result.has_warnings = true;
-        result.findings.push_back({{"severity", "warning"},
-                                   {"code", "owner_account_restricted"},
-                                   {"rules", Json::array()},
-                                   {"message",
-                                    "The owner's own account is restricted. Houseguest itself stays "
-                                    "available so the session can be ended with the PIN."}});
+
+    const bool owner_restricted = std::ranges::find(guests, store_.state.owner_sid) != guests.end();
+    if (owner_restricted) {
+        add("warning", "owner_account_restricted",
+            "The owner's own account is restricted. Houseguest itself stays available so the session can be "
+            "ended with the PIN.");
+    }
+    const char* critical = owner_restricted && !audit_only ? "error" : owner_restricted ? "warning" : "info";
+    const auto continuity = continuity_.report(guests);
+    if (!continuity.install_trusted) {
+        add(critical, "continuity_untrusted_install",
+            "The Houseguest folder can be modified by a restricted account, so Houseguest cannot recognize "
+            "its "
+            "own files safely. Install it under Program Files.");
+    }
+    if (!continuity.missing.empty()) {
+        add(critical, "continuity_missing_binary",
+            "A Houseguest program was not found next to the service, so it cannot be recognized: " +
+                continuity.missing.front());
+    }
+    if (continuity.webview_runtimes.empty()) {
+        add(owner_restricted ? "warning" : "info", "continuity_webview_missing",
+            "The WebView2 runtime was not found in Program Files. Without it the window cannot open; use "
+            "houseguest-cli from an elevated prompt to administer.");
+    } else if (!continuity.webview_trusted) {
+        add(owner_restricted ? "warning" : "info", "continuity_webview_untrusted",
+            "A WebView2 runtime folder can be modified by a restricted account, so its processes are not "
+            "treated as part of Houseguest.");
+    }
+    const auto now = std::chrono::system_clock::now();
+    for (const auto& binary : continuity.verified) {
+        core::ProcessFacts facts;
+        facts.app = {binary.path, binary.sha256, {}, {}};
+        facts.hash_resolved = facts.publisher_resolved = true;
+        facts.continuity = core::Continuity::Houseguest;
+        if (core::evaluate(policy.profile, policy.protection, facts, now).action != core::Action::Allow) {
+            add(critical, "continuity_blocked",
+                "The policy would block a Houseguest program: " + binary.path);
+        }
     }
     return result;
 }
@@ -204,6 +265,7 @@ void Controller::arm(const Session& session) {
     auto compiled = compile(profile, session.exceptions, session.guest_sids, session.audit_only);
     if (compiled.has_errors)
         throw Failure("policy_invalid", "Policy has errors.", {{"findings", compiled.findings}});
+    continuity_.restrict_to(session.guest_sids);
     supervisor_->apply(compiled.policy);
     if (supervisor_->running()) supervisor_->sweep();
 }
@@ -321,7 +383,51 @@ void Controller::timer_loop(const std::stop_token& stop) {
     }
 }
 
+void Controller::remember_review(const Denial& denial) {
+    const auto& decision = denial.decision;
+    const bool changed = decision.note.starts_with("component_changed:");
+    if (decision.review_app.empty() && !changed) return;
+    Review review;
+    review.app_id = decision.review_app;
+    review.kind = changed ? "component_changed" : "unknown_dependency";
+    review.path = denial.app.path;
+    review.sha256 = denial.app.sha256;
+    review.publisher = denial.app.publisher;
+    review.package_family = denial.app.package_family;
+    review.parent_path = denial.parent_path;
+    review.profile_id = denial.profile_id;
+    review.note = decision.note;
+    review.first = review.last = now_seconds();
+    review.count = 1;
+    const auto key = review.app_id + "|" + core::normalize_path(review.path) + "|" + review.sha256;
+    review.id =
+        system::to_hex(system::sha256({reinterpret_cast<const std::uint8_t*>(key.data()), key.size()}))
+            .substr(0, 16);
+
+    std::scoped_lock lock(review_mutex_);
+    if (const auto it = reviews_.find(review.id); it != reviews_.end()) {
+        ++it->second.count;
+        it->second.last = review.last;
+        return;
+    }
+    if (reviews_.size() >= 200) {
+        const auto oldest =
+            std::ranges::min_element(reviews_, {}, [](const auto& entry) { return entry.second.last; });
+        reviews_.erase(oldest);
+    }
+    reviews_.emplace(review.id, std::move(review));
+}
+
 void Controller::on_denial(const Denial& denial) {
+    const auto& decision = denial.decision;
+    const auto file = system::path_from_utf8(denial.app.path).filename();
+    if (denial.spared) {
+        audit_limited("spared|" + denial.app.path, "supervisor", "protection.spared",
+                      {{"path", denial.app.path},
+                       {"process", system::path_to_utf8(file)},
+                       {"reason", "The kernel marks this process as essential, so it was not ended."}});
+        return;
+    }
     ++blocked_;
     const auto key = denial.user_sid + "|" + denial.app.path;
     const auto now = std::chrono::steady_clock::now();
@@ -332,22 +438,49 @@ void Controller::on_denial(const Denial& denial) {
         if (last_notice_.size() > 512) last_notice_.clear();
         last_notice_[key] = now;
     }
-    audit_->append(
-        "supervisor",
-        denial.enforced     ? "app.blocked"
-        : denial.audit_only ? "app.would_block"
-                            : "app.block_failed",
-        {{"path", denial.app.path},
-         {"sha256", denial.app.sha256},
-         {"publisher", denial.app.publisher},
-         {"user_sid", denial.user_sid},
-         {"rule", denial.decision.rule_id},
-         {"source", denial.decision.source == core::DecisionSource::Default ? "default" : "rule"}});
-    if (denial.enforced && denial.session_id != 0) {
-        const auto name = system::path_from_utf8(denial.app.path).filename().wstring();
-        system::notify_session(denial.session_id, L"Houseguest",
-                               name + L" is not allowed on this computer right now.");
+    remember_review(denial);
+
+    const char* recommendation = !decision.review_app.empty()                       ? "approve_dependency"
+                                 : decision.note.starts_with("component_changed:")  ? "reauthorize_component"
+                                 : decision.source == core::DecisionSource::Rule    ? "review_rule"
+                                 : decision.source == core::DecisionSource::Default ? "allow_if_needed"
+                                                                                    : "none";
+    audit_->append("supervisor",
+                   denial.enforced     ? "app.blocked"
+                   : denial.audit_only ? "app.would_block"
+                                       : "app.block_failed",
+                   {{"path", denial.app.path},
+                    {"process", system::path_to_utf8(file)},
+                    {"sha256", denial.app.sha256},
+                    {"publisher", denial.app.publisher},
+                    {"package_family", denial.app.package_family},
+                    {"user_sid", denial.user_sid},
+                    {"profile_id", denial.profile_id},
+                    {"profile", denial.profile_name},
+                    {"rule", decision.rule_id},
+                    {"source", core::source_name(decision.source)},
+                    {"reason", decision.reason},
+                    {"note", decision.note},
+                    {"related_app", decision.review_app},
+                    {"parent", denial.parent_path},
+                    {"recommendation", recommendation}});
+
+    if (!denial.enforced || denial.session_id == 0) return;
+    const auto notice_key = decision.review_app.empty() ? denial.app.path : "app|" + decision.review_app;
+    {
+        std::scoped_lock lock(notice_mutex_);
+        const auto it = notified_.find(notice_key);
+        if (it != notified_.end() && now - it->second < std::chrono::minutes(5)) return;
+        if (notified_.size() > 256) notified_.clear();
+        notified_[notice_key] = now;
     }
+    const auto name = file.wstring();
+    system::notify_session(denial.session_id, L"Houseguest",
+                           decision.review_app.empty()
+                               ? name + L" is not allowed on this computer right now."
+                               : name +
+                                     L" was needed by an allowed program but is not approved. Ask the "
+                                     L"owner to review it in Houseguest.");
 }
 
 void Controller::on_mode(SupervisionMode mode, const std::string& reason) {
@@ -421,6 +554,14 @@ Json Controller::supervisor_json() const {
             {"retries_waiting", stats.retries_waiting},
             {"tracked_processes", stats.tracked},
             {"identity_cache_entries", resolver_.cached()},
+            {"protection_spared", stats.protection_spared},
+            {"lineage_records", stats.lineage_records},
+            {"lineage_saturated", stats.lineage_saturated},
+            {"assessment_us",
+             {{"samples", stats.assessment_samples},
+              {"average", stats.assessment_average_us},
+              {"p95", stats.assessment_p95_us},
+              {"max", stats.assessment_max_us}}},
             {"latency_ms",
              {{"samples", stats.latency_samples},
               {"average", stats.latency_average_ms},
@@ -578,6 +719,7 @@ void Controller::register_commands() {
     register_policy_commands();
     register_session_commands();
     register_system_commands();
+    register_app_commands();
 }
 
 }  // namespace houseguest::service

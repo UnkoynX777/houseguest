@@ -6,7 +6,6 @@
 #include <array>
 #include <unordered_set>
 
-#include "houseguest/core/glob.hpp"
 #include "houseguest/system/process.hpp"
 #include "houseguest/system/text.hpp"
 
@@ -32,22 +31,17 @@ unsigned worker_count() {
     return std::clamp(cores / 2, 2u, 4u);
 }
 
-bool decided_by_path(const EnforcementPolicy& policy, const core::Decision& decision) {
-    if (decision.source == core::DecisionSource::Baseline) return true;
-    if (decision.source != core::DecisionSource::Rule) return false;
-    return decision.priority > policy.highest_expensive_priority ||
-           (decision.priority == policy.highest_expensive_priority && decision.action == core::Action::Deny);
-}
-
 bool is_service_account(const std::string& sid) {
     return sid == "S-1-5-18" || sid == "S-1-5-19" || sid == "S-1-5-20";
 }
 
 }  // namespace
 
-Supervisor::Supervisor(IdentityResolver& resolver, DenialHandler on_denial, ModeHandler on_mode,
-                       FailureHandler on_failure)
-    : resolver_(resolver),
+Supervisor::Supervisor(Assessor& assessor, Lineage& lineage, Discovery& discovery, DenialHandler on_denial,
+                       ModeHandler on_mode, FailureHandler on_failure)
+    : assessor_(assessor),
+      lineage_(lineage),
+      discovery_(discovery),
       on_denial_(std::move(on_denial)),
       on_mode_(std::move(on_mode)),
       on_failure_(std::move(on_failure)),
@@ -92,6 +86,13 @@ void Supervisor::apply(std::shared_ptr<const EnforcementPolicy> policy) {
         std::scoped_lock lock(retry_mutex_);
         retries_.clear();
     }
+    {
+        std::scoped_lock lock(queue_mutex_);
+        active_.clear();
+        for (const auto& pending : events_) ++active_[pending.pid];
+        for (const auto& pending : sweeps_) ++active_[pending.pid];
+    }
+    if (!policy_) lineage_.clear();
     std::scoped_lock lock(tracked_mutex_);
     tracked_.clear();
 }
@@ -102,9 +103,14 @@ bool Supervisor::known(std::uint32_t pid) {
 }
 
 void Supervisor::sweep() {
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> unseen;
     for (const auto pid : system::running_process_ids()) {
-        if (pid > 4 && !known(pid)) enqueue(pid, 0, false);
+        if (pid <= 4 || known(pid)) continue;
+        const auto process = system::ProcessRef::open(pid);
+        unseen.emplace_back(process ? process->creation_ticks().value_or(0) : 0, pid);
     }
+    std::ranges::sort(unseen);
+    for (const auto& [created, pid] : unseen) enqueue(pid, 0, false);
 }
 
 SupervisorStats Supervisor::stats() const {
@@ -120,6 +126,9 @@ SupervisorStats Supervisor::stats() const {
     stats.events_dropped = events_dropped_;
     stats.reconciliations = reconciliations_;
     stats.unreadable = unreadable_;
+    stats.protection_spared = spared_;
+    stats.lineage_saturated = lineage_.saturated();
+    stats.lineage_records = lineage_.size();
     {
         std::scoped_lock lock(queue_mutex_);
         stats.queue_depth = events_.size() + sweeps_.size();
@@ -145,6 +154,16 @@ SupervisorStats Supervisor::stats() const {
         stats.latency_p95_ms = sorted[(sorted.size() - 1) * 95 / 100];
         stats.latency_max_ms = sorted.back();
     }
+    if (!assessments_.empty()) {
+        std::vector<double> sorted(assessments_.begin(), assessments_.end());
+        std::ranges::sort(sorted);
+        double total = 0;
+        for (const double value : sorted) total += value;
+        stats.assessment_samples = sorted.size();
+        stats.assessment_average_us = total / static_cast<double>(sorted.size());
+        stats.assessment_p95_us = sorted[(sorted.size() - 1) * 95 / 100];
+        stats.assessment_max_us = sorted.back();
+    }
     return stats;
 }
 
@@ -157,6 +176,7 @@ void Supervisor::enqueue(std::uint32_t pid, std::uint64_t event_ticks, bool from
             dropped = true;
         } else {
             queue.push_back({pid, event_ticks, 0});
+            ++active_[pid];
             high_water_ = std::max(high_water_, events_.size() + sweeps_.size());
         }
     }
@@ -229,9 +249,12 @@ void Supervisor::work(const std::stop_token& stop) {
             if (inspect(pending) == Outcome::Retry) {
                 ++pending.attempt;
                 schedule_retry(pending);
+            } else {
+                finished(pending.pid);
             }
         } catch (const std::exception&) {
             ++inspection_failed_;
+            finished(pending.pid);
         }
     }
 }
@@ -267,6 +290,7 @@ void Supervisor::maintain(const std::stop_token& stop) {
                 }
             }
             forget_exited();
+            lineage_.sweep();
             next_periodic =
                 now + (mode_ == SupervisionMode::Events ? kEventSweepInterval : kPollingSweepInterval);
         }
@@ -276,6 +300,25 @@ void Supervisor::maintain(const std::stop_token& stop) {
         }
         lock.lock();
     }
+}
+
+bool Supervisor::in_flight(std::uint32_t pid, std::uint32_t except) {
+    if (pid == except) return false;
+    std::scoped_lock lock(queue_mutex_);
+    return active_.contains(pid);
+}
+
+void Supervisor::finished(std::uint32_t pid) {
+    std::scoped_lock lock(queue_mutex_);
+    const auto it = active_.find(pid);
+    if (it != active_.end() && --it->second <= 0) active_.erase(it);
+}
+
+void Supervisor::record_assessment(std::chrono::steady_clock::duration elapsed) {
+    const double micros = std::chrono::duration<double, std::micro>(elapsed).count();
+    std::scoped_lock lock(stats_mutex_);
+    assessments_.push_back(micros);
+    if (assessments_.size() > kLatencyWindow) assessments_.pop_front();
 }
 
 bool Supervisor::claim(std::uint32_t pid, std::uint64_t created_ticks, bool retrying) {
@@ -325,13 +368,36 @@ Supervisor::Outcome Supervisor::retry_or_fail(const Pending& pending, const char
     return Outcome::Settled;
 }
 
+void Supervisor::observe(const system::ProcessRef& process, const Assessment& assessment,
+                         std::uint64_t created) {
+    const auto& facts = assessment.facts;
+    if (!facts.image_known) return;
+    const bool root = discovery_.is_root(facts.app);
+    const bool descendant = std::ranges::find(facts.lineage, kObservedMember) != facts.lineage.end();
+    if (!root && !descendant && !discovery_.related(facts.app)) return;
+
+    Observation observation;
+    observation.identity = facts.app;
+    observation.root = root;
+    observation.descendant = descendant;
+    observation.windows_protected = assessment.decision.source == core::DecisionSource::Protected;
+    if (assessment.parent_pid != 0) {
+        if (const auto parent = system::ProcessRef::open(assessment.parent_pid)) {
+            if (const auto path = parent->image_path()) observation.parent_path = system::path_to_utf8(*path);
+        }
+    }
+    if (root || descendant) lineage_.remember(process, created, assessment.sid, {kObservedMember});
+    discovery_.note(observation);
+}
+
 Supervisor::Outcome Supervisor::inspect(const Pending& pending) {
     std::shared_ptr<const EnforcementPolicy> policy;
     {
         std::scoped_lock lock(policy_mutex_);
         policy = policy_;
     }
-    if (!policy || pending.pid <= 4 || pending.pid == GetCurrentProcessId()) return Outcome::Settled;
+    if ((!policy && !discovery_.active()) || pending.pid <= 4 || pending.pid == GetCurrentProcessId())
+        return Outcome::Settled;
 
     const bool final = pending.attempt + 1 >= kMaxAttempts;
     std::uint32_t open_error = 0;
@@ -369,60 +435,69 @@ Supervisor::Outcome Supervisor::inspect(const Pending& pending) {
         if (process->exited()) return settle(Outcome::Settled);
         return retry("token", GetLastError());
     }
-    if (!policy->guest_sids.contains(*sid) || is_service_account(*sid)) return settle(Outcome::Settled);
+    const bool guest = policy && policy->guest_sids.contains(*sid) && !is_service_account(*sid);
+    const bool observed = discovery_.wants(*sid);
+    if (!guest && !observed) return settle(Outcome::Settled);
 
-    bool degraded = false;
-    auto image = process->image_path();
-    if (!image) {
+    const auto started = Clock::now();
+    auto assessment = assessor_.assess(*process, *created, *sid, guest ? policy.get() : nullptr, final,
+                                       [&](std::uint32_t parent) { return in_flight(parent, pending.pid); });
+    record_assessment(Clock::now() - started);
+    if (assessment.retry_stage) {
         if (process->exited()) return settle(Outcome::Settled);
-        if (!final) return retry("image", GetLastError());
-        degraded = true;
-        if (on_failure_) on_failure_({pending.pid, "image", GetLastError(), pending.attempt + 1, true});
+        return retry(assessment.retry_stage, assessment.error);
     }
+    if (assessment.degraded && on_failure_) {
+        on_failure_({pending.pid, assessment.degraded_stage, assessment.error, pending.attempt + 1, true});
+    }
+    if (observed) {
+        assessor_.resolve_fully(assessment, *process);
+        observe(*process, assessment, *created);
+    }
+    if (!guest) return settle(Outcome::Settled);
 
-    const auto now = std::chrono::system_clock::now();
-    const auto family = process->package_family();
-    core::AppIdentity identity;
-    bool remote = false;
-    if (image) {
-        auto first = resolver_.resolve_checked(*image, false, false, family);
-        identity = std::move(first.identity);
-        remote = first.remote;
-    }
-    auto decision = core::evaluate(policy->profile, policy->baseline, identity, now);
-    if (remote && (policy->needs_hash || policy->needs_publisher) && !decided_by_path(*policy, decision)) {
-        degraded = true;
-        if (on_failure_) on_failure_({pending.pid, "remote_image", 0, pending.attempt + 1, true});
-    } else if (image && !decided_by_path(*policy, decision) &&
-               (policy->needs_hash || policy->needs_publisher)) {
-        auto full = resolver_.resolve_checked(*image, policy->needs_hash, policy->needs_publisher, family);
-        if (!full.complete) {
-            if (!final) return retry("hash", GetLastError());
-            degraded = true;
-            if (on_failure_) on_failure_({pending.pid, "hash", GetLastError(), pending.attempt + 1, true});
-        }
-        identity = std::move(full.identity);
-        decision = core::evaluate(policy->profile, policy->baseline, identity, now);
-    }
-    if (image && !final) {
+    if (assessment.degraded) ++inspection_degraded_;
+    if (!assessment.image.empty() && !final) {
         const auto again = process->image_path();
-        if (!again || *again != *image) return retry("unstable_image", 0);
+        if (!again || *again != assessment.image) return retry("unstable_image", 0);
     }
-    if (degraded) ++inspection_degraded_;
+    const auto& decision = assessment.decision;
     if (decision.action == core::Action::Allow) return settle(Outcome::Settled);
 
-    bool terminated = false;
-    if (!policy->audit_only) {
-        terminated = process->terminate();
-        if (!terminated) {
-            if (process->exited()) return settle(Outcome::Settled);
-            if (!final) return retry("terminate", GetLastError());
+    Denial denial;
+    denial.pid = pending.pid;
+    denial.session_id = assessment.session;
+    denial.user_sid = *sid;
+    denial.app = assessment.facts.app;
+    denial.decision = decision;
+    denial.profile_id = policy->profile_id;
+    denial.profile_name = policy->profile_name;
+    denial.audit_only = policy->audit_only;
+    if (assessment.parent_pid != 0) {
+        if (const auto parent = system::ProcessRef::open(assessment.parent_pid)) {
+            if (const auto path = parent->image_path()) denial.parent_path = system::path_to_utf8(*path);
         }
-        ++(terminated ? terminated_ : termination_failed_);
-        if (terminated) record_latency(pending.event_ticks);
     }
-    on_denial_(
-        {pending.pid, process->session_id(), *sid, identity, decision, terminated, policy->audit_only});
+
+    if (!policy->audit_only) {
+        switch (process->terminate_checked()) {
+            case system::ProcessRef::Termination::Done:
+                denial.enforced = true;
+                ++terminated_;
+                record_latency(pending.event_ticks);
+                break;
+            case system::ProcessRef::Termination::Refused:
+                denial.spared = true;
+                ++spared_;
+                break;
+            case system::ProcessRef::Termination::Failed:
+                if (process->exited()) return settle(Outcome::Settled);
+                if (!final) return retry("terminate", GetLastError());
+                ++termination_failed_;
+                break;
+        }
+    }
+    on_denial_(denial);
     return settle(Outcome::Settled);
 }
 

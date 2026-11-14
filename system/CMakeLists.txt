@@ -11,7 +11,7 @@ target_include_directories(houseguest_system PUBLIC include)
 target_compile_definitions(houseguest_system PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(houseguest_system
   PUBLIC houseguest::core
-  PRIVATE houseguest_warnings bcrypt crypt32 wintrust netapi32 wtsapi32 ole32 version shell32 advapi32)
+  PRIVATE houseguest_warnings bcrypt crypt32 wintrust netapi32 wtsapi32 ole32 version shell32 shlwapi advapi32)
 
 if(HOUSEGUEST_BUILD_TESTS)
   add_executable(houseguest_system_tests tests/system_tests.cpp)

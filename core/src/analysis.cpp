@@ -46,17 +46,102 @@ std::string matcher_key(const Matcher& m) {
         m);
 }
 
-bool denies_baseline(const PathMatcher& m, const Baseline& baseline) {
-    return std::ranges::any_of(baseline.path_patterns, [&](const std::string& entry) {
-        auto concrete = entry;
-        if (concrete.ends_with("/**")) concrete.resize(concrete.size() - 3);
+bool denies_protected(const PathMatcher& m, const Protection& protection) {
+    return std::ranges::any_of(protection.patterns(), [&](const std::string& entry) {
+        const auto wildcard = entry.find_first_of("*?");
+        auto concrete = wildcard == std::string::npos ? entry : entry.substr(0, entry.rfind('/', wildcard));
         return path_matches(m.pattern, concrete);
     });
 }
 
+void analyze_applications(const Profile& profile, const Protection&, TimePoint now,
+                          std::vector<Finding>& out) {
+    std::set<std::string> app_ids;
+    for (const auto& app : profile.apps) {
+        if (!app_ids.insert(app.id).second)
+            out.push_back({Severity::Error,
+                           FindingCode::DuplicateRuleId,
+                           {app.id},
+                           "Application id is used more than once."});
+        std::set<std::string> component_ids;
+        bool has_main = false;
+        bool main_signed = false;
+        for (const auto& c : app.components) {
+            has_main |= c.role == ComponentRole::Main;
+            main_signed |= c.role == ComponentRole::Main && !c.publisher.empty();
+            if (!component_ids.insert(c.id).second)
+                out.push_back({Severity::Error,
+                               FindingCode::DuplicateComponentId,
+                               {app.id, c.id},
+                               "Component id is used more than once in this application."});
+            const bool path_ok = c.path.empty() || is_valid_path_pattern(c.path);
+            const bool hash_ok = c.sha256.empty() || is_hex_sha256(c.sha256);
+            if (!path_ok || !hash_ok || (c.path.empty() && c.package_family.empty()))
+                out.push_back({Severity::Error,
+                               FindingCode::InvalidComponent,
+                               {app.id, c.id},
+                               "Component identity is malformed and would never match."});
+            if (!component_is_active(c, now)) {
+                out.push_back({Severity::Info,
+                               FindingCode::ExpiredComponent,
+                               {app.id, c.id},
+                               "Component approval has expired and is ignored."});
+                continue;
+            }
+            const bool pinned = !c.sha256.empty() || !c.publisher.empty();
+            if (c.role != ComponentRole::Main && c.scope == Scope::Independent && !pinned)
+                out.push_back(
+                    {Severity::Error,
+                     FindingCode::WeakIndependent,
+                     {app.id, c.id},
+                     "A component that can start outside the application needs a hash or signer pin."});
+            else if (!pinned && c.package_family.empty())
+                out.push_back(
+                    {Severity::Info,
+                     FindingCode::UnpinnedComponent,
+                     {app.id, c.id},
+                     "Identified by path only. Pin a hash or signer so a replaced file is noticed."});
+            if (c.role != ComponentRole::Main && is_sensitive_tool(c.path))
+                out.push_back(
+                    {Severity::Warning,
+                     FindingCode::SensitiveComponent,
+                     {app.id, c.id},
+                     "This component is a tool that can run other programs. Approve it only when the "
+                     "application cannot work without it."});
+        }
+        if (!has_main)
+            out.push_back({Severity::Error,
+                           FindingCode::ApplicationWithoutMain,
+                           {app.id},
+                           "The application has no main executable."});
+        if (app.mode == DependencyMode::Related && !main_signed)
+            out.push_back({Severity::Info,
+                           FindingCode::RelatedWithoutSigner,
+                           {app.id},
+                           "Related mode on an unsigned application relies on the install folder. Pin its "
+                           "components instead when possible."});
+        for (const auto& c : app.components) {
+            if (c.role != ComponentRole::Main || c.path.empty() || !component_is_active(c, now)) continue;
+            for (const auto& rule : profile.rules) {
+                const auto* path = std::get_if<PathMatcher>(&rule.matcher);
+                if (rule.action != Action::Deny || !rule_is_active(rule, now) ||
+                    rule.priority < app.priority || !path)
+                    continue;
+                if (path_matches(path->pattern, c.path) || path_matches(c.path, path->pattern))
+                    out.push_back(
+                        {Severity::Warning,
+                         FindingCode::ApplicationBlockedByRule,
+                         {app.id, rule.id},
+                         "A Deny rule with equal or higher priority also covers this application, so "
+                         "it stays blocked."});
+            }
+        }
+    }
+}
+
 }  // namespace
 
-std::vector<Finding> analyze(const Profile& profile, const Baseline& baseline, TimePoint now) {
+std::vector<Finding> analyze(const Profile& profile, const Protection& protection, TimePoint now) {
     std::vector<Finding> out;
     std::set<std::string> seen_ids;
 
@@ -78,12 +163,12 @@ std::vector<Finding> analyze(const Profile& profile, const Baseline& baseline, T
         }
         if (r.action == Action::Deny) {
             if (const auto* p = std::get_if<PathMatcher>(&r.matcher);
-                p && is_valid_path_pattern(p->pattern) && denies_baseline(*p, baseline)) {
+                p && is_valid_path_pattern(p->pattern) && denies_protected(*p, protection)) {
                 out.push_back({Severity::Warning,
                                FindingCode::BaselineProtected,
                                {r.id},
-                               "Rule overlaps components that are always allowed to protect "
-                               "system recovery; those components stay allowed."});
+                               "Rule overlaps Windows components that are always protected so the "
+                               "system stays usable and recoverable; those components stay allowed."});
             }
         }
     }
@@ -111,10 +196,13 @@ std::vector<Finding> analyze(const Profile& profile, const Baseline& baseline, T
         }
     }
 
+    analyze_applications(profile, protection, now, out);
+
     if (profile.default_action == Action::Deny) {
-        const bool any_allow = std::ranges::any_of(profile.rules, [&](const Rule& r) {
-            return r.action == Action::Allow && rule_is_active(r, now);
-        });
+        const bool any_allow =
+            !profile.apps.empty() || std::ranges::any_of(profile.rules, [&](const Rule& r) {
+                return r.action == Action::Allow && rule_is_active(r, now);
+            });
         if (!any_allow) {
             out.push_back({Severity::Warning,
                            FindingCode::NoAllowances,
