@@ -20,12 +20,15 @@ const waiting = new Map();
 socket.addEventListener('message', (event) => {
   const message = JSON.parse(event.data);
   const waiter = typeof message.id === 'number' ? waiting.get(message.id) : undefined;
-  if (waiter) waiter(message);
+  if (!waiter) return;
+  waiting.delete(message.id);
+  if (message.error) waiter.reject(new Error(message.error.message));
+  else waiter.resolve(message.result);
 });
 const send = (method, params = {}) =>
   new Promise((resolve, reject) => {
     const id = ++sequence;
-    waiting.set(id, (message) => (message.error ? reject(new Error(message.error.message)) : resolve(message.result)));
+    waiting.set(id, { resolve, reject });
     socket.send(JSON.stringify({ id, method, params }));
   });
 
