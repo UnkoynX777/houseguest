@@ -4,16 +4,50 @@
 
 #include <sddl.h>
 
+#include <algorithm>
 #include <memory>
+#include <system_error>
 
 #include "houseguest/system/pipe.hpp"
 #include "houseguest/system/text.hpp"
 
+#include "ipc_limits.hpp"
+
 namespace houseguest::service {
 namespace {
 
+using std::chrono::milliseconds;
+using std::chrono::seconds;
+
 constexpr int kMaxConnectionsPerUser = 4;
+constexpr int kMaxActive = 24;
+constexpr int kMaxPending = 16;
+constexpr int kMaxPendingPerUser = 3;
 constexpr DWORD kMaxInstances = 32;
+constexpr DWORD kBufferBytes = 65536;
+constexpr auto kFirstMessageTimeout = seconds(5);
+constexpr auto kMessageTimeout = seconds(10);
+constexpr auto kIdleTimeout = seconds(120);
+constexpr auto kWriteTimeout = seconds(5);
+constexpr double kRequestsPerSecond = 20;
+constexpr double kRequestBurst = 40;
+constexpr int kMaxRateViolations = 100;
+
+class Owned {
+public:
+    explicit Owned(HANDLE handle = nullptr) : handle_(handle) {}
+    ~Owned() { reset(); }
+    Owned(const Owned&) = delete;
+    Owned& operator=(const Owned&) = delete;
+    [[nodiscard]] HANDLE get() const { return handle_; }
+    void reset(HANDLE handle = nullptr) {
+        if (handle_ && handle_ != INVALID_HANDLE_VALUE) CloseHandle(handle_);
+        handle_ = handle;
+    }
+
+private:
+    HANDLE handle_;
+};
 
 HANDLE create_instance(bool first) {
     SECURITY_ATTRIBUTES attributes{sizeof(attributes), nullptr, FALSE};
@@ -22,28 +56,111 @@ HANDLE create_instance(bool first) {
                                                               &attributes.lpSecurityDescriptor, nullptr)) {
         return INVALID_HANDLE_VALUE;
     }
-    DWORD open_mode = PIPE_ACCESS_DUPLEX;
+    DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED;
     if (first) open_mode |= FILE_FLAG_FIRST_PIPE_INSTANCE;
     HANDLE pipe =
         CreateNamedPipeW(system::kPipeName, open_mode,
                          PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
-                         kMaxInstances, 65536, 65536, 0, &attributes);
+                         kMaxInstances, kBufferBytes, kBufferBytes, 0, &attributes);
     LocalFree(attributes.lpSecurityDescriptor);
     return pipe;
 }
 
+enum class Io { Done, More, Failed, TimedOut, Stopped };
+
+Io finish(HANDLE pipe, OVERLAPPED& overlapped, HANDLE stop, std::chrono::steady_clock::time_point deadline,
+          DWORD& bytes) {
+    const HANDLE waitable[] = {overlapped.hEvent, stop};
+    const auto remaining =
+        std::chrono::duration_cast<milliseconds>(deadline - std::chrono::steady_clock::now());
+    const DWORD timeout = remaining.count() <= 0 ? 0 : static_cast<DWORD>(remaining.count());
+    const DWORD waited = WaitForMultipleObjects(2, waitable, FALSE, timeout);
+    if (waited != WAIT_OBJECT_0) {
+        CancelIoEx(pipe, &overlapped);
+        DWORD ignored = 0;
+        GetOverlappedResult(pipe, &overlapped, &ignored, TRUE);
+        return waited == WAIT_OBJECT_0 + 1 ? Io::Stopped : Io::TimedOut;
+    }
+    if (GetOverlappedResult(pipe, &overlapped, &bytes, FALSE)) return Io::Done;
+    return GetLastError() == ERROR_MORE_DATA ? Io::More : Io::Failed;
+}
+
+Io read_chunk(HANDLE pipe, HANDLE event, HANDLE stop, std::chrono::steady_clock::time_point deadline,
+              char* buffer, DWORD capacity, DWORD& bytes) {
+    OVERLAPPED overlapped{};
+    overlapped.hEvent = event;
+    ResetEvent(event);
+    bytes = 0;
+    if (ReadFile(pipe, buffer, capacity, nullptr, &overlapped))
+        return finish(pipe, overlapped, stop, deadline, bytes);
+    const DWORD error = GetLastError();
+    if (error == ERROR_IO_PENDING) return finish(pipe, overlapped, stop, deadline, bytes);
+    if (error == ERROR_MORE_DATA) return finish(pipe, overlapped, stop, deadline, bytes);
+    return Io::Failed;
+}
+
+enum class Read { Message, TimedOut, Oversized, Closed };
+
+struct Received {
+    Read status = Read::Closed;
+    std::string body;
+};
+
+Received read_message(HANDLE pipe, HANDLE event, HANDLE stop, std::chrono::seconds first_wait) {
+    Received received;
+    std::string chunk(kBufferBytes, '\0');
+    auto deadline = std::chrono::steady_clock::now() + first_wait;
+    bool started = false;
+    for (;;) {
+        DWORD bytes = 0;
+        const Io io =
+            read_chunk(pipe, event, stop, deadline, chunk.data(), static_cast<DWORD>(chunk.size()), bytes);
+        if (io == Io::TimedOut) {
+            received.status = Read::TimedOut;
+            return received;
+        }
+        if (io == Io::Failed || io == Io::Stopped) return received;
+        if (!started) {
+            started = true;
+            deadline = std::chrono::steady_clock::now() + kMessageTimeout;
+        }
+        if (received.body.size() + bytes > system::kMaxMessageBytes) {
+            received.status = Read::Oversized;
+            return received;
+        }
+        received.body.append(chunk.data(), bytes);
+        if (io == Io::Done) {
+            received.status = Read::Message;
+            return received;
+        }
+    }
+}
+
+bool write_message(HANDLE pipe, HANDLE event, HANDLE stop, const std::string& body) {
+    OVERLAPPED overlapped{};
+    overlapped.hEvent = event;
+    ResetEvent(event);
+    DWORD written = 0;
+    const auto deadline = std::chrono::steady_clock::now() + kWriteTimeout;
+    if (!WriteFile(pipe, body.data(), static_cast<DWORD>(body.size()), nullptr, &overlapped)) {
+        if (GetLastError() != ERROR_IO_PENDING) return false;
+    }
+    return finish(pipe, overlapped, stop, deadline, written) == Io::Done && written == body.size();
+}
+
 std::optional<Caller> resolve_caller(HANDLE pipe) {
     if (!ImpersonateNamedPipeClient(pipe)) return std::nullopt;
-    HANDLE token = nullptr;
-    const bool opened = OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &token);
+    HANDLE raw = nullptr;
+    const bool opened = OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &raw);
     RevertToSelf();
     if (!opened) return std::nullopt;
-    std::unique_ptr<void, decltype(&CloseHandle)> guard(token, &CloseHandle);
+    Owned token(raw);
 
     DWORD size = 0;
-    GetTokenInformation(token, TokenUser, nullptr, 0, &size);
+    GetTokenInformation(token.get(), TokenUser, nullptr, 0, &size);
     std::vector<std::uint8_t> buffer(size);
-    if (size == 0 || !GetTokenInformation(token, TokenUser, buffer.data(), size, &size)) return std::nullopt;
+    if (size == 0 || !GetTokenInformation(token.get(), TokenUser, buffer.data(), size, &size))
+        return std::nullopt;
     LPWSTR text = nullptr;
     if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(buffer.data())->User.Sid, &text))
         return std::nullopt;
@@ -53,29 +170,31 @@ std::optional<Caller> resolve_caller(HANDLE pipe) {
 
     TOKEN_ELEVATION elevation{};
     DWORD returned = 0;
-    if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &returned)) {
+    if (GetTokenInformation(token.get(), TokenElevation, &elevation, sizeof(elevation), &returned)) {
         caller.elevated = elevation.TokenIsElevated != 0;
     }
     return caller;
 }
 
-std::optional<std::string> read_message(HANDLE pipe) {
-    std::string message;
-    std::string chunk(65536, '\0');
-    for (;;) {
-        DWORD read = 0;
-        const BOOL ok = ReadFile(pipe, chunk.data(), static_cast<DWORD>(chunk.size()), &read, nullptr);
-        message.append(chunk.data(), read);
-        if (message.size() > system::kMaxMessageBytes) return std::nullopt;
-        if (ok) return message;
-        if (GetLastError() != ERROR_MORE_DATA) return std::nullopt;
-    }
-}
-
-bool write_message(HANDLE pipe, const std::string& body) {
-    DWORD written = 0;
-    return WriteFile(pipe, body.data(), static_cast<DWORD>(body.size()), &written, nullptr) &&
-           written == body.size();
+std::string peer_identity(HANDLE pipe) {
+    ULONG pid = 0;
+    if (!GetNamedPipeClientProcessId(pipe, &pid)) return "unknown";
+    Owned process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
+    if (!process.get()) return "unknown";
+    HANDLE raw = nullptr;
+    if (!OpenProcessToken(process.get(), TOKEN_QUERY, &raw)) return "unknown";
+    Owned token(raw);
+    DWORD size = 0;
+    GetTokenInformation(token.get(), TokenUser, nullptr, 0, &size);
+    std::vector<std::uint8_t> buffer(size);
+    if (size == 0 || !GetTokenInformation(token.get(), TokenUser, buffer.data(), size, &size))
+        return "unknown";
+    LPWSTR text = nullptr;
+    if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(buffer.data())->User.Sid, &text))
+        return "unknown";
+    std::string sid = system::to_utf8(text);
+    LocalFree(text);
+    return sid;
 }
 
 core::Json error_reply(const char* code, const char* message) {
@@ -90,9 +209,15 @@ PipeServer::PipeServer(Controller& controller) : controller_(controller) {}
 
 PipeServer::~PipeServer() {
     stop();
+    if (stop_event_) CloseHandle(stop_event_);
 }
 
 bool PipeServer::start(std::string& error) {
+    stop_event_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!stop_event_) {
+        error = "cannot create the stop event";
+        return false;
+    }
     first_instance_ = create_instance(true);
     if (first_instance_ == INVALID_HANDLE_VALUE) {
         error =
@@ -105,74 +230,183 @@ bool PipeServer::start(std::string& error) {
 
 void PipeServer::stop() {
     if (stopping_.exchange(true)) return;
-    HANDLE wake =
-        CreateFileW(system::kPipeName, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (wake != INVALID_HANDLE_VALUE) CloseHandle(wake);
+    if (stop_event_) SetEvent(stop_event_);
     if (acceptor_.joinable()) acceptor_.join();
-
     std::unique_lock lock(mutex_);
-    for (void* connection : connections_) DisconnectNamedPipe(connection);
-    idle_.wait(lock, [this] { return connections_.empty(); });
+    idle_.wait(lock, [this] { return active_ == 0; });
+}
+
+core::Json PipeServer::stats() const {
+    std::scoped_lock lock(mutex_);
+    return {{"active", active_},
+            {"pending", pending_},
+            {"accepted", accepted_.load()},
+            {"rejected_busy", rejected_busy_.load()},
+            {"timed_out", timed_out_.load()},
+            {"malformed", malformed_.load()},
+            {"oversized", oversized_.load()},
+            {"rate_limited", rate_limited_.load()}};
+}
+
+bool PipeServer::admit(const std::string& peer) {
+    std::scoped_lock lock(mutex_);
+    auto& usage = per_user_[peer];
+    const bool allowed = active_ < kMaxActive && pending_ < kMaxPending &&
+                         usage.active < kMaxConnectionsPerUser && usage.pending < kMaxPendingPerUser;
+    if (!allowed) {
+        if (usage.active == 0 && usage.pending == 0) per_user_.erase(peer);
+        return false;
+    }
+    ++active_;
+    ++pending_;
+    ++usage.active;
+    ++usage.pending;
+    return true;
+}
+
+void PipeServer::leave_pending(const std::string& peer) {
+    std::scoped_lock lock(mutex_);
+    if (pending_ > 0) --pending_;
+    const auto it = per_user_.find(peer);
+    if (it != per_user_.end() && it->second.pending > 0) --it->second.pending;
+}
+
+void PipeServer::release(const std::string& peer, bool was_pending) {
+    {
+        std::scoped_lock lock(mutex_);
+        if (was_pending && pending_ > 0) --pending_;
+        const auto it = per_user_.find(peer);
+        if (it != per_user_.end()) {
+            if (was_pending && it->second.pending > 0) --it->second.pending;
+            if (it->second.active > 0) --it->second.active;
+            if (it->second.active == 0 && it->second.pending == 0) per_user_.erase(it);
+        }
+        --active_;
+    }
+    idle_.notify_all();
 }
 
 void PipeServer::accept_loop() {
     HANDLE pipe = static_cast<HANDLE>(first_instance_);
     first_instance_ = nullptr;
+    Owned connect_event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    const HANDLE stop = static_cast<HANDLE>(stop_event_);
+
     while (!stopping_) {
         if (pipe == INVALID_HANDLE_VALUE) {
             pipe = create_instance(false);
             if (pipe == INVALID_HANDLE_VALUE) {
-                Sleep(200);
+                if (WaitForSingleObject(stop, 200) == WAIT_OBJECT_0) break;
                 continue;
             }
         }
-        const bool connected = ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
+        OVERLAPPED overlapped{};
+        overlapped.hEvent = connect_event.get();
+        ResetEvent(connect_event.get());
+        bool connected = false;
+        if (ConnectNamedPipe(pipe, &overlapped)) {
+            connected = true;
+        } else {
+            const DWORD error = GetLastError();
+            if (error == ERROR_PIPE_CONNECTED) {
+                connected = true;
+            } else if (error == ERROR_IO_PENDING) {
+                const HANDLE waitable[] = {connect_event.get(), stop};
+                if (WaitForMultipleObjects(2, waitable, FALSE, INFINITE) == WAIT_OBJECT_0) {
+                    DWORD ignored = 0;
+                    connected = GetOverlappedResult(pipe, &overlapped, &ignored, FALSE) != FALSE;
+                } else {
+                    CancelIoEx(pipe, &overlapped);
+                    DWORD ignored = 0;
+                    GetOverlappedResult(pipe, &overlapped, &ignored, TRUE);
+                }
+            }
+        }
         if (!connected || stopping_) {
             CloseHandle(pipe);
             pipe = INVALID_HANDLE_VALUE;
             continue;
         }
-        {
-            std::scoped_lock lock(mutex_);
-            connections_.insert(pipe);
+        ++accepted_;
+        const auto peer = peer_identity(pipe);
+        if (!admit(peer)) {
+            ++rejected_busy_;
+            DisconnectNamedPipe(pipe);
+            CloseHandle(pipe);
+            pipe = INVALID_HANDLE_VALUE;
+            continue;
         }
-        std::thread([this, pipe] { serve(pipe); }).detach();
-        pipe = INVALID_HANDLE_VALUE;
+        try {
+            std::thread([this, pipe, peer] { serve(pipe, peer); }).detach();
+            pipe = INVALID_HANDLE_VALUE;
+        } catch (const std::system_error&) {
+            release(peer, true);
+            ++rejected_busy_;
+            DisconnectNamedPipe(pipe);
+            CloseHandle(pipe);
+            pipe = INVALID_HANDLE_VALUE;
+        }
     }
     if (pipe != INVALID_HANDLE_VALUE) CloseHandle(pipe);
 }
 
-void PipeServer::serve(void* raw) {
-    HANDLE pipe = static_cast<HANDLE>(raw);
+void PipeServer::serve(void* raw, std::string peer) {
+    Owned pipe(static_cast<HANDLE>(raw));
+    Owned event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    const HANDLE stop = static_cast<HANDLE>(stop_event_);
     std::optional<Caller> caller;
-    bool counted = false;
+    bool pending = true;
+    TokenBucket bucket(kRequestsPerSecond, kRequestBurst);
+    int violations = 0;
 
-    while (auto message = read_message(pipe)) {
-        if (!caller) {
-            caller = resolve_caller(pipe);
-            if (!caller) break;
-            std::scoped_lock lock(mutex_);
-            if (per_user_[caller->sid] >= kMaxConnectionsPerUser) {
-                write_message(pipe, error_reply("busy", "Too many open connections.").dump());
-                break;
-            }
-            ++per_user_[caller->sid];
-            counted = true;
+    while (event.get() && !stopping_) {
+        auto received =
+            read_message(pipe.get(), event.get(), stop, pending ? kFirstMessageTimeout : kIdleTimeout);
+        if (received.status == Read::TimedOut) {
+            ++timed_out_;
+            break;
         }
-        const auto request = core::Json::parse(*message, nullptr, false);
-        const auto reply = request.is_discarded() ? error_reply("bad_request", "Malformed JSON.")
-                                                  : controller_.handle(*caller, request);
-        if (!write_message(pipe, reply.dump())) break;
+        if (received.status == Read::Oversized) {
+            ++oversized_;
+            write_message(pipe.get(), event.get(), stop,
+                          error_reply("too_large", "Message exceeds the size limit.").dump());
+            break;
+        }
+        if (received.status != Read::Message) break;
+
+        if (pending) {
+            pending = false;
+            leave_pending(peer);
+        }
+        if (!caller) {
+            caller = resolve_caller(pipe.get());
+            if (!caller) break;
+        }
+
+        core::Json reply;
+        if (!bucket.take()) {
+            ++rate_limited_;
+            reply = error_reply("rate_limited", "Too many requests.");
+            if (++violations >= kMaxRateViolations) break;
+        } else if (received.body.empty() || !nesting_within(received.body, kMaxJsonDepth)) {
+            ++malformed_;
+            reply = error_reply("bad_request", "Malformed message.");
+        } else {
+            const auto request = core::Json::parse(received.body, nullptr, false);
+            if (request.is_discarded()) {
+                ++malformed_;
+                reply = error_reply("bad_request", "Malformed JSON.");
+            } else {
+                reply = controller_.handle(*caller, request);
+            }
+        }
+        if (!write_message(pipe.get(), event.get(), stop, reply.dump())) break;
     }
 
-    DisconnectNamedPipe(pipe);
-    CloseHandle(pipe);
-    {
-        std::scoped_lock lock(mutex_);
-        if (counted && caller) --per_user_[caller->sid];
-        connections_.erase(raw);
-    }
-    idle_.notify_all();
+    if (pipe.get() != INVALID_HANDLE_VALUE) DisconnectNamedPipe(pipe.get());
+    pipe.reset();
+    event.reset();
+    release(peer, pending);
 }
 
 }  // namespace houseguest::service

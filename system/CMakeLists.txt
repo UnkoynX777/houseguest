@@ -3,6 +3,7 @@ add_library(houseguest_system STATIC
   src/text.cpp
   src/windows_info.cpp
   src/process.cpp
+  src/accounts.cpp
   src/capabilities.cpp
   src/pipe_client.cpp)
 add_library(houseguest::system ALIAS houseguest_system)

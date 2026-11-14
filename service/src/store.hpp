@@ -25,6 +25,16 @@ struct Session {
     std::string on_expiry = "disconnect";
     bool audit_only = false;
     std::vector<core::Rule> exceptions;
+    std::string phase = "active";
+    std::string end_reason;
+    bool end_apply_action = false;
+
+    [[nodiscard]] bool ending() const { return phase == "ending"; }
+};
+
+struct ManagedAccount {
+    std::string name;
+    std::string sid;
 };
 
 struct State {
@@ -35,6 +45,7 @@ struct State {
     std::string language = "en";
     std::string default_on_expiry = "disconnect";
     std::vector<core::Profile> profiles;
+    std::vector<ManagedAccount> managed;
     std::optional<Session> session;
 
     [[nodiscard]] bool configured() const { return !owner_sid.empty(); }
@@ -55,6 +66,7 @@ public:
     State state;
 
     const std::filesystem::path& directory() const { return directory_; }
+    [[nodiscard]] system::Bytes derive_key(const std::string& label) const;
 
 private:
     std::optional<State> read_verified(const std::filesystem::path& file) const;

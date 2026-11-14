@@ -27,7 +27,6 @@ Policy engine, supervised enforcement, guest sessions with timer, audit mode and
 | Windows 11 and other editions test matrix | Only Windows 10 Pro has been exercised |
 | Child-process awareness in the supervisor | Show which allowed program launched a blocked one |
 | Smarter hash cache and background pre-warming | Faster first launch of large programs under hash or publisher rules |
-| Microsoft Store (packaged) app rules by package family | Today packaged apps are matched by executable path or publisher only |
 | Code signing for installer and binaries | Removes SmartScreen friction and proves origin |
 | App icons in the interface | Currently initials tiles |
 | Accessibility audit with a screen reader | Keyboard and ARIA basics exist; not audited |

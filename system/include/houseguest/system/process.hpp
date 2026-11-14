@@ -11,7 +11,7 @@ namespace houseguest::system {
 
 class ProcessRef {
 public:
-    static std::optional<ProcessRef> open(std::uint32_t pid);
+    static std::optional<ProcessRef> open(std::uint32_t pid, std::uint32_t* error = nullptr);
     static std::uint64_t now_ticks();
 
     [[nodiscard]] std::uint32_t pid() const { return pid_; }
@@ -19,6 +19,8 @@ public:
     [[nodiscard]] std::optional<std::filesystem::path> image_path() const;
     [[nodiscard]] std::optional<std::uint64_t> creation_ticks() const;
     [[nodiscard]] std::uint32_t session_id() const;
+    [[nodiscard]] std::string package_family() const;
+    [[nodiscard]] bool exited() const;
     bool terminate() const;
 
 private:

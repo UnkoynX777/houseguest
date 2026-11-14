@@ -37,7 +37,13 @@ void Controller::register_system_commands() {
         return audit_->tail(static_cast<std::size_t>(require_int(args, "limit", 1, 1000)));
     });
 
-    add("audit.verify", Access::Owner, [this](Who, Args) { return Json{{"valid", audit_->verify_chain()}}; });
+    add("audit.verify", Access::Owner, [this](Who, Args) {
+        const auto report = audit_->verify();
+        return Json{{"valid", report.valid},
+                    {"truncated", report.truncated},
+                    {"entries", report.entries},
+                    {"problem", report.problem}};
+    });
 
     add("diagnostics", Access::Owner, [this](Who, Args) {
         capabilities_ = system::probe_capabilities();
@@ -45,7 +51,17 @@ void Controller::register_system_commands() {
                     {"capabilities", system::to_json(capabilities_)},
                     {"supervisor_running", supervisor_->running()},
                     {"supervisor", supervisor_json()},
+                    {"audit",
+                     [&] {
+                         const auto report = audit_->verify();
+                         return Json{{"valid", report.valid},
+                                     {"truncated", report.truncated},
+                                     {"entries", report.entries},
+                                     {"problem", report.problem},
+                                     {"write_failures", audit_->write_failures()}};
+                     }()},
                     {"audit_chain_valid", audit_->verify_chain()},
+                    {"ipc", ipc_stats_ ? ipc_stats_() : Json::object()},
                     {"state", load_result_ == LoadResult::Loaded      ? "loaded"
                               : load_result_ == LoadResult::Fresh     ? "fresh"
                               : load_result_ == LoadResult::Recovered ? "recovered"

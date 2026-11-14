@@ -28,7 +28,12 @@ std::string trusted_publisher(const std::filesystem::path& file);
 
 std::vector<InstalledApp> discover_installed_apps();
 
-void disconnect_sessions(const std::vector<std::string>& user_sids, bool logoff);
+struct SessionActionResult {
+    bool complete = true;
+    unsigned affected = 0;
+};
+
+SessionActionResult disconnect_sessions(const std::vector<std::string>& user_sids, bool logoff);
 void notify_session(std::uint32_t session_id, const std::wstring& title, const std::wstring& message);
 
 }  // namespace houseguest::system

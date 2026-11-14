@@ -48,7 +48,7 @@ const limits = [
   'Programs that are allowed can start other programs. Review launchers and browsers.',
   'A Windows administrator can always remove Houseguest. That is by design, for recovery.',
   'Physical access to the computer is outside what Houseguest can protect. Use BitLocker and a firmware password.',
-  'Microsoft Store apps are matched by their executable path or publisher, not by package.',
+  'Package rules for Microsoft Store apps apply to running programs; the preview cannot show them.',
 ];
 </script>
 

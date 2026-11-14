@@ -33,7 +33,7 @@ std::string random_id(const char* prefix) {
 }
 
 bool valid_expiry_action(const std::string& action) {
-    return action == "none" || action == "disconnect" || action == "logoff";
+    return action == "none" || action == "disconnect" || action == "logoff" || action == "disable";
 }
 
 core::Json action_name(core::Action action) {

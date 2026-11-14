@@ -11,9 +11,16 @@
 
 namespace houseguest::service {
 
+struct Resolution {
+    core::AppIdentity identity;
+    bool complete = true;
+};
+
 class IdentityResolver {
 public:
     core::AppIdentity resolve(const std::filesystem::path& file, bool with_hash, bool with_publisher);
+    Resolution resolve_checked(const std::filesystem::path& file, bool with_hash, bool with_publisher,
+                               const std::string& package_family = {});
     [[nodiscard]] std::size_t cached() const;
 
 private:

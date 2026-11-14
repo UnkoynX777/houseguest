@@ -36,12 +36,56 @@ void report(DWORD state, DWORD accepted = 0, DWORD wait_hint = 0) {
     SetServiceStatus(g_status_handle, &status);
 }
 
+void harden_process() {
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+    SetDllDirectoryW(L"");
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+
+    PROCESS_MITIGATION_IMAGE_LOAD_POLICY image_load{};
+    image_load.NoRemoteImages = 1;
+    image_load.NoLowMandatoryLabelImages = 1;
+    SetProcessMitigationPolicy(ProcessImageLoadPolicy, &image_load, sizeof(image_load));
+
+    PROCESS_MITIGATION_EXTENSION_POINT_DISABLE_POLICY extension_points{};
+    extension_points.DisableExtensionPoints = 1;
+    SetProcessMitigationPolicy(ProcessExtensionPointDisablePolicy, &extension_points,
+                               sizeof(extension_points));
+
+    HANDLE raw = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &raw)) return;
+    std::unique_ptr<void, decltype(&CloseHandle)> token(raw, &CloseHandle);
+    constexpr const wchar_t* unused[] = {SE_CREATE_TOKEN_NAME,
+                                         SE_LOAD_DRIVER_NAME,
+                                         SE_TAKE_OWNERSHIP_NAME,
+                                         SE_BACKUP_NAME,
+                                         SE_RESTORE_NAME,
+                                         SE_MANAGE_VOLUME_NAME,
+                                         SE_SYNC_AGENT_NAME,
+                                         SE_RELABEL_NAME,
+                                         SE_TRUSTED_CREDMAN_ACCESS_NAME,
+                                         SE_CREATE_PERMANENT_NAME,
+                                         SE_SYSTEM_ENVIRONMENT_NAME,
+                                         SE_UNDOCK_NAME,
+                                         SE_ENABLE_DELEGATION_NAME,
+                                         SE_MACHINE_ACCOUNT_NAME,
+                                         SE_CREATE_GLOBAL_NAME};
+    for (const auto* name : unused) {
+        TOKEN_PRIVILEGES privileges{};
+        privileges.PrivilegeCount = 1;
+        if (!LookupPrivilegeValueW(nullptr, name, &privileges.Privileges[0].Luid)) continue;
+        privileges.Privileges[0].Attributes = SE_PRIVILEGE_REMOVED;
+        AdjustTokenPrivileges(token.get(), FALSE, &privileges, 0, nullptr, nullptr);
+    }
+}
+
 bool run(HANDLE stop_event, std::string& error) {
     try {
         houseguest::service::Controller controller(g_data_directory, g_enforce);
         houseguest::service::PipeServer server(controller);
+        controller.set_ipc_stats([&server] { return server.stats(); });
         if (!server.start(error)) return false;
         WaitForSingleObject(stop_event, INFINITE);
+        controller.set_ipc_stats(nullptr);
         server.stop();
         controller.shutdown();
         return true;
@@ -155,6 +199,7 @@ int uninstall_service() {
 }  // namespace
 
 int wmain(int argc, wchar_t** argv) {
+    harden_process();
     g_data_directory = default_data_directory();
     bool console = false;
     for (int i = 1; i < argc; ++i) {

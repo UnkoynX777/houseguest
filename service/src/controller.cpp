@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "houseguest/core/analysis.hpp"
+#include "houseguest/system/accounts.hpp"
 #include "houseguest/system/capabilities.hpp"
 #include "houseguest/system/crypto.hpp"
 #include "houseguest/system/text.hpp"
@@ -80,7 +81,8 @@ const char* enforcement_name(SupervisionMode mode) {
 Controller::Controller(std::filesystem::path data_directory, bool enable_enforcement)
     : store_(std::move(data_directory)), install_dir_(executable_directory()) {
     load_result_ = store_.load();
-    audit_ = std::make_unique<AuditLog>(store_.directory() / L"audit.log");
+    audit_ = std::make_unique<AuditLog>(store_.directory() / L"audit.log",
+                                        store_.derive_key("houseguest.audit.v2"));
     switch (load_result_) {
         case LoadResult::Tampered:
             audit_->append("service", "state.integrity_failure", {{"action", "started unconfigured"}});
@@ -95,27 +97,35 @@ Controller::Controller(std::filesystem::path data_directory, bool enable_enforce
     capabilities_ = system::probe_capabilities();
     supervisor_ = std::make_unique<Supervisor>(
         resolver_, [this](const Denial& d) { on_denial(d); },
-        [this](SupervisionMode mode, const std::string& reason) { on_mode(mode, reason); });
+        [this](SupervisionMode mode, const std::string& reason) { on_mode(mode, reason); },
+        [this](const InspectionFailure& failure) { on_failure(failure); });
     if (enable_enforcement) supervisor_->start();
     register_commands();
 
     {
         std::scoped_lock lock(mutex_);
         if (store_.state.session) {
-            if (store_.state.session->ends_at > now_seconds()) {
+            auto& session = *store_.state.session;
+            if (session.ending()) {
                 try {
-                    arm(*store_.state.session);
-                    audit_->append("service", "session.resumed",
-                                   {{"profile", store_.state.session->profile_id}});
+                    arm(session);
+                } catch (const std::exception&) {
+                }
+                finish_session();
+            } else if (session.ends_at <= now_seconds()) {
+                end_session("expired while service was stopped", true);
+            } else {
+                try {
+                    arm(session);
+                    audit_->append("service", "session.resumed", {{"profile", session.profile_id}});
                 } catch (const std::exception& e) {
                     audit_->append("service", "session.resume_failed", {{"reason", e.what()}});
-                    store_.state.session.reset();
-                    store_.save();
+                    if (session.on_expiry == "none") session.on_expiry = "disconnect";
+                    end_session("protection could not be restored after a restart", true);
                 }
-            } else {
-                end_session("expired while service was stopped", true);
             }
         }
+        reconcile_managed_accounts();
     }
     timer_ = std::jthread([this](const std::stop_token& stop) { timer_loop(stop); });
 }
@@ -165,6 +175,17 @@ Controller::Compiled Controller::compile(const core::Profile& source,
                                    {"rules", finding.rule_ids},
                                    {"message", finding.message}});
     }
+    if (std::ranges::any_of(policy.profile.rules, [](const core::Rule& rule) {
+            return std::holds_alternative<core::PackageMatcher>(rule.matcher);
+        })) {
+        result.findings.push_back(
+            {{"severity", "info"},
+             {"code", "package_not_previewable"},
+             {"rules", Json::array()},
+             {"message",
+              "Package family rules are evaluated on running processes. The preview lists "
+              "installed apps by path and cannot show their package decisions."}});
+    }
     if (std::ranges::find(guests, store_.state.owner_sid) != guests.end()) {
         result.has_warnings = true;
         result.findings.push_back({{"severity", "warning"},
@@ -188,14 +209,78 @@ void Controller::arm(const Session& session) {
 
 void Controller::end_session(const std::string& reason, bool apply_expiry_action) {
     if (!store_.state.session) return;
+    auto& session = *store_.state.session;
+    if (!session.ending()) {
+        session.phase = "ending";
+        session.end_reason = reason;
+        session.end_apply_action = apply_expiry_action;
+        store_.save();
+        audit_->append("service", "session.ending", {{"reason", reason}, {"profile", session.profile_id}});
+        end_attempts_ = 0;
+    }
+    finish_session();
+}
+
+bool Controller::finish_session() {
+    if (!store_.state.session) return true;
+    const auto session = *store_.state.session;
+    bool complete = true;
+
+    std::vector<std::string> managed_guests;
+    for (const auto& sid : session.guest_sids) {
+        if (is_managed(sid)) managed_guests.push_back(sid);
+    }
+    if (session.end_apply_action && session.on_expiry != "none") {
+        const bool logoff = session.on_expiry == "logoff" || session.on_expiry == "disable";
+        complete &= system::disconnect_sessions(session.guest_sids, logoff).complete;
+    }
+    for (const auto& sid : managed_guests) complete &= system::set_user_disabled(sid, true);
+    if (!managed_guests.empty()) complete &= system::disconnect_sessions(managed_guests, true).complete;
+
+    if (!complete) {
+        if (end_attempts_++ % 6 == 0) {
+            audit_->append("service", "session.end_incomplete",
+                           {{"reason", session.end_reason}, {"attempt", end_attempts_}});
+        }
+        return false;
+    }
+    supervisor_->apply(nullptr);
+    store_.state.session.reset();
+    store_.save();
+    audit_->append("service", "session.ended",
+                   {{"reason", session.end_reason}, {"profile", session.profile_id}});
+    return true;
+}
+
+void Controller::force_end_session(const std::string& reason) {
+    if (!store_.state.session) return;
     const auto session = *store_.state.session;
     supervisor_->apply(nullptr);
     store_.state.session.reset();
     store_.save();
-    audit_->append("service", "session.ended", {{"reason", reason}, {"profile", session.profile_id}});
-    if (apply_expiry_action && session.on_expiry != "none") {
-        system::disconnect_sessions(session.guest_sids, session.on_expiry == "logoff");
+    audit_->append("service", "session.forced_end", {{"reason", reason}, {"profile", session.profile_id}});
+}
+
+bool Controller::is_managed(const std::string& sid) const {
+    return std::ranges::any_of(store_.state.managed,
+                               [&](const ManagedAccount& account) { return account.sid == sid; });
+}
+
+void Controller::reconcile_managed_accounts() {
+    std::vector<std::string> idle;
+    for (const auto& account : store_.state.managed) {
+        const bool in_session =
+            store_.state.session && std::ranges::find(store_.state.session->guest_sids, account.sid) !=
+                                        store_.state.session->guest_sids.end();
+        if (in_session) continue;
+        if (!system::user_exists(account.sid)) continue;
+        if (!system::set_user_disabled(account.sid, true)) {
+            audit_->append("service", "managed_account.disable_failed", {{"name", account.name}});
+            continue;
+        }
+        idle.push_back(account.sid);
     }
+    if (!idle.empty()) system::disconnect_sessions(idle, true);
 }
 
 void Controller::timer_loop(const std::stop_token& stop) {
@@ -205,15 +290,21 @@ void Controller::timer_loop(const std::stop_token& stop) {
             timer_wake_.wait(lock, stop, [this] { return store_.state.session.has_value(); });
             continue;
         }
+        if (store_.state.session->ending()) {
+            timer_wake_.wait_for(lock, stop, std::chrono::seconds(10), [] { return false; });
+            if (!stop.stop_requested()) finish_session();
+            continue;
+        }
         const auto ends_at = store_.state.session->ends_at;
         const auto deadline = std::chrono::system_clock::time_point{seconds{ends_at}};
-        if (std::chrono::system_clock::now() >= deadline) {
+        const auto now = std::chrono::system_clock::now();
+        if (now >= deadline) {
             end_session("expired", true);
             continue;
         }
-        timer_wake_.wait_until(lock, stop, deadline, [this, ends_at] {
-            return !store_.state.session || store_.state.session->ends_at != ends_at;
-        });
+        timer_wake_.wait_until(
+            lock, stop, std::min(deadline, now + std::chrono::minutes(1)),
+            [this, ends_at] { return !store_.state.session || store_.state.session->ends_at != ends_at; });
     }
 }
 
@@ -250,6 +341,35 @@ void Controller::on_mode(SupervisionMode mode, const std::string& reason) {
     audit_->append("service", "supervisor.mode", {{"mode", enforcement_name(mode)}, {"reason", reason}});
 }
 
+void Controller::on_failure(const InspectionFailure& failure) {
+    const auto key = failure.stage + (failure.degraded ? "/degraded" : "");
+    const auto now = std::chrono::steady_clock::now();
+    std::uint64_t suppressed = 0;
+    {
+        std::scoped_lock lock(failure_mutex_);
+        auto& entry = failure_notice_[key];
+        if (entry.first != std::chrono::steady_clock::time_point{} &&
+            now - entry.first < std::chrono::seconds(10)) {
+            ++entry.second;
+            return;
+        }
+        suppressed = entry.second;
+        entry = {now, 0};
+    }
+    audit_->append("supervisor", "inspection.failed",
+                   {{"stage", failure.stage},
+                    {"pid", failure.pid},
+                    {"error", failure.error},
+                    {"attempts", failure.attempts},
+                    {"degraded", failure.degraded},
+                    {"suppressed", suppressed}});
+}
+
+void Controller::set_ipc_stats(std::function<Json()> provider) {
+    std::scoped_lock lock(mutex_);
+    ipc_stats_ = std::move(provider);
+}
+
 Json Controller::supervisor_json() const {
     const auto stats = supervisor_->stats();
     return {{"mode", enforcement_name(stats.mode)},
@@ -258,6 +378,16 @@ Json Controller::supervisor_json() const {
             {"terminated", stats.terminated},
             {"termination_failed", stats.termination_failed},
             {"pid_reuse_skipped", stats.pid_reuse_skipped},
+            {"retried", stats.retried},
+            {"inspection_failed", stats.inspection_failed},
+            {"inspection_degraded", stats.inspection_degraded},
+            {"unreadable", stats.unreadable},
+            {"events_dropped", stats.events_dropped},
+            {"reconciliations", stats.reconciliations},
+            {"queue_depth", stats.queue_depth},
+            {"queue_high_water", stats.queue_high_water},
+            {"retries_waiting", stats.retries_waiting},
+            {"tracked_processes", stats.tracked},
             {"identity_cache_entries", resolver_.cached()},
             {"latency_ms",
              {{"samples", stats.latency_samples},
@@ -279,6 +409,7 @@ bool Controller::session_uses(const std::string& profile_id) const {
 std::string Controller::issue_token(const std::string& sid) {
     const auto token = system::to_hex(system::random_bytes(32));
     const auto now = std::chrono::steady_clock::now();
+    std::scoped_lock lock(token_mutex_);
     std::erase_if(tokens_, [&](const auto& item) { return item.second.expires < now; });
     tokens_[token] = {sid, now + kTokenLifetime};
     return token;
@@ -288,6 +419,7 @@ void Controller::require_owner(const Caller& caller, const Json& request) {
     const auto it = request.find("token");
     if (it == request.end() || !it->is_string())
         throw Failure("unauthorized", "Unlock with the owner PIN first.");
+    std::scoped_lock lock(token_mutex_);
     const auto found = tokens_.find(it->get<std::string>());
     const auto now = std::chrono::steady_clock::now();
     if (found == tokens_.end() || found->second.expires < now || found->second.sid != caller.sid ||
@@ -349,6 +481,7 @@ Json Controller::status_json() const {
                 {"language", state.language}};
     if (state.session) {
         status["ends_at"] = state.session->ends_at;
+        status["ending"] = state.session->ending();
         const auto profile = std::ranges::find(state.profiles, state.session->profile_id, &core::Profile::id);
         if (profile != state.profiles.end()) status["profile"] = profile->name;
     }

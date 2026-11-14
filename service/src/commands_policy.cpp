@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <set>
 
 #include "houseguest/core/analysis.hpp"
 #include "houseguest/system/text.hpp"
@@ -83,11 +84,21 @@ void Controller::register_policy_commands() {
     add(
         "users.list", Access::Owner,
         [this](Who, Args) {
+            std::string owner;
+            std::set<std::string> managed;
+            {
+                std::scoped_lock lock(mutex_);
+                owner = store_.state.owner_sid;
+                for (const auto& account : store_.state.managed) managed.insert(account.sid);
+            }
             Json list = Json::array();
             for (const auto& user : system::list_local_users()) {
-                if (user.disabled) continue;
-                list.push_back(
-                    {{"name", user.name}, {"sid", user.sid}, {"owner", user.sid == store_.state.owner_sid}});
+                const bool is_managed_account = managed.contains(user.sid);
+                if (user.disabled && !is_managed_account) continue;
+                list.push_back({{"name", user.name},
+                                {"sid", user.sid},
+                                {"owner", user.sid == owner},
+                                {"managed", is_managed_account}});
             }
             return list;
         },

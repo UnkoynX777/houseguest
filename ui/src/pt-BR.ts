@@ -148,7 +148,7 @@ export const pt: Record<string, string> = {
   'Main navigation': 'Navegação principal',
   Match: 'Correspondência',
   'Match by': 'Corresponder por',
-  'Microsoft Store apps are matched by their executable path or publisher, not by package.': 'Aplicativos da Microsoft Store são identificados pelo caminho do executável ou pelo fabricante, não pelo pacote.',
+  'Package rules for Microsoft Store apps apply to running programs; the preview cannot show them.': 'Regras de pacote para aplicativos da Microsoft Store valem para programas em execução; a prévia não consegue mostrá-las.',
   'Minutes (1–10080)': 'Minutos (1–10080)',
   Missing: 'Ausente',
   Name: 'Nome',

@@ -82,8 +82,13 @@ core::Json state_to_json(const State& state) {
             {"profile_id", state.session->profile_id}, {"guest_sids", state.session->guest_sids},
             {"started_at", state.session->started_at}, {"ends_at", state.session->ends_at},
             {"on_expiry", state.session->on_expiry},   {"audit_only", state.session->audit_only},
-            {"exceptions", std::move(exceptions)}};
+            {"exceptions", std::move(exceptions)},     {"phase", state.session->phase},
+            {"end_reason", state.session->end_reason}, {"end_apply_action", state.session->end_apply_action}};
     }
+    core::Json managed = core::Json::array();
+    for (const auto& account : state.managed)
+        managed.push_back({{"name", account.name}, {"sid", account.sid}});
+    json["managed"] = std::move(managed);
     return json;
 }
 
@@ -98,6 +103,12 @@ State state_from_json(const core::Json& json) {
     state.language = json.value("language", "en");
     state.default_on_expiry = json.value("default_on_expiry", "disconnect");
     for (const auto& item : json.at("profiles")) state.profiles.push_back(core::profile_from_json(item));
+    if (const auto it = json.find("managed"); it != json.end()) {
+        for (const auto& account : *it) {
+            state.managed.push_back(
+                {account.at("name").get<std::string>(), account.at("sid").get<std::string>()});
+        }
+    }
     if (const auto it = json.find("session"); it != json.end()) {
         Session session;
         session.profile_id = it->at("profile_id").get<std::string>();
@@ -108,6 +119,10 @@ State state_from_json(const core::Json& json) {
         session.audit_only = it->value("audit_only", false);
         for (const auto& rule : it->at("exceptions"))
             session.exceptions.push_back(core::rule_from_json(rule));
+        session.phase = it->value("phase", "active");
+        if (session.phase != "active" && session.phase != "ending") throw std::invalid_argument("bad phase");
+        session.end_reason = it->value("end_reason", "");
+        session.end_apply_action = it->value("end_apply_action", false);
         state.session = std::move(session);
     }
     return state;
@@ -147,6 +162,10 @@ std::optional<State> Store::read_verified(const std::filesystem::path& file) con
     } catch (const std::exception&) {
         return std::nullopt;
     }
+}
+
+system::Bytes Store::derive_key(const std::string& label) const {
+    return system::hmac_sha256(mac_key_, {reinterpret_cast<const std::uint8_t*>(label.data()), label.size()});
 }
 
 LoadResult Store::load() {

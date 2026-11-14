@@ -29,6 +29,7 @@ public:
 
     core::Json handle(const Caller& caller, const core::Json& request);
     void shutdown();
+    void set_ipc_stats(std::function<core::Json()> provider);
 
 private:
     enum class Access { Anyone, Elevated, Owner };
@@ -65,6 +66,11 @@ private:
                      const std::vector<std::string>& guests, bool audit_only) const;
     void arm(const Session& session);
     void end_session(const std::string& reason, bool apply_expiry_action);
+    bool finish_session();
+    void force_end_session(const std::string& reason);
+    void reconcile_managed_accounts();
+    [[nodiscard]] bool is_managed(const std::string& sid) const;
+    void on_failure(const InspectionFailure& failure);
     void timer_loop(const std::stop_token& stop);
     void on_denial(const Denial& denial);
     void on_mode(SupervisionMode mode, const std::string& reason);
@@ -80,7 +86,13 @@ private:
     IdentityResolver resolver_;
     std::unique_ptr<Supervisor> supervisor_;
     std::unordered_map<std::string, Command> commands_;
+    std::mutex token_mutex_;
     std::unordered_map<std::string, Token> tokens_;
+    std::mutex failure_mutex_;
+    std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::uint64_t>>
+        failure_notice_;
+    std::function<core::Json()> ipc_stats_;
+    unsigned end_attempts_ = 0;
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_notice_;
     std::mutex notice_mutex_;
     std::filesystem::path install_dir_;

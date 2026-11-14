@@ -1,5 +1,6 @@
 #include <algorithm>
 
+#include "houseguest/system/accounts.hpp"
 #include "houseguest/system/windows_info.hpp"
 
 #include "command_support.hpp"
@@ -35,6 +36,12 @@ void Controller::register_session_commands() {
         session.ends_at = session.started_at + minutes * 60;
         session.on_expiry = args.value("on_expiry", store_.state.default_on_expiry);
         if (!valid_expiry_action(session.on_expiry)) throw Failure("bad_request", "Invalid expiry action.");
+        if (session.on_expiry == "disable" &&
+            !std::ranges::all_of(session.guest_sids,
+                                 [this](const std::string& sid) { return is_managed(sid); })) {
+            throw Failure("bad_request",
+                          "Disabling accounts is only allowed for accounts Houseguest created.");
+        }
         session.audit_only = args.value("audit_only", false);
 
         const auto compiled =
@@ -55,6 +62,16 @@ void Controller::register_session_commands() {
                           "Use audit mode or open Diagnostics.");
         }
         arm(session);
+        for (const auto& sid : session.guest_sids) {
+            if (!is_managed(sid)) continue;
+            if (!system::set_user_expiry(sid, session.ends_at) || !system::set_user_disabled(sid, false)) {
+                for (const auto& other : session.guest_sids) {
+                    if (is_managed(other)) system::set_user_disabled(other, true);
+                }
+                supervisor_->apply(nullptr);
+                throw Failure("account_error", "A managed account could not be enabled.");
+            }
+        }
         store_.state.session = session;
         store_.save();
         blocked_ = 0;
@@ -73,9 +90,13 @@ void Controller::register_session_commands() {
     });
 
     add("session.extend", Access::Owner, [this](Who caller, Args args) {
-        if (!store_.state.session) throw Failure("conflict", "No active session.");
+        if (!store_.state.session || store_.state.session->ending())
+            throw Failure("conflict", "No active session.");
         const auto minutes = require_int(args, "minutes", 1, kMaxSessionMinutes);
         store_.state.session->ends_at += minutes * 60;
+        for (const auto& sid : store_.state.session->guest_sids) {
+            if (is_managed(sid)) system::set_user_expiry(sid, store_.state.session->ends_at);
+        }
         store_.save();
         audit_->append(caller.sid, "session.extended", {{"minutes", minutes}});
         timer_wake_.notify_all();
@@ -83,7 +104,8 @@ void Controller::register_session_commands() {
     });
 
     add("exceptions.add", Access::Owner, [this](Who caller, Args args) {
-        if (!store_.state.session) throw Failure("conflict", "No active session.");
+        if (!store_.state.session || store_.state.session->ending())
+            throw Failure("conflict", "No active session.");
         const auto& app = args.at("app");
         const auto minutes = require_int(args, "minutes", 1, std::int64_t{60} * 24);
         const auto kind = args.value("match", "path");
@@ -94,6 +116,8 @@ void Controller::register_session_commands() {
         rule.expires_at = std::chrono::system_clock::now() + std::chrono::minutes(minutes);
         if (kind == "hash")
             rule.matcher = core::HashMatcher{require_text(app, "sha256")};
+        else if (kind == "package")
+            rule.matcher = core::PackageMatcher{require_text(app, "package")};
         else if (kind == "publisher")
             rule.matcher = core::PublisherMatcher{require_text(app, "publisher")};
         else

@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <appmodel.h>
 #include <tlhelp32.h>
 
 #include "win_util.hpp"
@@ -17,10 +18,13 @@ std::uint64_t ticks_of(const FILETIME& time) {
 
 }  // namespace
 
-std::optional<ProcessRef> ProcessRef::open(std::uint32_t pid) {
+std::optional<ProcessRef> ProcessRef::open(std::uint32_t pid, std::uint32_t* error) {
     HANDLE raw = OpenProcess(kAccess, FALSE, pid);
     if (!raw) raw = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!raw) return std::nullopt;
+    if (!raw) {
+        if (error) *error = GetLastError();
+        return std::nullopt;
+    }
     return ProcessRef(pid, std::shared_ptr<void>(raw, HandleCloser{}));
 }
 
@@ -55,6 +59,21 @@ std::uint32_t ProcessRef::session_id() const {
     DWORD session = 0;
     ProcessIdToSessionId(pid_, &session);
     return session;
+}
+
+std::string ProcessRef::package_family() const {
+    UINT32 length = 0;
+    if (GetPackageFamilyName(handle_.get(), &length, nullptr) != ERROR_INSUFFICIENT_BUFFER || length == 0)
+        return {};
+    std::wstring buffer(length, L'\0');
+    if (GetPackageFamilyName(handle_.get(), &length, buffer.data()) != ERROR_SUCCESS || length == 0)
+        return {};
+    buffer.resize(length - 1);
+    return to_utf8(buffer);
+}
+
+bool ProcessRef::exited() const {
+    return WaitForSingleObject(handle_.get(), 0) == WAIT_OBJECT_0;
 }
 
 bool ProcessRef::terminate() const {

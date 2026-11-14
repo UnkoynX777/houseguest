@@ -48,7 +48,7 @@ A aplicação é **reativa, não preventiva**: um programa bloqueado pode rodar 
 | Administrador local | Adulteração é detectável. Remoção e recuperação sempre são possíveis, por projeto. |
 | Acesso físico | Nada. Use BitLocker e senha de firmware. |
 
-Programas permitidos podem iniciar outros programas; revise lançadores e navegadores. Aplicativos da Microsoft Store são identificados pelo caminho do executável ou pelo fabricante.
+Programas permitidos podem iniciar outros programas; revise lançadores e navegadores. Aplicativos da Microsoft Store podem ser identificados pelo caminho, pelo fabricante ou pela família do pacote; a prévia não mostra decisões por pacote.
 
 ## Documentação e contribuição
 

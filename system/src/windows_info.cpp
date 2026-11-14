@@ -287,22 +287,27 @@ std::vector<InstalledApp> discover_installed_apps() {
     return apps;
 }
 
-void disconnect_sessions(const std::vector<std::string>& user_sids, bool logoff) {
+SessionActionResult disconnect_sessions(const std::vector<std::string>& user_sids, bool logoff) {
+    SessionActionResult result;
     WTS_SESSION_INFOW* sessions = nullptr;
     DWORD count = 0;
-    if (!WTSEnumerateSessionsW(WTS_CURRENT_SERVER_HANDLE, 0, 1, &sessions, &count)) return;
+    if (!WTSEnumerateSessionsW(WTS_CURRENT_SERVER_HANDLE, 0, 1, &sessions, &count)) {
+        result.complete = false;
+        return result;
+    }
     for (DWORD i = 0; i < count; ++i) {
         HANDLE raw = nullptr;
         if (!WTSQueryUserToken(sessions[i].SessionId, &raw)) continue;
         Handle token(raw);
         const auto sid = token_user_sid(token.get());
         if (!sid || std::ranges::find(user_sids, *sid) == user_sids.end()) continue;
-        if (logoff)
-            WTSLogoffSession(WTS_CURRENT_SERVER_HANDLE, sessions[i].SessionId, FALSE);
-        else
-            WTSDisconnectSession(WTS_CURRENT_SERVER_HANDLE, sessions[i].SessionId, FALSE);
+        const BOOL ok = logoff
+                            ? WTSLogoffSession(WTS_CURRENT_SERVER_HANDLE, sessions[i].SessionId, FALSE)
+                            : WTSDisconnectSession(WTS_CURRENT_SERVER_HANDLE, sessions[i].SessionId, FALSE);
+        ok ? ++result.affected : (result.complete = false);
     }
     WTSFreeMemory(sessions);
+    return result;
 }
 
 void notify_session(std::uint32_t session_id, const std::wstring& title, const std::wstring& message) {
