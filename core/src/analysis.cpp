@@ -5,6 +5,7 @@
 #include <set>
 
 #include "houseguest/core/glob.hpp"
+#include "houseguest/core/subject.hpp"
 
 namespace houseguest::core {
 namespace {
@@ -38,9 +39,10 @@ std::string matcher_key(const Matcher& m) {
                 return key + normalize_path(v.pattern);
             else if constexpr (std::is_same_v<T, HashMatcher>)
                 return key + v.sha256;
-            else if constexpr (std::is_same_v<T, PublisherMatcher>)
-                return key + v.subject;
-            else
+            else if constexpr (std::is_same_v<T, PublisherMatcher>) {
+                for (const auto& [name, value] : parse_subject(v.subject)) key += name + "=" + value + ";";
+                return key;
+            } else
                 return key + v.family_name;
         },
         m);
@@ -121,13 +123,15 @@ void analyze_applications(const Profile& profile, const Protection&, TimePoint n
                            "Related mode on an unsigned application relies on the install folder. Pin its "
                            "components instead when possible."});
         for (const auto& c : app.components) {
-            if (c.role != ComponentRole::Main || c.path.empty() || !component_is_active(c, now)) continue;
+            if (c.role != ComponentRole::Main || c.path.empty() ||
+                c.path.find_first_of("*?") != std::string::npos || !component_is_active(c, now))
+                continue;
             for (const auto& rule : profile.rules) {
                 const auto* path = std::get_if<PathMatcher>(&rule.matcher);
                 if (rule.action != Action::Deny || !rule_is_active(rule, now) ||
                     rule.priority < app.priority || !path)
                     continue;
-                if (path_matches(path->pattern, c.path) || path_matches(c.path, path->pattern))
+                if (path_matches(path->pattern, c.path))
                     out.push_back(
                         {Severity::Warning,
                          FindingCode::ApplicationBlockedByRule,

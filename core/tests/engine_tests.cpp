@@ -4,6 +4,8 @@
 
 #include "houseguest/core/analysis.hpp"
 #include "houseguest/core/evaluator.hpp"
+#include "houseguest/core/serialization.hpp"
+#include "houseguest/core/subject.hpp"
 
 using namespace houseguest::core;
 using namespace std::chrono_literals;
@@ -333,4 +335,59 @@ TEST_CASE("the protected table is reviewed, not accidental", "[protection][safet
         CHECK(pattern.find("cmd.exe") == std::string::npos);
         CHECK(pattern.find("powershell") == std::string::npos);
     }
+}
+
+TEST_CASE("signer subjects compare in any attribute order", "[subject]") {
+    CHECK(same_subject("CN=Contoso, O=Contoso Ltd, C=US", "C=US, O=Contoso Ltd, CN=Contoso"));
+    CHECK(same_subject("cn=contoso, o=contoso ltd", "O=Contoso Ltd,CN=Contoso"));
+    CHECK_FALSE(same_subject("CN=Contoso, O=Contoso Ltd", "CN=Contoso"));
+    CHECK_FALSE(same_subject("CN=Contoso", "CN=Contoso Evil"));
+    CHECK_FALSE(same_subject("", ""));
+    CHECK(same_subject(R"(CN="Contoso, Inc.", C=US)", R"(C=US, CN="Contoso, Inc.")"));
+    CHECK(subject_has("C=US, O=Microsoft Corporation, CN=Microsoft Corporation", "CN",
+                      "microsoft corporation"));
+    CHECK_FALSE(subject_has("O=Microsoft Corporation, CN=Evil", "CN", "Microsoft Corporation"));
+}
+
+TEST_CASE("the built-in Windows programs entry needs both the signer and the Windows folder",
+          "[subject][engine]") {
+    auto profile = builtin_profiles().front();
+    const auto expand = [](std::string& pattern) {
+        const auto at = pattern.find("%SystemRoot%");
+        if (at != std::string::npos) pattern.replace(at, 12, "c:/windows");
+    };
+    for (auto& rule : profile.rules) {
+        if (auto* path = std::get_if<PathMatcher>(&rule.matcher)) expand(path->pattern);
+    }
+    for (auto& app : profile.apps) {
+        for (auto& component : app.components) expand(component.path);
+    }
+    const std::string reported =
+        "C=US, S=Washington, L=Redmond, O=Microsoft Corporation, CN=Microsoft Windows";
+    CHECK(evaluate(profile, kProtection, facts("c:/windows/system32/calc.exe", {}, reported), kNow).action ==
+          Action::Allow);
+    CHECK(evaluate(profile, kProtection, facts("c:/windows/system32/cmd.exe", {}, reported), kNow).action ==
+          Action::Deny);
+    CHECK(evaluate(profile, kProtection, facts("c:/windows/system32/certutil.exe", {}, reported), kNow)
+              .action == Action::Deny);
+    CHECK(evaluate(profile, kProtection, facts("c:/users/guest/calc.exe", {}, "CN=Someone Else"), kNow)
+              .action == Action::Deny);
+    CHECK(evaluate(profile, kProtection, facts("c:/users/guest/calc-copy.exe", {}, reported), kNow).action ==
+          Action::Deny);
+    CHECK(evaluate(profile, kProtection, facts("c:/users/guest/cmd2.exe", {}, reported), kNow).action ==
+          Action::Deny);
+}
+
+TEST_CASE("a stored profile with the old Windows signer rule is upgraded on load",
+          "[serialization][bypass]") {
+    const auto legacy = Json::parse(R"({
+        "id":"p","name":"Old","default_action":"deny",
+        "rules":[{"id":"windows-signed","action":"allow","priority":10,
+                  "match":{"type":"publisher","value":"CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"}}]
+    })");
+    const auto upgraded = profile_from_json(legacy);
+    CHECK(upgraded.rules.empty());
+    REQUIRE(upgraded.apps.size() == 1);
+    CHECK(upgraded.apps.front().id == "builtin-windows");
+    CHECK(profile_from_json(to_json(upgraded)).apps.size() == 1);
 }

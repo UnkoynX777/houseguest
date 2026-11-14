@@ -5,20 +5,28 @@
 #include <evntcons.h>
 #include <evntrace.h>
 
+#include <string>
 #include <vector>
+
+#include "houseguest/system/pipe.hpp"
 
 namespace houseguest::service {
 namespace {
 
-constexpr wchar_t kSessionName[] = L"HouseguestProcessTrace";
 constexpr std::uint16_t kProcessStartEventId = 1;
 constexpr ULONGLONG kProcessKeyword = 0x10;
 constexpr ULONG kSystemTimeClock = 2;
 constexpr GUID kKernelProcessProvider = {
     0x22fb2cd6, 0x0e7b, 0x422b, {0xa0, 0xc7, 0x2f, 0xad, 0x1f, 0xd0, 0xe7, 0x16}};
 
+const std::wstring& session_name() {
+    static const std::wstring name = L"HouseguestProcessTrace" + system::instance_suffix();
+    return name;
+}
+
 std::vector<std::uint8_t> properties_buffer() {
-    std::vector<std::uint8_t> buffer(sizeof(EVENT_TRACE_PROPERTIES) + sizeof(kSessionName));
+    std::vector<std::uint8_t> buffer(sizeof(EVENT_TRACE_PROPERTIES) +
+                                     (session_name().size() + 1) * sizeof(wchar_t));
     auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(buffer.data());
     properties->Wnode.BufferSize = static_cast<ULONG>(buffer.size());
     properties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
@@ -34,7 +42,7 @@ void WINAPI callback(PEVENT_RECORD record) {
 
 void stop_session(TRACEHANDLE session) {
     auto buffer = properties_buffer();
-    ControlTraceW(session, session == 0 ? kSessionName : nullptr,
+    ControlTraceW(session, session == 0 ? session_name().c_str() : nullptr,
                   reinterpret_cast<EVENT_TRACE_PROPERTIES*>(buffer.data()), EVENT_TRACE_CONTROL_STOP);
 }
 
@@ -53,10 +61,10 @@ bool ProcessTrace::start(std::string& error) {
     auto buffer = properties_buffer();
     auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(buffer.data());
     TRACEHANDLE session = 0;
-    ULONG status = StartTraceW(&session, kSessionName, properties);
+    ULONG status = StartTraceW(&session, session_name().c_str(), properties);
     if (status == ERROR_ALREADY_EXISTS) {
         stop_session(0);
-        status = StartTraceW(&session, kSessionName, properties);
+        status = StartTraceW(&session, session_name().c_str(), properties);
     }
     if (status != ERROR_SUCCESS) {
         error = "StartTrace failed with code " + std::to_string(status);
@@ -72,7 +80,7 @@ bool ProcessTrace::start(std::string& error) {
     }
 
     EVENT_TRACE_LOGFILEW log{};
-    log.LoggerName = const_cast<LPWSTR>(kSessionName);
+    log.LoggerName = const_cast<LPWSTR>(session_name().c_str());
     log.ProcessTraceMode = PROCESS_TRACE_MODE_REAL_TIME | PROCESS_TRACE_MODE_EVENT_RECORD;
     log.EventRecordCallback = callback;
     log.Context = this;

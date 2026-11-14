@@ -1,5 +1,6 @@
 #include "houseguest/core/serialization.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 
 #include "houseguest/core/protection.hpp"
@@ -67,6 +68,34 @@ E value_of(const Name<E> (&table)[N], const std::string& text, const char* what)
     for (const auto& item : table)
         if (text == item.text) return item.value;
     throw std::invalid_argument(std::string("unknown ") + what);
+}
+
+constexpr const char* kWindowsPublisher =
+    "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
+
+// Windows programs are allowed by signer and location together, so a signed Windows tool that someone
+// copies elsewhere is an ordinary program again.
+Application windows_programs() {
+    Component main;
+    main.id = "windows-signed";
+    main.label = "Programs signed by Windows";
+    main.role = ComponentRole::Main;
+    main.path = "%SystemRoot%\\**";
+    main.publisher = kWindowsPublisher;
+    return Application{
+        "builtin-windows", "Windows programs", DependencyMode::SelectedOnly, UnknownPolicy::Deny, 10, {main}};
+}
+
+void upgrade_legacy_rules(Profile& profile) {
+    const auto legacy = std::ranges::find_if(profile.rules, [](const Rule& rule) {
+        const auto* publisher = std::get_if<PublisherMatcher>(&rule.matcher);
+        return rule.id == "windows-signed" && publisher && publisher->subject == kWindowsPublisher;
+    });
+    if (legacy == profile.rules.end()) return;
+    profile.rules.erase(legacy);
+    if (std::ranges::none_of(profile.apps,
+                             [](const Application& app) { return app.id == "builtin-windows"; }))
+        profile.apps.push_back(windows_programs());
 }
 
 Rule make_rule(std::string id, Action action, Matcher matcher, int priority) {
@@ -215,6 +244,7 @@ Profile profile_from_json(const Json& json) {
         if (apps->size() > kMaxApps) throw std::invalid_argument("too many applications");
         for (const auto& item : *apps) profile.apps.push_back(application_from_json(item));
     }
+    upgrade_legacy_rules(profile);
     return profile;
 }
 
@@ -232,14 +262,11 @@ AppIdentity app_identity_from_json(const Json& json) {
 }
 
 std::vector<Profile> builtin_profiles() {
-    constexpr const char* kWindowsPublisher =
-        "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
     const auto system_base = [](std::string id, std::string name) {
         Profile p{std::move(id), std::move(name), Action::Deny, {}};
         p.rules.push_back(
             make_rule("windows-components", Action::Allow, PathMatcher{"%SystemRoot%\\SystemApps\\**"}, 10));
-        p.rules.push_back(
-            make_rule("windows-signed", Action::Allow, PublisherMatcher{kWindowsPublisher}, 10));
+        p.apps.push_back(windows_programs());
         for (const auto tool : sensitive_tool_names()) {
             p.rules.push_back(make_rule("deny-" + std::string(tool), Action::Deny,
                                         PathMatcher{"%SystemRoot%\\**\\" + std::string(tool)}, 100));

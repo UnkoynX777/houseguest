@@ -6,6 +6,7 @@
 #include <tuple>
 
 #include "houseguest/core/glob.hpp"
+#include "houseguest/core/subject.hpp"
 
 namespace houseguest::core {
 namespace {
@@ -152,7 +153,7 @@ void consider_related(const Application& app, const ProcessFacts& facts, Ranking
     if (signed_main) {
         if (!facts.publisher_resolved) {
             ranking.defer({app.priority, Action::Allow, false, true});
-        } else if (iequals(facts.app.publisher, signed_main->publisher) && !facts.app.publisher.empty()) {
+        } else if (same_subject(facts.app.publisher, signed_main->publisher)) {
             ranking.offer(grant(DecisionSource::Related, "application.related.signer", app, *signed_main));
             ranking.member(app.id);
         }
@@ -221,9 +222,7 @@ bool matcher_matches(const Matcher& matcher, const AppIdentity& app) {
     return std::visit(
         Overloaded{[&](const PathMatcher& m) { return path_matches(m.pattern, app.path); },
                    [&](const HashMatcher& m) { return !app.sha256.empty() && iequals(m.sha256, app.sha256); },
-                   [&](const PublisherMatcher& m) {
-                       return !app.publisher.empty() && iequals(m.subject, app.publisher);
-                   },
+                   [&](const PublisherMatcher& m) { return same_subject(m.subject, app.publisher); },
                    [&](const PackageMatcher& m) {
                        return !app.package_family.empty() && iequals(m.family_name, app.package_family);
                    }},
@@ -251,15 +250,13 @@ MatchState match_component(const Component& component, const ProcessFacts& facts
         if (iequals(component.sha256, facts.app.sha256)) return MatchState::Exact;
         if (!component.follow_updates || component.publisher.empty()) return MatchState::Changed;
         if (!facts.publisher_resolved) return MatchState::NeedsPublisher;
-        return !facts.app.publisher.empty() && iequals(component.publisher, facts.app.publisher)
-                   ? MatchState::Updated
-                   : MatchState::Changed;
+        return same_subject(component.publisher, facts.app.publisher) ? MatchState::Updated
+                                                                      : MatchState::Changed;
     }
     if (!component.publisher.empty()) {
         if (!facts.publisher_resolved) return MatchState::NeedsPublisher;
-        return !facts.app.publisher.empty() && iequals(component.publisher, facts.app.publisher)
-                   ? MatchState::Exact
-                   : MatchState::Changed;
+        return same_subject(component.publisher, facts.app.publisher) ? MatchState::Exact
+                                                                      : MatchState::Changed;
     }
     return MatchState::Exact;
 }

@@ -42,8 +42,6 @@ public:
     [[nodiscard]] Report report(const std::vector<std::string>& guest_sids) const;
     [[nodiscard]] core::Json report_json(const std::vector<std::string>& guest_sids) const;
 
-    static constexpr const char* kPublisherPrefix = "CN=Microsoft Corporation";
-
 private:
     bool trusted_directory(const std::filesystem::path& directory);
     [[nodiscard]] std::vector<std::filesystem::path> runtime_directories() const;

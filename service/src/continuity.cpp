@@ -6,6 +6,7 @@
 #include <array>
 
 #include "houseguest/core/glob.hpp"
+#include "houseguest/core/subject.hpp"
 #include "houseguest/system/crypto.hpp"
 #include "houseguest/system/text.hpp"
 #include "houseguest/system/windows_info.hpp"
@@ -84,7 +85,9 @@ bool ContinuityGuard::houseguest_verified(const std::filesystem::path& image, co
 }
 
 bool ContinuityGuard::webview_verified(const std::filesystem::path& image, const std::string& publisher) {
-    if (!is_webview_image(image) || !publisher.starts_with(kPublisherPrefix)) return false;
+    if (!is_webview_image(image) || !core::subject_has(publisher, "CN", "Microsoft Corporation") ||
+        !core::subject_has(publisher, "O", "Microsoft Corporation"))
+        return false;
     return trusted_directory(image.parent_path());
 }
 

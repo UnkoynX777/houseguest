@@ -4,16 +4,35 @@
 
 namespace houseguest::system {
 
+std::wstring instance_suffix() {
+#ifdef HOUSEGUEST_INSTANCES
+    wchar_t value[17] = {};
+    const DWORD length = GetEnvironmentVariableW(L"HOUSEGUEST_INSTANCE", value, 17);
+    if (length == 0 || length > 16) return {};
+    for (DWORD i = 0; i < length; ++i) {
+        if (!iswalnum(value[i])) return {};
+    }
+    return std::wstring(L"-") + value;
+#else
+    return {};
+#endif
+}
+
+std::wstring pipe_name() {
+    return L"\\\\.\\pipe\\houseguest" + instance_suffix();
+}
+
 struct PipeClient::Impl {
     HANDLE pipe = INVALID_HANDLE_VALUE;
+    std::wstring name = pipe_name();
 
     bool connect() {
         if (pipe != INVALID_HANDLE_VALUE) return true;
         for (int attempt = 0; attempt < 3; ++attempt) {
-            pipe = CreateFileW(kPipeName, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+            pipe = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
                                SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
             if (pipe != INVALID_HANDLE_VALUE) break;
-            if (GetLastError() != ERROR_PIPE_BUSY || !WaitNamedPipeW(kPipeName, 2000)) return false;
+            if (GetLastError() != ERROR_PIPE_BUSY || !WaitNamedPipeW(name.c_str(), 2000)) return false;
         }
         if (pipe == INVALID_HANDLE_VALUE) return false;
         DWORD mode = PIPE_READMODE_MESSAGE;

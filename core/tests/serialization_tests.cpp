@@ -49,6 +49,12 @@ TEST_CASE("built-in templates never trip the protection safety checks", "[serial
                 }
             }
         }
+        for (auto& app : profile.apps) {
+            for (auto& component : app.components) {
+                if (const auto at = component.path.find("%SystemRoot%"); at != std::string::npos)
+                    component.path.replace(at, 12, "c:/windows");
+            }
+        }
         for (const auto& finding : analyze(profile, baseline, TimePoint{} + std::chrono::hours(1))) {
             INFO(profile.name << ": " << finding.message);
             CHECK(finding.severity == Severity::Info);

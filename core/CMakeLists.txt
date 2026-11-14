@@ -9,6 +9,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 add_library(houseguest_core STATIC
   src/glob.cpp
+  src/subject.cpp
   src/protection.cpp
   src/evaluator.cpp
   src/analysis.cpp

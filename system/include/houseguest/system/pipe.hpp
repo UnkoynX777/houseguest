@@ -8,7 +8,10 @@
 
 namespace houseguest::system {
 
-inline constexpr wchar_t kPipeName[] = L"\\\\.\\pipe\\houseguest";
+// Builds configured with HOUSEGUEST_INSTANCES read HOUSEGUEST_INSTANCE so a test service can run beside an
+// installed one without touching its pipe or trace session. Release builds ignore the variable.
+std::wstring instance_suffix();
+std::wstring pipe_name();
 inline constexpr std::size_t kMaxMessageBytes = 1 << 20;
 
 class PipeClient {

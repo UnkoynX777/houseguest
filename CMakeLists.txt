@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(HOUSEGUEST_BUILD_TESTS "Build unit tests" ON)
+option(HOUSEGUEST_INSTANCES "Let HOUSEGUEST_INSTANCE rename the pipe and trace session (test builds only)" OFF)
 option(HOUSEGUEST_SANITIZE "Build with AddressSanitizer" OFF)
 option(HOUSEGUEST_FUZZ "Build the libFuzzer targets (implies HOUSEGUEST_SANITIZE)" OFF)
 

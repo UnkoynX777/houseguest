@@ -59,7 +59,7 @@ HANDLE create_instance(bool first) {
     DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED;
     if (first) open_mode |= FILE_FLAG_FIRST_PIPE_INSTANCE;
     HANDLE pipe =
-        CreateNamedPipeW(system::kPipeName, open_mode,
+        CreateNamedPipeW(system::pipe_name().c_str(), open_mode,
                          PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
                          kMaxInstances, kBufferBytes, kBufferBytes, 0, &attributes);
     LocalFree(attributes.lpSecurityDescriptor);

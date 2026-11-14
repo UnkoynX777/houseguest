@@ -4,6 +4,7 @@
 
 #include "houseguest/core/glob.hpp"
 #include "houseguest/core/protection.hpp"
+#include "houseguest/core/subject.hpp"
 
 #include "command_support.hpp"
 
@@ -121,8 +122,7 @@ core::Json Discovery::classify(const Item& item, const std::string& root_directo
     const bool signed_ok = !item.identity.publisher.empty();
     const bool inside = !root_directory.empty() && path.starts_with(root_directory + "/");
     const bool sensitive = core::is_sensitive_tool(item.identity.path);
-    const bool same_signer =
-        signed_ok && !root_publisher.empty() && item.identity.publisher == root_publisher;
+    const bool same_signer = core::same_subject(item.identity.publisher, root_publisher);
 
     std::string role = "helper";
     if (item.root)
