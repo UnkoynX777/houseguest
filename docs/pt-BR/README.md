@@ -1,68 +1,59 @@
-# Houseguest
+<p align="center">
+  <img src="../../assets/banner.svg" alt="Houseguest: empreste seu PC sem emprestar sua vida" width="100%">
+</p>
 
-**Empreste seu PC sem emprestar sua vida.**
+[English](../../README.md) · Português
 
-O Houseguest permite entregar seu computador Windows a outra pessoa e decidir exatamente quais programas ela pode executar. Escolha um perfil, a conta do convidado e uma duração, e inicie a proteção. Quando o tempo acaba, as restrições são removidas e o convidado é bloqueado.
+**Houseguest é um bloqueador de aplicativos open-source para sessões de convidado no Windows.** Empreste seu PC a um amigo, a uma criança ou a um colega e escolha exatamente quais programas a conta deles pode executar, pelo tempo que você decidir. Quando o tempo acaba, as restrições são removidas e o convidado é desconectado.
 
-A proteção é aplicada por um serviço do Windows, então fechar a janela não muda nada. Tudo é auditável: o código é público, cada bloqueio e cada alteração vai para um registro à prova de adulteração, e os limites do que o Windows consegue garantir estão documentados em vez de escondidos.
+Um serviço do Windows aplica as regras, então fechar a janela não muda nada. O código é público, cada bloqueio e cada alteração vai para um registro à prova de adulteração, e os limites do que o Windows consegue garantir estão escritos, não escondidos.
 
-![Painel com uma sessão ativa](../images/dashboard-pt-BR.png)
+<p align="center">
+  <img src="../images/dashboard-pt-BR.png" alt="Painel com uma sessão de convidado ativa" width="80%">
+</p>
 
-## O que ele faz
+## Por que o Houseguest
 
-- **Sessões de convidado com cronômetro**, com extensão, encerramento manual ou expiração com bloqueio do convidado.
-- **Regras por caminho, hash ou fabricante.** Regras de hash e fabricante continuam valendo se o arquivo for renomeado.
-- **Perfis prontos**: Visitante, Jogos, Trabalho e Restrito, todos editáveis, duplicáveis, importáveis e exportáveis.
-- **Prévia antes de ativar**: veja quais apps instalados rodariam e quais seriam bloqueados, com conflitos e regras arriscadas sinalizados.
-- **Modo de auditoria**: registra o que seria bloqueado sem encerrar nada.
-- **Exceções temporárias** direto do histórico.
-- **Sem risco de trancar você para fora**: processos essenciais do Windows e o próprio Houseguest são sempre permitidos, e um administrador sempre consegue recuperar o acesso.
-- **Privado**: nada sai do seu computador. A verificação de atualizações só contata o GitHub quando você pede.
+O Windows tem controle parental e recursos de política, mas nada simples para o caso comum: *"vou emprestar meu PC por uma hora; deixe usar o navegador e mais nada"*.
 
-## Como a proteção funciona e onde ela termina
+- **Sessões de convidado com cronômetro.** Escolha um perfil, a conta do convidado e a duração. Estenda, pare ou deixe expirar.
+- **Controle de acesso a aplicativos por caminho, hash ou fabricante.** Regras de hash e fabricante sobrevivem à renomeação.
+- **Perfis prontos** (Convidado, Jogos, Trabalho, Restrito), editáveis, importáveis e exportáveis.
+- **Prévia antes de iniciar:** veja quais aplicativos seriam permitidos ou bloqueados.
+- **Modo de auditoria**, **exceções temporárias** e **recuperação por administrador sempre disponível**.
+- **Ícone na área de notificação**, iniciar com o Windows (opcional), tema claro/escuro do Windows e cronômetro da sessão.
+- **Privado por padrão:** nada sai do seu computador.
 
-O Houseguest observa a criação de processos pelo Event Tracing for Windows. Quando um programa inicia sob uma conta de convidado, o serviço avalia suas regras e encerra o processo se ele não for permitido. Funciona em todas as edições do Windows.
+## Início rápido
 
-A aplicação é **reativa, não preventiva**: um programa bloqueado pode executar por um instante antes de ser encerrado.
+Requer Windows 10 ou 11 (x64) e o Microsoft Edge WebView2 Runtime. **Verificado até agora apenas no Windows 10 Pro 22H2.** Veja a [compatibilidade](../compatibility.md) (em inglês).
+
+1. Baixe o `Houseguest-<versão>-x64.msi` e o `SHA256SUMS.txt` na [última versão](https://github.com/UnkoynX777/houseguest/releases/latest).
+2. Confira com `sha256sum -c SHA256SUMS.txt` (ou `Get-FileHash`). As versões também têm atestado de proveniência: `gh attestation verify <arquivo> --repo UnkoynX777/houseguest`.
+3. Execute o instalador como administrador. Os binários **não são assinados**; o SmartScreen pode avisar.
+4. Abra o Houseguest, defina um PIN de proprietário, crie uma conta padrão para o convidado e vá em **Sessões → Prévia → Iniciar proteção**.
+
+Para recuperar o acesso, em um prompt elevado: `houseguest-cli recover` (com `--reset-owner` também remove o PIN). Com uma sessão ativa, o desinstalador recusa a remoção, a menos que um administrador use `FORCE_UNINSTALL=1`.
+
+## Como funciona e onde para
+
+O Houseguest observa a criação de processos pelo Event Tracing for Windows. Quando um programa inicia na conta do convidado, o serviço avalia as regras e encerra o processo se não for permitido. Se o Event Tracing estiver indisponível, passa a verificar os programas em execução a cada segundo e avisa você.
+
+A aplicação é **reativa, não preventiva**: um programa bloqueado pode rodar por um instante antes de ser encerrado. O Houseguest não usa drivers de kernel, AppLocker, App Control nem o Windows Defender, então funciona da mesma forma em todas as edições.
 
 | Quem | O que o Houseguest garante |
 | --- | --- |
-| Usuário padrão, com a janela fechada | As regras continuam valendo. O serviço, seus dados e configurações não podem ser parados, lidos ou editados sem direitos de administrador. Renomear um executável não contorna regras de hash ou fabricante. As tentativas de PIN têm limite. |
-| Convidado durante a sessão | A sessão termina no horário e o serviço remove as restrições. Programas permitidos não alteram a política. |
-| Administrador local | Adulterações são detectáveis. Remoção e recuperação são sempre possíveis, de propósito. |
-| Acesso físico | Nada. Use BitLocker e uma senha de firmware. |
+| Usuário padrão, janela fechada | As regras continuam valendo. O serviço, os dados e as configurações não podem ser parados, lidos ou editados sem direitos de administrador. |
+| Convidado durante a sessão | A sessão termina no horário. Programas permitidos não alteram a política. |
+| Administrador local | Adulteração é detectável. Remoção e recuperação sempre são possíveis, por projeto. |
+| Acesso físico | Nada. Use BitLocker e senha de firmware. |
 
-Vale saber: programas permitidos podem iniciar outros programas; apps da Microsoft Store são identificados pelo caminho do executável ou pelo fabricante; AppLocker e App Control ainda não são usados. Veja o [modelo de ameaças](../threat-model.md) e a [viabilidade](../feasibility.md) (em inglês).
+Programas permitidos podem iniciar outros programas; revise lançadores e navegadores. Aplicativos da Microsoft Store são identificados pelo caminho do executável ou pelo fabricante.
 
-## Instalação
+## Documentação e contribuição
 
-Requer Windows 10 ou 11 (x64) e o runtime do WebView2.
+Documentação (em inglês): [FAQ](../faq.md), [compatibilidade](../compatibility.md), [solução de problemas](../troubleshooting.md), [arquitetura](../architecture.md), [modelo de ameaças](../threat-model.md), [privacidade](../privacy.md). Contribuições são bem-vindas e revisadas por uma pessoa; leia o [CONTRIBUTING](../../CONTRIBUTING.md). Vulnerabilidades devem ser reportadas em particular, conforme o [SECURITY](../../SECURITY.md).
 
-1. Baixe `Houseguest-<versão>-x64.msi` e `SHA256SUMS.txt` na [última release](https://github.com/UnkoynX777/houseguest/releases/latest).
-2. Verifique: `(Get-FileHash .\Houseguest-*.msi).Hash` deve corresponder à linha de `SHA256SUMS.txt`.
-3. Execute o instalador como administrador.
+## Licença
 
-As versões ainda **não são assinadas digitalmente**, então o SmartScreen pode alertar. Validado apenas no Windows 10 Pro 22H2; Windows 11 e outras edições ainda não foram testados.
-
-## Primeiros passos
-
-1. Abra o Houseguest, escolha **Continuar como administrador** e defina um PIN de proprietário.
-2. Crie uma conta padrão do Windows para o convidado.
-3. Em **Sessões**: escolha o perfil e a conta, defina a duração, use **Prévia** e depois **Iniciar proteção**.
-4. Adicione apps em **Aplicativos** ou edite as regras em **Regras**.
-
-Recuperação: em um prompt elevado, `houseguest-cli recover` encerra a sessão; `--reset-owner` remove o proprietário e o PIN. Para desinstalar, remova o Houseguest em Aplicativos instalados. Configurações e registro de auditoria permanecem em `%ProgramData%\Houseguest` até você apagar a pasta.
-
-## Compilar
-
-Requer Visual Studio 2022 (carga de trabalho C++), CMake 3.25+, Ninja, Node.js 22 e o SDK do .NET para o instalador.
-
-```powershell
-cd ui; npm ci; npm run build; cd ..
-.\scripts\build.ps1 -Config Release -RunTests
-.\scripts\package.ps1
-```
-
-## Contribuir e segurança
-
-Pull requests são bem-vindos e passam por revisão humana: veja o [CONTRIBUTING](../../CONTRIBUTING.md). Relate vulnerabilidades de forma privada, conforme o [SECURITY](../../SECURITY.md). Licença Apache-2.0. Partes do projeto foram escritas com ajuda de ferramentas de IA e revisadas pelo mantenedor.
+Apache-2.0. Partes deste projeto foram escritas com ajuda de ferramentas de IA e revisadas pelo mantenedor.

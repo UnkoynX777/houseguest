@@ -188,6 +188,8 @@ await shot('security');
 await nav('Diagnostics', "document.querySelector('.table-wrap tr')");
 check('diagnostics reports process monitoring running', await evaluate("document.body.textContent.includes('Process monitoring')"));
 await shot('diagnostics');
+await nav('Settings', "document.querySelector('.seg')");
+await shot('settings');
 
 if (process.env.SWEEP) {
   for (const [w, h] of [[760, 480], [900, 560], [1240, 800]]) await sweep(w, h);

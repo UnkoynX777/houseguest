@@ -78,6 +78,17 @@ try {
     Check 'stop latency was measured' ($diag.supervisor.latency_ms.samples -ge 1)
     Write-Host ("       stop latency over {0} samples: average {1:N0} ms, p95 {2:N0} ms, max {3:N0} ms" -f $diag.supervisor.latency_ms.samples, $diag.supervisor.latency_ms.average, $diag.supervisor.latency_ms.p95, $diag.supervisor.latency_ms.max)
 
+    logman stop HouseguestProcessTrace -ets | Out-Null
+    Start-Sleep -Seconds 8
+    Check 'losing the event session switches to polling' ((HgJson status).enforcement -eq 'polling')
+    $late = Start-Process "$env:SystemRoot\System32\choice.exe" -ArgumentList '/T', '30', '/D', 'y' -Credential $credential -PassThru -WindowStyle Hidden
+    Start-Sleep -Seconds 4
+    $late.Refresh()
+    Check 'polling mode still terminates denied launches' ($late.HasExited)
+    $recovered = $false
+    for ($i = 0; $i -lt 30 -and -not $recovered; $i++) { Start-Sleep -Seconds 2; $recovered = ((HgJson status).enforcement -eq 'supervised') }
+    Check 'the event session is restored automatically' $recovered
+
     Hg call session.stop | Out-Null
     Check 'session stops' (-not (HgJson status).armed)
     if (-not $allowed.HasExited) { Stop-Process -Id $allowed.Id -Force -ErrorAction SilentlyContinue }

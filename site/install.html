@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Install Houseguest on Windows | Houseguest</title>
+<meta name="description" content="How to download, verify and install Houseguest, the open-source Windows guest-session app blocker, and how to recover or uninstall it.">
+<link rel="canonical" href="https://unkoynx777.github.io/houseguest/install.html">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Houseguest">
+<meta property="og:title" content="Install Houseguest on Windows | Houseguest">
+<meta property="og:description" content="How to download, verify and install Houseguest, the open-source Windows guest-session app blocker, and how to recover or uninstall it.">
+<meta property="og:url" content="https://unkoynx777.github.io/houseguest/install.html">
+<meta property="og:image" content="https://unkoynx777.github.io/houseguest/img/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+
+</head>
+<body>
+<header class="site"><div class="wrap"><a class="brand" href="./"><img src="favicon.svg" alt="" width="30" height="30">Houseguest</a><nav class="main" aria-label="Main"><a href="./">Overview</a><a href="install.html" aria-current="page">Install</a><a href="docs.html">Documentation</a><a href="faq.html">FAQ</a><a href="privacy.html">Privacy</a><a href="security.html">Security</a><a href="https://github.com/UnkoynX777/houseguest">GitHub</a></nav></div></header>
+<main class="wrap">
+<section class="hero"><h1>Install Houseguest</h1><p class="lead">Windows 10 or 11 (x64). Verified so far only on Windows 10 Pro 22H2.</p></section>
+<ol>
+<li>Download <code>Houseguest-&lt;version&gt;-x64.msi</code> and <code>SHA256SUMS.txt</code> from the <a href="https://github.com/UnkoynX777/houseguest/releases/latest">latest release</a>.</li>
+<li>Verify the download: <code>sha256sum -c SHA256SUMS.txt</code>, or compare <code>(Get-FileHash .\Houseguest-*.msi).Hash</code> with the file. Releases also carry a provenance attestation: <code>gh attestation verify &lt;file&gt; --repo UnkoynX777/houseguest</code>.</li>
+<li>Run the installer as administrator. Builds are currently <strong>unsigned</strong>, so SmartScreen may warn you.</li>
+<li>Open Houseguest, set an owner PIN, create a standard Windows account for your guest, then use <em>Sessions → Preview → Start protection</em>.</li>
+</ol>
+<div class="note"><strong>WebView2.</strong> The interface needs the Microsoft Edge WebView2 Runtime. If it is missing Houseguest offers the official Microsoft download page. Protection and the command line do not need it.</div>
+<h2>Recover or uninstall</h2>
+<pre><code>houseguest-cli recover               # end the active session (elevated prompt)
+houseguest-cli recover --reset-owner # also clear the owner and PIN
+msiexec /x Houseguest-&lt;version&gt;-x64.msi FORCE_UNINSTALL=1   # uninstall during an active session</code></pre>
+<p>While a guest session is active the uninstaller stops with an error, so a session is not removed by accident. Administrators always keep this path. Settings and the audit log stay in <code>%ProgramData%\Houseguest</code> until you delete the folder.</p>
+<p>More help: <a href="https://github.com/UnkoynX777/houseguest/blob/main/docs/troubleshooting.md">troubleshooting</a> and <a href="https://github.com/UnkoynX777/houseguest/blob/main/docs/compatibility.md">compatibility</a>.</p>
+</main>
+<footer><div class="wrap"><p>Houseguest is open source under the <a href="https://github.com/UnkoynX777/houseguest/blob/main/LICENSE">Apache-2.0 license</a>. <a href="https://github.com/UnkoynX777/houseguest">Source</a> · <a href="https://github.com/UnkoynX777/houseguest/releases">Releases</a> · <a href="https://github.com/UnkoynX777/houseguest/issues">Issues</a></p></div></footer>
+</body>
+</html>

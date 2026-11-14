@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://unkoynx777.github.io/houseguest/sitemap.xml

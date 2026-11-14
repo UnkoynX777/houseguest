@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Houseguest: open-source app blocker for Windows guest sessions</title>
+<meta name="description" content="Lend your PC without lending your life. Houseguest is an open-source Windows application access control tool: timed guest sessions, rules by path, hash or publisher, enforced by a service.">
+<link rel="canonical" href="https://unkoynx777.github.io/houseguest/">
+<link rel="alternate" hreflang="pt-BR" href="https://unkoynx777.github.io/houseguest/pt-BR/">
+<link rel="alternate" hreflang="en" href="https://unkoynx777.github.io/houseguest/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Houseguest">
+<meta property="og:title" content="Houseguest: open-source app blocker for Windows guest sessions">
+<meta property="og:description" content="Lend your PC without lending your life. Houseguest is an open-source Windows application access control tool: timed guest sessions, rules by path, hash or publisher, enforced by a service.">
+<meta property="og:url" content="https://unkoynx777.github.io/houseguest/">
+<meta property="og:image" content="https://unkoynx777.github.io/houseguest/img/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Houseguest","description":"Open-source Windows app blocker for guest sessions: timed sessions, rules by path, hash or publisher, enforced by a Windows service.","applicationCategory":"SecurityApplication","operatingSystem":"Windows 10, Windows 11","url":"https://unkoynx777.github.io/houseguest/","downloadUrl":"https://github.com/UnkoynX777/houseguest/releases/latest","license":"https://www.apache.org/licenses/LICENSE-2.0","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"codeRepository":"https://github.com/UnkoynX777/houseguest","image":"https://unkoynx777.github.io/houseguest/img/social-preview.png"}</script>
+</head>
+<body>
+<header class="site"><div class="wrap"><a class="brand" href="./"><img src="favicon.svg" alt="" width="30" height="30">Houseguest</a><nav class="main" aria-label="Main"><a href="./" aria-current="page">Overview</a><a href="install.html">Install</a><a href="docs.html">Documentation</a><a href="faq.html">FAQ</a><a href="privacy.html">Privacy</a><a href="security.html">Security</a><a href="https://github.com/UnkoynX777/houseguest">GitHub</a></nav></div></header>
+<main class="wrap">
+<section class="hero">
+<h1>Lend your PC without lending your life.</h1>
+<p class="lead">Houseguest is an open-source Windows app blocker for guest sessions. Choose exactly which programs a guest account may run, for as long as you decide. A Windows service enforces the rules, so closing the window changes nothing.</p>
+<div class="cta"><a class="btn primary" href="https://github.com/UnkoynX777/houseguest/releases/latest">Download for Windows</a><a class="btn" href="install.html">Install guide</a><a class="btn" href="https://github.com/UnkoynX777/houseguest">View source</a></div>
+<img class="shot" src="img/demo.gif" alt="Walkthrough: pick a profile, preview the result, start a guest session and see a blocked launch" width="960" height="600">
+</section>
+<h2>What it does</h2>
+<div class="grid">
+<div class="card"><h3>Timed guest sessions</h3><p>Pick a profile, the guest account and a duration. Extend, stop, or let it expire and lock the guest out.</p></div>
+<div class="card"><h3>Rules by path, hash or publisher</h3><p>Hash and publisher rules survive renaming. A preview shows which installed apps would run and which would be blocked.</p></div>
+<div class="card"><h3>Cannot lock you out</h3><p>Essential Windows processes and Houseguest itself are always allowed, and an administrator can always recover or uninstall.</p></div>
+<div class="card"><h3>Auditable</h3><p>Every block and change goes into a hash-chained log. The source, the build and the release provenance are public.</p></div>
+<div class="card"><h3>Quiet desktop app</h3><p>Notification-area icon with the session timer, optional start with Windows, and the Windows light or dark theme.</p></div>
+<div class="card"><h3>Private by design</h3><p>No telemetry and no account. Nothing leaves your computer unless you press the update check.</p></div>
+</div>
+<h2>Honest limits</h2>
+<p>Houseguest is <strong>reactive, not preventive</strong>: it stops a program shortly after Windows reports that it started, so a blocked program can run for a moment. It uses no kernel driver, AppLocker, App Control or Windows Defender, and it relies on Windows access control for its own protection. It has been verified only on Windows 10 Pro 22H2. Read the <a href="security.html">security notes</a> and the <a href="faq.html">FAQ</a>.</p>
+<div class="grid">
+<img class="shot" src="img/dashboard-active.png" alt="Dashboard with an active guest session in light mode" loading="lazy" width="1280" height="800">
+<img class="shot" src="img/dashboard-active-dark.png" alt="Dashboard with an active guest session in dark mode" loading="lazy" width="1280" height="800">
+</div>
+<h2>Use cases</h2>
+<p>Lending your laptop for an hour, giving a child access for homework only, a game night with a limited program set, or letting a coworker present from your machine. See the <a href="docs.html">documentation</a> for step-by-step profiles.</p>
+</main>
+<footer><div class="wrap"><p>Houseguest is open source under the <a href="https://github.com/UnkoynX777/houseguest/blob/main/LICENSE">Apache-2.0 license</a>. <a href="https://github.com/UnkoynX777/houseguest">Source</a> · <a href="https://github.com/UnkoynX777/houseguest/releases">Releases</a> · <a href="https://github.com/UnkoynX777/houseguest/issues">Issues</a></p></div></footer>
+</body>
+</html>

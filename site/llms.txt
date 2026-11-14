@@ -1,0 +1,11 @@
+# Houseguest
+
+> Open-source Windows app blocker for guest sessions. The owner of a PC chooses which programs a guest account may run for a set time; a Windows service enforces the rules.
+
+Enforcement is reactive (a blocked program is terminated shortly after it starts). It uses no kernel driver, AppLocker, App Control or Windows Defender. Verified only on Windows 10 Pro 22H2. License: Apache-2.0.
+
+## Docs
+- [Install](https://unkoynx777.github.io/houseguest/install.html): download, verify, install, recover, uninstall
+- [FAQ](https://unkoynx777.github.io/houseguest/faq.html): short answers about limits, compatibility and privacy
+- [Security and limitations](https://unkoynx777.github.io/houseguest/security.html): guarantees per actor and known limits
+- [Source and documentation](https://github.com/UnkoynX777/houseguest): architecture, threat model, compatibility, performance

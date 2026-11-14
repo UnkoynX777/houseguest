@@ -39,12 +39,15 @@ The source code is public. Security rests on Windows access control, authenticat
 | Unauthorized commands | Per-command access class, owner token bound to SID | `e2e.ps1`, `install-test.ps1` |
 | PIN brute force | PBKDF2-SHA256 (600,000 iterations), persisted exponential back-off | Code review |
 | Audit tampering | Hash chain | Audit tests |
+| Uninstall during a guest session | The MSI asks the service whether a session is active and aborts unless an administrator passes `FORCE_UNINSTALL=1`; removal needs elevation either way | `install-test.ps1` |
+| Event session stopped or unavailable | Fallback to polling every second, retry of the event session, audit entry on every mode change, no enforcing session starts without supervision | `e2e.ps1` (stops the event session, checks polling, enforcement and recovery) |
 | Accidental lockout | Baseline, analysis, preview, audit mode, timed sessions | Core tests |
-| Malformed input | Strict JSON parsing with limits | Serialization tests |
+| Malformed input | Strict JSON parsing with limits | Serialization tests, libFuzzer targets for policies, globs, state and the command handler (AddressSanitizer) |
+| Recycled process ids | Single process handle per inspection, creation-time check against the event | Code review, `e2e.ps1` |
 
 ## Not yet verified
 
-Fuzzing of the pipe protocol, sanitizer builds, behavior under Windows 11 and non-Pro editions, and an independent security review. Until then, treat guarantees as design intent backed only by the tests listed above.
+Behaviour on Windows 11 and non-Pro editions, behaviour on modified or reduced Windows builds, and an independent security review. Fuzzing so far consists of short local runs (about 150 seconds per target, no findings) and a 30-second smoke run in CI; it is not a substitute for a long campaign. Treat guarantees as design intent backed by the tests listed above.
 
 ## Residual risks (accepted and disclosed)
 

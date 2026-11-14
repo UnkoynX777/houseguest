@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Security and limitations | Houseguest</title>
+<meta name="description" content="What Houseguest protects, what it cannot, how it is hardened, and how to report a vulnerability.">
+<link rel="canonical" href="https://unkoynx777.github.io/houseguest/security.html">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Houseguest">
+<meta property="og:title" content="Security and limitations | Houseguest">
+<meta property="og:description" content="What Houseguest protects, what it cannot, how it is hardened, and how to report a vulnerability.">
+<meta property="og:url" content="https://unkoynx777.github.io/houseguest/security.html">
+<meta property="og:image" content="https://unkoynx777.github.io/houseguest/img/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+
+</head>
+<body>
+<header class="site"><div class="wrap"><a class="brand" href="./"><img src="favicon.svg" alt="" width="30" height="30">Houseguest</a><nav class="main" aria-label="Main"><a href="./">Overview</a><a href="install.html">Install</a><a href="docs.html">Documentation</a><a href="faq.html">FAQ</a><a href="privacy.html">Privacy</a><a href="security.html" aria-current="page">Security</a><a href="https://github.com/UnkoynX777/houseguest">GitHub</a></nav></div></header>
+<main class="wrap">
+<section class="hero"><h1>Security and limitations</h1><p class="lead">The source is public. Security rests on Windows access control, authenticated IPC and cryptography, not on secrecy.</p></section>
+<table><thead><tr><th>Who</th><th>What Houseguest guarantees</th></tr></thead><tbody>
+<tr><td>Standard user, window closed</td><td>Rules keep applying. The service, its data and settings cannot be stopped, read or edited without administrator rights. Renaming an executable does not bypass hash or publisher rules. PIN guessing is rate limited.</td></tr>
+<tr><td>Guest during a session</td><td>The session ends on time. Allowed programs cannot change policy.</td></tr>
+<tr><td>Local administrator</td><td>Tampering is detectable. Removal and recovery are always possible, by design.</td></tr>
+<tr><td>Physical access</td><td>Nothing. Use BitLocker and a firmware password.</td></tr></tbody></table>
+<h2>Hardening</h2>
+<ul><li>Service runs as LocalSystem with a protected data folder and an HMAC-signed, atomically written state.</li><li>Authenticated named pipe with an explicit access list; caller identity comes from the pipe token.</li><li>Hash-chained audit log; PBKDF2-SHA256 PIN with persistent back-off.</li><li>The uninstaller refuses to run during an active guest session unless an administrator overrides it.</li><li>Fuzz targets for policies, globs, state and the command handler, AddressSanitizer builds, CodeQL, clang-tidy and dependency review in CI. Short fuzz runs found no issues; this is not an independent audit.</li></ul>
+<h2>Known limits</h2>
+<ul><li>Enforcement is reactive: a blocked program can run briefly.</li><li>Programs you allow can launch other programs.</li><li>Verified only on Windows 10 Pro 22H2; other editions and modified builds are untested.</li><li>Builds are not code signed yet.</li></ul>
+<p>Read the <a href="https://github.com/UnkoynX777/houseguest/blob/main/docs/threat-model.md">threat model</a>. Report vulnerabilities privately: <a href="https://github.com/UnkoynX777/houseguest/security/policy">security policy</a>.</p>
+</main>
+<footer><div class="wrap"><p>Houseguest is open source under the <a href="https://github.com/UnkoynX777/houseguest/blob/main/LICENSE">Apache-2.0 license</a>. <a href="https://github.com/UnkoynX777/houseguest">Source</a> · <a href="https://github.com/UnkoynX777/houseguest/releases">Releases</a> · <a href="https://github.com/UnkoynX777/houseguest/issues">Issues</a></p></div></footer>
+</body>
+</html>
