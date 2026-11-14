@@ -21,6 +21,8 @@
 
 #include "dialogs.hpp"
 #include "geometry.hpp"
+#include "icons.hpp"
+#include "recovery.hpp"
 #include "service_monitor.hpp"
 #include "tray.hpp"
 #include "ui_settings.hpp"
@@ -42,6 +44,7 @@ constexpr UINT kReplyMessage = WM_APP + 1;
 constexpr UINT kTrayMessage = WM_APP + 2;
 constexpr UINT kStatusMessage = WM_APP + 3;
 constexpr UINT kShowMessage = WM_APP + 4;
+constexpr UINT kRecoveryMessage = WM_APP + 5;
 constexpr UINT_PTR kTooltipTimer = 1;
 constexpr UINT kTooltipInterval = 15000;
 constexpr COREWEBVIEW2_COLOR kDarkBackground{255, 15, 20, 32};
@@ -54,6 +57,7 @@ struct App {
     host::UiSettings settings;
     std::unique_ptr<host::Tray> tray;
     std::unique_ptr<host::ServiceMonitor> monitor;
+    std::unique_ptr<host::IconService> icons;
     host::ServiceStatus status;
     std::chrono::steady_clock::time_point status_time;
     bool have_status = false;
@@ -170,9 +174,42 @@ Json update_prefs(const Json& args) {
     return prefs_json();
 }
 
+void restart_interface() {
+    wchar_t module[MAX_PATH];
+    GetModuleFileNameW(nullptr, module, MAX_PATH);
+    const auto arguments = L"--after " + std::to_wstring(GetCurrentProcessId());
+    ShellExecuteW(nullptr, L"open", module, arguments.c_str(), nullptr, SW_SHOWNORMAL);
+    g.exiting = true;
+    DestroyWindow(g.window);
+}
+
+void open_recovery() {
+    static bool open = false;
+    if (open) return;
+    open = true;
+    const auto outcome = host::show_recovery(g.window, portuguese());
+    open = false;
+    if (outcome == host::RecoveryResult::RestartInterface) restart_interface();
+}
+
 void handle_host_command(const Json& id, const std::string& command, const Json& args) {
     Json data;
-    if (command == "host.elevate") {
+    if (command == "host.icon") {
+        const auto path = args.value("path", std::string());
+        const int pixels = std::clamp(args.value("size", 48), 16, 128);
+        if (!g.icons || path.empty() || path.size() > 1024) {
+            post_to_view({{"id", id}, {"ok", true}, {"data", {{"png", ""}}}});
+            return;
+        }
+        g.icons->request(path, pixels, [id](std::string url) {
+            post_to_view({{"id", id}, {"ok", true}, {"data", {{"png", std::move(url)}}}});
+        });
+        return;
+    }
+    if (command == "host.recovery") {
+        PostMessageW(g.window, kRecoveryMessage, 0, 0);
+        data = {{"opened", true}};
+    } else if (command == "host.elevate") {
         const bool started = host::relaunch_elevated();
         if (started) {
             g.exiting = true;
@@ -277,6 +314,9 @@ void on_tray_menu() {
         case host::TrayCommand::Settings:
             navigate_to("settings");
             break;
+        case host::TrayCommand::Recovery:
+            open_recovery();
+            break;
         case host::TrayCommand::ToggleMinimizeToTray:
             update_prefs({{"minimize_to_tray", !g.settings.minimize_to_tray}});
             post_to_view({{"event", "prefs"}, {"prefs", prefs_json()}});
@@ -327,6 +367,16 @@ void configure_settings() {
 
 void register_handlers() {
     EventRegistrationToken token;
+    g.view->add_ProcessFailed(Callback<ICoreWebView2ProcessFailedEventHandler>(
+                                  [](ICoreWebView2*, ICoreWebView2ProcessFailedEventArgs* args) -> HRESULT {
+                                      COREWEBVIEW2_PROCESS_FAILED_KIND kind{};
+                                      args->get_ProcessFailedKind(&kind);
+                                      if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED)
+                                          PostMessageW(g.window, kRecoveryMessage, 0, 0);
+                                      return S_OK;
+                                  })
+                                  .Get(),
+                              &token);
     g.view->add_NavigationStarting(
         Callback<ICoreWebView2NavigationStartingEventHandler>(
             [](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
@@ -399,7 +449,7 @@ void register_handlers() {
 
 HRESULT on_controller_ready(HRESULT result, ICoreWebView2Controller* controller) {
     if (FAILED(result) || !controller) {
-        MessageBoxW(g.window, L"The WebView2 runtime could not be started.", L"Houseguest", MB_ICONERROR);
+        PostMessageW(g.window, kRecoveryMessage, 0, 0);
         return result;
     }
     g.controller = controller;
@@ -506,6 +556,10 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         case kShowMessage:
             show_window();
             return 0;
+        case kRecoveryMessage:
+            show_window();
+            open_recovery();
+            return 0;
         case kReplyMessage: {
             std::unique_ptr<std::wstring> text(reinterpret_cast<std::wstring*>(lparam));
             if (g.view) g.view->PostWebMessageAsString(text->c_str());
@@ -515,6 +569,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             KillTimer(window, kTooltipTimer);
             save_settings();
             g.monitor.reset();
+            g.icons.reset();
             g.tray.reset();
             PostQuitMessage(0);
             return 0;
@@ -542,13 +597,37 @@ HWND create_main_window(HINSTANCE instance, bool& maximized) {
     return window;
 }
 
-bool start_requested_hidden() {
+struct Launch {
+    bool hidden = false;
+    bool recovery = false;
+    DWORD wait_for = 0;
+};
+
+Launch parse_launch() {
     int count = 0;
     LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
-    bool hidden = false;
-    for (int i = 1; i < count; ++i) hidden = hidden || std::wstring_view(arguments[i]) == L"--tray";
+    Launch launch;
+    for (int i = 1; i < count; ++i) {
+        const std::wstring_view argument = arguments[i];
+        launch.hidden = launch.hidden || argument == L"--tray";
+        launch.recovery = launch.recovery || argument == L"--recovery";
+        if (argument == L"--after" && i + 1 < count)
+            launch.wait_for = static_cast<DWORD>(_wtoi(arguments[i + 1]));
+    }
     LocalFree(reinterpret_cast<HLOCAL>(arguments));
-    return hidden;
+    return launch;
+}
+
+void wait_for_previous_instance(DWORD pid) {
+    if (pid == 0) return;
+    if (HANDLE previous = OpenProcess(SYNCHRONIZE, FALSE, pid)) {
+        WaitForSingleObject(previous, 10000);
+        CloseHandle(previous);
+    }
+}
+
+std::filesystem::path icon_cache_directory() {
+    return user_data_directory().parent_path() / L"icons";
 }
 
 void create_webview(const std::filesystem::path& data_directory) {
@@ -564,6 +643,7 @@ void create_webview(const std::filesystem::path& data_directory) {
             [](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
                 if (FAILED(result) || !environment) {
                     host::offer_webview_runtime(g.window, portuguese());
+                    PostMessageW(g.window, kRecoveryMessage, 0, 0);
                     return result;
                 }
                 return environment->CreateCoreWebView2Controller(
@@ -579,6 +659,8 @@ void create_webview(const std::filesystem::path& data_directory) {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+    const auto launch = parse_launch();
+    wait_for_previous_instance(launch.wait_for);
     HANDLE single = CreateMutexW(
         nullptr, TRUE, host::is_elevated() ? L"Local\\HouseguestUI.elevated" : L"Local\\HouseguestUI");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -600,13 +682,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
 
     if (!host::webview_runtime_installed()) host::offer_webview_runtime(g.window, portuguese());
 
-    const bool hidden = start_requested_hidden();
+    const bool hidden = launch.hidden;
     if (!hidden) ShowWindow(g.window, maximized ? SW_SHOWMAXIMIZED : SW_SHOW);
 
     const auto data_directory = user_data_directory();
     std::filesystem::create_directories(data_directory);
     create_webview(data_directory);
+    g.icons = std::make_unique<host::IconService>(icon_cache_directory());
     g.monitor = std::make_unique<host::ServiceMonitor>(g.window, kStatusMessage);
+    if (launch.recovery) PostMessageW(g.window, kRecoveryMessage, 0, 0);
     SetTimer(g.window, kTooltipTimer, kTooltipInterval, nullptr);
 
     MSG message;

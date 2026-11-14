@@ -11,7 +11,7 @@
 
 namespace houseguest::host {
 
-enum class TrayCommand { Open, Settings, ToggleMinimizeToTray, ToggleAutostart, Exit };
+enum class TrayCommand { Open, Settings, Recovery, ToggleMinimizeToTray, ToggleAutostart, Exit };
 
 struct TrayText {
     std::wstring headline;

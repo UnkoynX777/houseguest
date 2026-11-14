@@ -81,7 +81,11 @@ void usage() {
         "  recover [--reset-owner]     end the active session without the PIN (elevated)\n"
         "  guard                       exit code 3 while a guest session is active (used by the "
         "uninstaller)\n"
-        "  call <cmd> [json-args]      run any owner command; PIN from HOUSEGUEST_PIN or prompt\n");
+        "  call <cmd> [json-args]      run any owner command; PIN from HOUSEGUEST_PIN or prompt\n"
+        "  continuity                  show how Houseguest recognises its own programs\n"
+        "  blocks [count]              recent blocked programs with the reason and the advice\n"
+        "  explain <path> [profile]    why a program is allowed or blocked, with its dependencies\n"
+        "  reviews                     programs waiting for the owner's decision\n");
 }
 
 }  // namespace
@@ -125,6 +129,32 @@ int main(int argc, char** argv) {
     if (command == "recover") {
         const bool reset = argc > 2 && std::string(argv[2]) == "--reset-owner";
         return print_result(call(client, "recover", {{"reset_owner", reset}}));
+    }
+
+    if (command == "continuity" || command == "reviews") {
+        return print_result(call(client, command == "reviews" ? "reviews.list" : "continuity.report",
+                                 Json::object(), unlock(client)));
+    }
+
+    if (command == "blocks") {
+        const int count = argc > 2 ? std::atoi(argv[2]) : 25;
+        return print_result(call(client, "blocks.list", {{"limit", count > 0 ? count : 25}}, unlock(client)));
+    }
+
+    if (command == "explain" && argc >= 3) {
+        const auto token = unlock(client);
+        std::string profile = argc > 3 ? argv[3] : "";
+        if (profile.empty()) {
+            const auto dashboard = call(client, "dashboard", Json::object(), token);
+            if (dashboard.value("ok", false) && dashboard["data"].contains("session"))
+                profile = dashboard["data"]["session"].value("profile_id", "");
+        }
+        if (profile.empty()) {
+            std::fputs("No session is active. Name a profile id: explain <path> <profile-id>\n", stderr);
+            return 2;
+        }
+        return print_result(
+            call(client, "apps.explain", {{"profile_id", profile}, {"path", argv[2]}}, token));
     }
 
     if (command == "call" && argc >= 3) {

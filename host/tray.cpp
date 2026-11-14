@@ -155,6 +155,8 @@ std::optional<TrayCommand> Tray::show_menu(const TrayText& text, const TrayMenuS
                 pick(pt, L"Open Houseguest", L"Abrir o Houseguest").c_str());
     AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(TrayCommand::Settings) + 1,
                 pick(pt, L"Settings", L"Configurações").c_str());
+    AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(TrayCommand::Recovery) + 1,
+                pick(pt, L"Recovery console", L"Console de recuperação").c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(
         menu, MF_STRING | (state.minimize_to_tray ? MF_CHECKED : 0),
