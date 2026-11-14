@@ -1,0 +1,23 @@
+build/
+out/
+.vs/
+.vscode/
+*.user
+CMakeUserPresets.json
+node_modules/
+
+# Private/AI tooling notes must never be versioned (also enforced by scripts/check-repo-hygiene.ps1)
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/
+.cursor/
+.codex/
+.agents/
+*.private.*
+.env
+.env.*
+*.pfx
+*.pem
+*.key
+ui/dist/

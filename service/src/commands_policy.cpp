@@ -1,0 +1,139 @@
+#include <algorithm>
+
+#include "houseguest/core/analysis.hpp"
+#include "houseguest/system/text.hpp"
+#include "houseguest/system/windows_info.hpp"
+
+#include "command_support.hpp"
+#include "controller.hpp"
+
+namespace houseguest::service {
+
+using core::Json;
+
+void Controller::register_policy_commands() {
+    using Args = const Json&;
+    using Who = const Caller&;
+
+    add("profiles.list", Access::Owner, [this](Who, Args) {
+        Json list = Json::array();
+        for (const auto& profile : store_.state.profiles) list.push_back(core::to_json(profile));
+        return list;
+    });
+
+    add("profiles.save", Access::Owner, [this](Who caller, Args args) {
+        auto profile = core::profile_from_json(args.at("profile"));
+        if (session_uses(profile.id))
+            throw Failure("conflict", "This profile is used by the active session.");
+        const auto it = std::ranges::find(store_.state.profiles, profile.id, &core::Profile::id);
+        if (it == store_.state.profiles.end())
+            store_.state.profiles.push_back(profile);
+        else
+            *it = profile;
+        store_.save();
+        audit_->append(caller.sid, "profile.saved",
+                       {{"profile", profile.id}, {"name", profile.name}, {"rules", profile.rules.size()}});
+        return core::to_json(profile);
+    });
+
+    add("profiles.import", Access::Owner, [this](Who caller, Args args) {
+        auto profile = core::profile_from_json(args.at("profile"));
+        profile.id = random_id("p-");
+        store_.state.profiles.push_back(profile);
+        store_.save();
+        audit_->append(caller.sid, "profile.imported", {{"profile", profile.id}, {"name", profile.name}});
+        return core::to_json(profile);
+    });
+
+    add("profiles.delete", Access::Owner, [this](Who caller, Args args) {
+        const auto id = require_text(args, "id");
+        if (session_uses(id)) throw Failure("conflict", "This profile is used by the active session.");
+        find_profile(id);
+        std::erase_if(store_.state.profiles, [&](const core::Profile& p) { return p.id == id; });
+        store_.save();
+        audit_->append(caller.sid, "profile.deleted", {{"profile", id}});
+        return Json::object();
+    });
+
+    add(
+        "apps.discover", Access::Owner,
+        [](Who, Args) {
+            Json list = Json::array();
+            for (const auto& app : system::discover_installed_apps()) {
+                list.push_back({{"name", app.name}, {"path", app.path}, {"company", app.company}});
+            }
+            return list;
+        },
+        true);
+
+    add(
+        "apps.inspect", Access::Owner,
+        [this](Who, Args args) {
+            const auto path = system::path_from_utf8(require_text(args, "path"));
+            std::error_code ec;
+            if (!path.is_absolute() || !std::filesystem::is_regular_file(path, ec))
+                throw Failure("not_found", "File not found.");
+            auto identity = resolver_.resolve(path, true, true);
+            auto json = core::to_json(identity);
+            json["size"] = std::filesystem::file_size(path, ec);
+            return json;
+        },
+        true);
+
+    add(
+        "users.list", Access::Owner,
+        [this](Who, Args) {
+            Json list = Json::array();
+            for (const auto& user : system::list_local_users()) {
+                if (user.disabled) continue;
+                list.push_back(
+                    {{"name", user.name}, {"sid", user.sid}, {"owner", user.sid == store_.state.owner_sid}});
+            }
+            return list;
+        },
+        true);
+
+    add(
+        "policy.preview", Access::Owner,
+        [this](Who, Args args) {
+            core::Profile profile;
+            std::vector<std::string> guests;
+            Compiled compiled;
+            {
+                std::scoped_lock lock(mutex_);
+                profile = args.contains("profile") ? core::profile_from_json(args["profile"])
+                                                   : find_profile(require_text(args, "profile_id"));
+                guests = args.value("guest_sids", std::vector<std::string>{});
+                compiled = compile(profile, {}, guests, false);
+            }
+            Json result{{"findings", compiled.findings},
+                        {"errors", compiled.has_errors},
+                        {"warnings", compiled.has_warnings}};
+
+            Json apps = Json::array();
+            std::size_t allowed = 0, denied = 0;
+            const auto now = std::chrono::system_clock::now();
+            for (const auto& app : system::discover_installed_apps()) {
+                const auto identity =
+                    resolver_.resolve(system::path_from_utf8(app.path), compiled.policy->needs_hash,
+                                      compiled.policy->needs_publisher);
+                const auto decision =
+                    core::evaluate(compiled.policy->profile, compiled.policy->baseline, identity, now);
+                (decision.action == core::Action::Allow ? allowed : denied)++;
+                apps.push_back({{"name", app.name},
+                                {"path", app.path},
+                                {"action", action_name(decision.action)},
+                                {"rule", decision.rule_id},
+                                {"source", decision.source == core::DecisionSource::Baseline ? "baseline"
+                                           : decision.source == core::DecisionSource::Rule   ? "rule"
+                                                                                             : "default"}});
+            }
+            result["allowed"] = allowed;
+            result["denied"] = denied;
+            result["apps"] = std::move(apps);
+            return result;
+        },
+        true);
+}
+
+}  // namespace houseguest::service
