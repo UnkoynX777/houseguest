@@ -9,6 +9,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "houseguest/system/capabilities.hpp"
 
@@ -98,6 +99,7 @@ private:
                        core::Json detail);
     void timer_loop(const std::stop_token& stop);
     void on_denial(const Denial& denial);
+    void on_allowed(const Denial& allowed);
     void on_mode(SupervisionMode mode, const std::string& reason);
     core::Json supervisor_json() const;
     core::Json status_json() const;
@@ -122,6 +124,8 @@ private:
     std::mutex token_mutex_;
     std::unordered_map<std::string, Token> tokens_;
     std::mutex limited_mutex_;
+    std::mutex allowed_mutex_;
+    std::unordered_set<std::string> allowed_seen_;
     std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::uint64_t>>
         limited_notice_;
     std::mutex failure_mutex_;

@@ -515,8 +515,6 @@ Supervisor::Outcome Supervisor::inspect(Pending& pending) {
         if (!again || *again != assessment.image) return retry("unstable_image", 0);
     }
     const auto& decision = assessment.decision;
-    if (decision.action == core::Action::Allow) return settle(Outcome::Settled);
-
     Denial denial;
     denial.pid = pending.pid;
     denial.session_id = assessment.session;
@@ -530,6 +528,11 @@ Supervisor::Outcome Supervisor::inspect(Pending& pending) {
         if (const auto parent = system::ProcessRef::open(assessment.parent_pid)) {
             if (const auto path = parent->image_path()) denial.parent_path = system::path_to_utf8(*path);
         }
+    }
+
+    if (decision.action == core::Action::Allow) {
+        if (on_allow_ && decision.source != core::DecisionSource::Protected) on_allow_(denial);
+        return settle(Outcome::Settled);
     }
 
     if (!policy->audit_only) {

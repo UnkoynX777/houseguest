@@ -25,6 +25,15 @@ public:
 
     void append(const std::string& actor, const std::string& event, core::Json detail = core::Json::object());
     core::Json tail(std::size_t limit) const;
+
+    struct Query {
+        std::size_t limit = 50;
+        std::uint64_t before = 0;
+        std::vector<std::string> events;
+        std::string text;
+        std::int64_t since = 0;
+    };
+    core::Json query(const Query& query) const;
     [[nodiscard]] AuditReport verify() const;
     [[nodiscard]] bool verify_chain() const { return verify().valid; }
     [[nodiscard]] std::uint64_t write_failures() const;

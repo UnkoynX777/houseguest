@@ -37,6 +37,23 @@ void Controller::register_system_commands() {
         return audit_->tail(static_cast<std::size_t>(require_int(args, "limit", 1, 1000)));
     });
 
+    add("audit.query", Access::Owner, [this](Who, Args args) {
+        AuditLog::Query query;
+        query.limit =
+            static_cast<std::size_t>(args.contains("limit") ? require_int(args, "limit", 1, 200) : 50);
+        if (args.contains("before"))
+            query.before = static_cast<std::uint64_t>(require_int(args, "before", 0, INT64_MAX));
+        if (args.contains("since")) query.since = require_int(args, "since", 0, INT64_MAX);
+        if (args.contains("text")) query.text = require_text(args, "text").substr(0, 120);
+        if (args.contains("events") && args["events"].is_array()) {
+            for (const auto& name : args["events"]) {
+                if (name.is_string() && query.events.size() < 64)
+                    query.events.push_back(name.get<std::string>());
+            }
+        }
+        return audit_->query(query);
+    });
+
     add("audit.verify", Access::Owner, [this](Who, Args) {
         const auto report = audit_->verify();
         return Json{{"valid", report.valid},

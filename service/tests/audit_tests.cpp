@@ -216,3 +216,34 @@ TEST_CASE("logs written before keyed sealing keep verifying", "[audit][compatibi
     CHECK(report.entries == 4);
     std::filesystem::remove_all(directory);
 }
+
+TEST_CASE("audit entries always carry an object detail and queries page newest first", "[audit]") {
+    const auto directory = fresh_directory("hg-audit-query");
+    AuditLog log(directory / "audit.log", test_key());
+    log.append("owner", "unlock", houseguest::core::Json());
+    for (int i = 0; i < 5; ++i)
+        log.append("supervisor", i % 2 ? "app.blocked" : "app.allowed",
+                   {{"path", "c:/tool" + std::to_string(i) + ".exe"}});
+    CHECK(log.verify().valid);
+
+    for (const auto& entry : log.tail(10)) CHECK(entry["detail"].is_object());
+
+    AuditLog::Query query;
+    query.limit = 2;
+    auto page = log.query(query);
+    REQUIRE(page["entries"].size() == 2);
+    CHECK(page["more"] == true);
+    CHECK(page["entries"][0]["detail"]["path"] == "c:/tool4.exe");
+
+    query.before = page["entries"][1]["seq"].get<std::uint64_t>();
+    query.events = {"app.blocked"};
+    query.limit = 10;
+    page = log.query(query);
+    CHECK(page["more"] == false);
+    REQUIRE(page["entries"].size() == 1);
+    CHECK(page["entries"][0]["event"] == "app.blocked");
+
+    AuditLog::Query search;
+    search.text = "TOOL0";
+    CHECK(log.query(search)["entries"].size() == 1);
+}

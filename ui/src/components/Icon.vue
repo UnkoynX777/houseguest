@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import {
   Activity,
+  Ban,
+  ChevronDown,
+  CircleCheck,
+  Ellipsis,
+  KeyRound,
+  Layers,
+  Wrench,
   Check,
   Clock,
   Copy,
@@ -66,6 +73,13 @@ const icons: Record<string, Component> = {
   list: List,
   link: Link2,
   flask: FlaskConical,
+  ban: Ban,
+  chevron: ChevronDown,
+  allowed: CircleCheck,
+  more: Ellipsis,
+  key: KeyRound,
+  layers: Layers,
+  tool: Wrench,
 };
 
 defineProps<{ name: string }>();

@@ -1,17 +1,20 @@
 import { t } from '../i18n';
 import type { AuditEntry } from '../types';
 
-export type EventGroup = 'blocked' | 'sessions' | 'security' | 'changes';
+export type EventGroup = 'blocked' | 'allowed' | 'sessions' | 'security' | 'changes';
 
 const groups: Record<string, EventGroup> = {
   'app.blocked': 'blocked',
   'app.would_block': 'blocked',
   'app.block_failed': 'blocked',
+  'app.allowed': 'allowed',
   'protection.spared': 'blocked',
   'session.started': 'sessions',
   'session.ended': 'sessions',
   'session.extended': 'sessions',
   'session.resumed': 'sessions',
+  'session.ending': 'sessions',
+  'session.resume_failed': 'sessions',
   'exception.added': 'sessions',
   unlock: 'security',
   'unlock.denied': 'security',
@@ -25,12 +28,21 @@ const groups: Record<string, EventGroup> = {
 
 export const groupOf = (entry: AuditEntry): EventGroup => groups[entry.event] ?? 'changes';
 
+export const eventsOf = (group: EventGroup): string[] =>
+  Object.entries(groups).filter(([, g]) => g === group).map(([name]) => name);
+
+export const isDecision = (entry: AuditEntry) => groupOf(entry) === 'blocked' && entry.event !== 'protection.spared' || entry.event === 'app.allowed';
+
 const fileName = (path: unknown) => String(path ?? '').split('\\').pop() ?? '';
 
 export function eventLabel(entry: AuditEntry): string {
-  const d = entry.detail;
+  const d = entry.detail ?? {};
   switch (entry.event) {
     case 'app.blocked': return t('Blocked {name}', { name: fileName(d.path) });
+    case 'app.allowed': return t('Allowed {name}', { name: fileName(d.path) });
+    case 'session.ending': return t('Session is ending');
+    case 'session.resume_failed': return t('Session could not be resumed');
+    case 'inspection.failed': return t('A process could not be inspected');
     case 'app.would_block': return t('Would block {name} (audit mode)', { name: fileName(d.path) });
     case 'session.started': return t('Session started for {n} minutes', { n: Number(d.minutes) });
     case 'session.ended': return t('Session ended ({reason})', { reason: String(d.reason) });

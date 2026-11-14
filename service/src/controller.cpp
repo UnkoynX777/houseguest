@@ -124,6 +124,7 @@ Controller::Controller(std::filesystem::path data_directory, bool enable_enforce
         assessor_, lineage_, discovery_, [this](const Denial& d) { on_denial(d); },
         [this](SupervisionMode mode, const std::string& reason) { on_mode(mode, reason); },
         [this](const InspectionFailure& failure) { on_failure(failure); });
+    supervisor_->on_allowed([this](const Denial& allowed) { on_allowed(allowed); });
     if (enable_enforcement) supervisor_->start();
     register_commands();
 
@@ -481,6 +482,28 @@ void Controller::on_denial(const Denial& denial) {
                                : name +
                                      L" was needed by an allowed program but is not approved. Ask the "
                                      L"owner to review it in Houseguest.");
+}
+
+void Controller::on_allowed(const Denial& allowed) {
+    const auto& decision = allowed.decision;
+    const auto key = std::to_string(allowed.session_id) + "|" + allowed.user_sid + "|" + allowed.app.path;
+    {
+        std::scoped_lock lock(allowed_mutex_);
+        if (allowed_seen_.size() >= 2048) allowed_seen_.clear();
+        if (!allowed_seen_.insert(key).second) return;
+    }
+    audit_->append("supervisor", "app.allowed",
+                   {{"path", allowed.app.path},
+                    {"process", system::path_to_utf8(system::path_from_utf8(allowed.app.path).filename())},
+                    {"publisher", allowed.app.publisher},
+                    {"user_sid", allowed.user_sid},
+                    {"profile_id", allowed.profile_id},
+                    {"profile", allowed.profile_name},
+                    {"rule", decision.rule_id},
+                    {"source", core::source_name(decision.source)},
+                    {"reason", decision.reason},
+                    {"related_app", decision.app_id},
+                    {"parent", allowed.parent_path}});
 }
 
 void Controller::on_mode(SupervisionMode mode, const std::string& reason) {

@@ -52,7 +52,13 @@ function send<T>(cmd: string, args: object, token?: string): Promise<T> {
       return;
     }
     const id = ++sequence;
-    pending.set(id, { resolve, reject });
+    const timer = setTimeout(() => {
+      if (pending.delete(id)) reject(new ApiError('timeout', 'The service did not answer in time.'));
+    }, 30000);
+    pending.set(id, {
+      resolve: (value) => (clearTimeout(timer), resolve(value)),
+      reject: (error) => (clearTimeout(timer), reject(error)),
+    });
     bridge.postMessage(JSON.stringify({ id, cmd, args, ...(token ? { token } : {}) }));
   });
 }

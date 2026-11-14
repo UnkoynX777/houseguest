@@ -3,7 +3,9 @@ import { onMounted, ref } from 'vue';
 
 import { call, host } from '../api';
 import Icon from '../components/Icon.vue';
+import Menu from '../components/Menu.vue';
 import Modal from '../components/Modal.vue';
+import PageHeader from '../components/PageHeader.vue';
 import { t } from '../i18n';
 import { app, attempt, go, loadProfiles, notify, profileLabel, randomId } from '../store';
 import type { Profile } from '../types';
@@ -12,6 +14,21 @@ const creating = ref(false);
 const name = ref('');
 const base = ref('');
 const deleting = ref<Profile>();
+const renaming = ref<Profile>();
+const newName = ref('');
+
+function startRename(profile: Profile) {
+  renaming.value = profile;
+  newName.value = profileLabel(profile);
+}
+
+async function rename() {
+  const profile = renaming.value;
+  renaming.value = undefined;
+  if (!profile || !newName.value.trim()) return;
+  await attempt(() => call('profiles.save', { profile: { ...profile, name: newName.value.trim() } }), t('Profile renamed.'));
+  await loadProfiles();
+}
 
 onMounted(() => attempt(loadProfiles));
 
@@ -82,28 +99,39 @@ async function remove() {
       <button class="btn primary" @click="creating = true"><Icon name="plus" />{{ t('New profile') }}</button>
     </PageHeader>
 
-    <div class="grid cols-3">
-      <div v-for="profile in app.profiles" :key="profile.id" class="card stack" style="gap: 10px">
-        <div class="row">
-          <h2 class="grow truncate">{{ profileLabel(profile) }}</h2>
+    <div class="cards">
+      <article v-for="profile in app.profiles" :key="profile.id" class="card profile-card">
+        <div class="title">
+          <span class="profile-glyph"><Icon :name="profile.default_action === 'deny' ? 'shield' : 'allowed'" /></span>
+          <h2 class="grow truncate" :title="profileLabel(profile)">{{ profileLabel(profile) }}</h2>
           <span v-if="builtin(profile)" class="badge">{{ t('Template') }}</span>
         </div>
-        <p class="muted" style="min-height: 42px">{{ describeBuiltin(profile) || t('Custom profile.') }}</p>
-        <div class="row wrap">
+        <p class="desc">{{ describeBuiltin(profile) || t('Custom profile.') }}</p>
+        <div class="facts">
           <span class="badge" :class="profile.default_action === 'deny' ? 'bad' : 'ok'">{{ profile.default_action === 'deny' ? t('Blocks by default') : t('Allows by default') }}</span>
-          <span class="badge">{{ t('{n} rules', { n: profile.rules.length }) }}</span>
           <span class="badge info">{{ t('{n} applications', { n: profile.apps?.length ?? 0 }) }}</span>
+          <span class="badge">{{ t('{n} rules', { n: profile.rules.length }) }}</span>
           <span v-if="dependencies(profile)" class="badge">{{ t('{n} dependencies', { n: dependencies(profile) }) }}</span>
         </div>
-        <div class="row" style="margin-top: 4px">
-          <button class="btn sm primary" @click="go('apps', profile.id)"><Icon name="apps" />{{ t('Applications') }}</button>
-          <button class="btn sm" @click="go('rules', profile.id)"><Icon name="edit" />{{ t('Edit rules') }}</button>
-          <button class="btn sm icon ghost right" :aria-label="t('Duplicate')" :title="t('Duplicate')" @click="duplicate(profile)"><Icon name="copy" /></button>
-          <button class="btn sm icon ghost" :aria-label="t('Export')" :title="t('Export')" @click="exportProfile(profile)"><Icon name="download" /></button>
-          <button class="btn sm icon ghost" :aria-label="t('Delete')" :title="t('Delete')" @click="deleting = profile"><Icon name="trash" /></button>
+        <div class="foot">
+          <button class="btn primary" @click="go('apps', profile.id)"><Icon name="apps" />{{ t('Applications') }}</button>
+          <button class="btn" @click="go('rules', profile.id)"><Icon name="edit" />{{ t('Rules') }}</button>
+          <span class="grow" />
+          <Menu :label="t('Actions for {name}', { name: profileLabel(profile) })">
+            <button role="menuitem" @click="startRename(profile)"><Icon name="edit" />{{ t('Rename') }}</button>
+            <button role="menuitem" @click="duplicate(profile)"><Icon name="copy" />{{ t('Duplicate') }}</button>
+            <button role="menuitem" @click="exportProfile(profile)"><Icon name="download" />{{ t('Export') }}</button>
+            <hr />
+            <button role="menuitem" class="danger" @click="deleting = profile"><Icon name="trash" />{{ t('Delete') }}</button>
+          </Menu>
         </div>
-      </div>
+      </article>
     </div>
+
+    <Modal v-if="renaming" :title="t('Rename profile')" @close="renaming = undefined">
+      <div class="field"><label for="rname">{{ t('Name') }}</label><input id="rname" v-model="newName" class="input" maxlength="60" @keyup.enter="rename" /></div>
+      <template #footer><button class="btn" @click="renaming = undefined">{{ t('Cancel') }}</button><button class="btn primary" :disabled="!newName.trim()" @click="rename">{{ t('Save') }}</button></template>
+    </Modal>
 
     <Modal v-if="creating" :title="t('New profile')" @close="creating = false">
       <div class="field"><label for="pname">{{ t('Name') }}</label><input id="pname" v-model="name" class="input" maxlength="60" @keyup.enter="name.trim() && create()" /></div>

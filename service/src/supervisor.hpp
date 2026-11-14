@@ -92,6 +92,7 @@ public:
     bool start();
     void stop();
     void apply(std::shared_ptr<const EnforcementPolicy> policy);
+    void on_allowed(DenialHandler handler) { on_allow_ = std::move(handler); }
     void sweep();
     [[nodiscard]] SupervisionMode mode() const { return mode_; }
     [[nodiscard]] bool running() const { return mode_ != SupervisionMode::Stopped; }
@@ -141,6 +142,7 @@ private:
     Lineage& lineage_;
     Discovery& discovery_;
     DenialHandler on_denial_;
+    DenialHandler on_allow_;
     ModeHandler on_mode_;
     FailureHandler on_failure_;
     ProcessTrace trace_;

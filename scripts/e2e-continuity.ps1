@@ -115,6 +115,13 @@ try {
     $explain = HgJson call apps.explain (@{ profile_id = 'builtin-restricted'; path = "$apps\launcher.exe" } | ConvertTo-Json -Compress)
     Check 'diagnosis is built from real data' ($explain.decision.action -eq 'allow' -and $explain.summary.approved -ge 1 -and $explain.summary.pending -ge 1)
 
+    $allowed = (HgJson call audit.query (@{ limit = 50; events = @('app.allowed') } | ConvertTo-Json -Compress)).entries
+    Check 'allowed programs are recorded for the history' (@($allowed | Where-Object { $_.detail.path -like '*launcher.exe' }).Count -ge 1)
+    $page = HgJson call audit.query (@{ limit = 2 } | ConvertTo-Json -Compress)
+    $older = HgJson call audit.query (@{ limit = 2; before = $page.entries[1].seq } | ConvertTo-Json -Compress)
+    Check 'history pages newest first without repeating' ($page.entries.Count -eq 2 -and $page.more -and $older.entries[0].seq -lt $page.entries[1].seq)
+    Check 'every history entry carries an object detail' (@((HgJson call audit.query (@{ limit = 200 } | ConvertTo-Json -Compress)).entries | Where-Object { $null -eq $_.detail }).Count -eq 0)
+
     $diag = HgJson call diagnostics
     Write-Host ("lineage records: {0}; assessments avg {1:N0} us p95 {2:N0} us; spared {3}" -f $diag.supervisor.lineage_records, $diag.supervisor.assessment_us.average, $diag.supervisor.assessment_us.p95, $diag.supervisor.protection_spared)
     Check 'lineage tracked the verified Houseguest tree' ($diag.supervisor.lineage_records -ge 1)

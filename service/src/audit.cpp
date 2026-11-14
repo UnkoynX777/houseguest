@@ -178,6 +178,7 @@ bool AuditLog::append_line(const std::string& line) {
 void AuditLog::append(const std::string& actor, const std::string& event, core::Json detail) {
     std::scoped_lock lock(mutex_);
     rotate_if_needed();
+    if (!detail.is_object()) detail = core::Json::object();
     core::Json entry{{"v", kCurrentVersion}, {"seq", sequence_ + 1}, {"ts", now_seconds()},
                      {"actor", actor},       {"event", event},       {"detail", std::move(detail)},
                      {"prev", last_hash_}};
@@ -210,6 +211,7 @@ core::Json AuditLog::tail(std::size_t limit) const {
             if (line.size() > kMaxLineBytes) continue;
             auto entry = core::Json::parse(line, nullptr, false);
             if (entry.is_discarded() || !entry.is_object()) continue;
+            if (!entry.value("detail", core::Json()).is_object()) entry["detail"] = core::Json::object();
             local.push_back(std::move(entry));
             if (local.size() > limit) local.pop_front();
         }
@@ -221,6 +223,46 @@ core::Json AuditLog::tail(std::size_t limit) const {
     core::Json result = core::Json::array();
     for (auto it = window.rbegin(); it != window.rend(); ++it) result.push_back(std::move(*it));
     return result;
+}
+
+core::Json AuditLog::query(const Query& query) const {
+    std::scoped_lock lock(mutex_);
+    const auto lowered = [](std::string text) {
+        std::ranges::transform(text, text.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return text;
+    };
+    const auto needle = lowered(query.text);
+    core::Json page = core::Json::array();
+    bool more = false;
+    auto files = files_oldest_first();
+    for (auto file = files.rbegin(); file != files.rend() && !more; ++file) {
+        std::ifstream in(*file);
+        std::vector<core::Json> lines;
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line.size() > kMaxLineBytes) continue;
+            auto entry = core::Json::parse(line, nullptr, false);
+            if (entry.is_discarded() || !entry.is_object()) continue;
+            lines.push_back(std::move(entry));
+        }
+        for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+            const auto sequence = it->value("seq", std::uint64_t{0});
+            if (query.before != 0 && sequence >= query.before) continue;
+            if (it->value("ts", std::int64_t{0}) < query.since) continue;
+            if (!query.events.empty() &&
+                std::ranges::find(query.events, it->value("event", std::string())) == query.events.end())
+                continue;
+            if (!it->value("detail", core::Json()).is_object()) (*it)["detail"] = core::Json::object();
+            if (!needle.empty() && lowered(it->dump()).find(needle) == std::string::npos) continue;
+            if (page.size() == query.limit) {
+                more = true;
+                break;
+            }
+            page.push_back(std::move(*it));
+        }
+    }
+    return {{"entries", std::move(page)}, {"more", more}};
 }
 
 AuditReport AuditLog::verify() const {

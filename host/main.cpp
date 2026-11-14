@@ -47,8 +47,8 @@ constexpr UINT kShowMessage = WM_APP + 4;
 constexpr UINT kRecoveryMessage = WM_APP + 5;
 constexpr UINT_PTR kTooltipTimer = 1;
 constexpr UINT kTooltipInterval = 15000;
-constexpr COREWEBVIEW2_COLOR kDarkBackground{255, 15, 20, 32};
-constexpr COREWEBVIEW2_COLOR kLightBackground{255, 250, 248, 244};
+constexpr COREWEBVIEW2_COLOR kDarkBackground{255, 27, 27, 29};
+constexpr COREWEBVIEW2_COLOR kLightBackground{255, 243, 243, 241};
 
 struct App {
     HWND window = nullptr;
@@ -87,8 +87,10 @@ void apply_theme() {
     const BOOL dark = dark_in_effect();
     if (g.window) {
         DwmSetWindowAttribute(g.window, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
-        static HBRUSH dark_brush = CreateSolidBrush(RGB(15, 20, 32));
-        static HBRUSH light_brush = CreateSolidBrush(RGB(250, 248, 244));
+        const COLORREF caption = dark ? RGB(27, 27, 29) : RGB(243, 243, 241);
+        DwmSetWindowAttribute(g.window, DWMWA_CAPTION_COLOR, &caption, sizeof(caption));
+        static HBRUSH dark_brush = CreateSolidBrush(RGB(27, 27, 29));
+        static HBRUSH light_brush = CreateSolidBrush(RGB(243, 243, 241));
         SetClassLongPtrW(g.window, GCLP_HBRBACKGROUND,
                          reinterpret_cast<LONG_PTR>(dark ? dark_brush : light_brush));
         RedrawWindow(g.window, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_ERASE);
@@ -585,7 +587,7 @@ HWND create_main_window(HINSTANCE instance, bool& maximized) {
     window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     window_class.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1));
     window_class.hIconSm = window_class.hIcon;
-    window_class.hbrBackground = CreateSolidBrush(dark_in_effect() ? RGB(15, 20, 32) : RGB(250, 248, 244));
+    window_class.hbrBackground = CreateSolidBrush(dark_in_effect() ? RGB(27, 27, 29) : RGB(243, 243, 241));
     window_class.lpszClassName = kWindowClass;
     RegisterClassExW(&window_class);
 

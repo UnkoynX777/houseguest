@@ -4,6 +4,21 @@ All notable changes are documented here. The project follows [Semantic Versionin
 
 ## [Unreleased]
 
+## [0.4.1]
+
+### Fixed
+- The History page was blank when the log held an entry without detail (owner setup and unlock events were stored with a null detail), because the page read a field of null while rendering. The service now always writes and returns an object detail, and the page tolerates old entries.
+- The History page hid service errors behind an empty list. It now shows the real error with a retry button, a designed empty state, and a request timeout so a lost reply cannot leave it loading forever.
+- Profile cards overflowed their column and cut buttons. Cards now flow in a responsive grid, keep one primary action and move the rest into a menu, and no page scrolls sideways down to 480 px wide.
+
+### Added
+- History records the programs a session allowed (once per program and session, never for Windows components that are only left running), shows the program icon, outcome, profile, rule and reason, and opens a technical detail view with the review action for blocks.
+- `audit.query` pages the log newest first with event, period and text filters, so the page loads fifty entries at a time.
+- Profiles can be renamed from the card menu.
+
+### Changed
+- Neutral, flatter design tokens, smaller type, thinner scrollbars that follow the theme, and a window caption and background that match the interface in both themes.
+
 ## [0.4.0]
 
 ### Fixed
