@@ -43,10 +43,10 @@ public:
     Assessment assess(const system::ProcessRef& process, std::uint64_t created, const std::string& sid,
                       const EnforcementPolicy* policy, bool final, const ParentPending& parent_pending);
 
-    void resolve_fully(Assessment& assessment, const system::ProcessRef& process);
+    void resolve_fully(Assessment& assessment, const system::ProcessRef& process, bool with_publisher = true);
 
 private:
-    std::optional<std::uint32_t> parent_of(std::uint32_t pid);
+    std::optional<std::uint32_t> parent_of(std::uint32_t pid, std::uint64_t created);
 
     IdentityResolver& resolver_;
     ContinuityGuard& continuity_;

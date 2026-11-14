@@ -121,6 +121,7 @@ namespace houseguest::system {
 ProcessSnapshot ProcessSnapshot::take() {
     ProcessSnapshot snapshot;
     snapshot.taken_ = std::chrono::steady_clock::now();
+    snapshot.taken_ticks_ = ProcessRef::now_ticks();
     Handle handle(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
     if (handle.get() == INVALID_HANDLE_VALUE) return snapshot;
     PROCESSENTRY32W entry{sizeof(entry)};

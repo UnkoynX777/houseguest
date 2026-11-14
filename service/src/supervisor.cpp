@@ -23,6 +23,8 @@ constexpr auto kEventSweepInterval = seconds(5);
 constexpr auto kPollingSweepInterval = seconds(1);
 constexpr auto kRestartInterval = seconds(15);
 constexpr unsigned kMaxAttempts = 7;
+constexpr unsigned kMaxParentWaits = 80;
+constexpr auto kParentWait = milliseconds(150);
 constexpr std::array<milliseconds, 6> kBackoff = {milliseconds(25),  milliseconds(50),  milliseconds(100),
                                                   milliseconds(250), milliseconds(500), milliseconds(1000)};
 
@@ -193,11 +195,14 @@ void Supervisor::enqueue(std::uint32_t pid, std::uint64_t event_ticks, bool from
 }
 
 void Supervisor::schedule_retry(Pending pending) {
-    const auto index = std::min<std::size_t>(pending.attempt - 1, kBackoff.size() - 1);
+    const auto delay = pending.waiting_for_parent
+                           ? kParentWait
+                           : kBackoff[std::min<std::size_t>(pending.attempt - 1, kBackoff.size() - 1)];
     {
         std::scoped_lock lock(retry_mutex_);
-        retries_.push_back({Clock::now() + kBackoff[index], pending});
+        retries_.push_back({Clock::now() + delay, pending});
     }
+    retries_changed_ = true;
     std::scoped_lock lock(wake_mutex_);
     wake_.notify_all();
 }
@@ -246,8 +251,10 @@ void Supervisor::work(const std::stop_token& stop) {
             queue.pop_front();
         }
         try {
+            pending.waiting_for_parent = false;
+            pending.wait_parent = 0;
             if (inspect(pending) == Outcome::Retry) {
-                ++pending.attempt;
+                ++(pending.waiting_for_parent ? pending.waits : pending.attempt);
                 schedule_retry(pending);
             } else {
                 finished(pending.pid);
@@ -269,7 +276,9 @@ void Supervisor::maintain(const std::stop_token& stop) {
             std::scoped_lock retry_lock(retry_mutex_);
             for (const auto& delayed : retries_) deadline = std::min(deadline, delayed.due);
         }
-        wake_.wait_until(lock, stop, deadline, [this] { return reconcile_requested_.load(); });
+        wake_.wait_until(lock, stop, deadline,
+                         [this] { return reconcile_requested_.load() || retries_changed_.load(); });
+        retries_changed_ = false;
         if (stop.stop_requested() || mode_ == SupervisionMode::Stopped) return;
         lock.unlock();
 
@@ -308,10 +317,42 @@ bool Supervisor::in_flight(std::uint32_t pid, std::uint32_t except) {
     return active_.contains(pid);
 }
 
+bool Supervisor::relevant_to_observation(std::uint32_t pid) {
+    const auto process = system::ProcessRef::open(pid);
+    const auto path = process ? process->image_path() : std::nullopt;
+    if (!path) return false;
+    core::AppIdentity identity;
+    identity.path = system::path_to_utf8(*path);
+    identity.package_family = process->package_family();
+    return discovery_.is_root(identity) || discovery_.related(identity);
+}
+
 void Supervisor::finished(std::uint32_t pid) {
-    std::scoped_lock lock(queue_mutex_);
-    const auto it = active_.find(pid);
-    if (it != active_.end() && --it->second <= 0) active_.erase(it);
+    {
+        std::scoped_lock lock(queue_mutex_);
+        const auto it = active_.find(pid);
+        if (it != active_.end() && --it->second <= 0) active_.erase(it);
+    }
+    wake_waiters(pid);
+}
+
+void Supervisor::wake_waiters(std::uint32_t pid) {
+    bool woke = false;
+    {
+        std::scoped_lock lock(retry_mutex_);
+        const auto now = Clock::now();
+        for (auto& delayed : retries_) {
+            if (delayed.pending.wait_parent == pid) {
+                delayed.due = now;
+                woke = true;
+            }
+        }
+    }
+    if (woke) {
+        retries_changed_ = true;
+        std::scoped_lock lock(wake_mutex_);
+        wake_.notify_all();
+    }
 }
 
 void Supervisor::record_assessment(std::chrono::steady_clock::duration elapsed) {
@@ -368,16 +409,20 @@ Supervisor::Outcome Supervisor::retry_or_fail(const Pending& pending, const char
     return Outcome::Settled;
 }
 
-void Supervisor::observe(const system::ProcessRef& process, const Assessment& assessment,
-                         std::uint64_t created) {
+void Supervisor::observe(const system::ProcessRef& process, Assessment& assessment, std::uint64_t created) {
     const auto& facts = assessment.facts;
     if (!facts.image_known) return;
     const bool root = discovery_.is_root(facts.app);
     const bool descendant = std::ranges::find(facts.lineage, kObservedMember) != facts.lineage.end();
     if (!root && !descendant && !discovery_.related(facts.app)) return;
+    if (root || descendant) {
+        lineage_.remember(process, created, assessment.sid, {kObservedMember});
+        wake_waiters(process.pid());
+    }
+    assessor_.resolve_fully(assessment, process, false);
 
     Observation observation;
-    observation.identity = facts.app;
+    observation.identity = assessment.facts.app;
     observation.root = root;
     observation.descendant = descendant;
     observation.windows_protected = assessment.decision.source == core::DecisionSource::Protected;
@@ -386,11 +431,12 @@ void Supervisor::observe(const system::ProcessRef& process, const Assessment& as
             if (const auto path = parent->image_path()) observation.parent_path = system::path_to_utf8(*path);
         }
     }
-    if (root || descendant) lineage_.remember(process, created, assessment.sid, {kObservedMember});
     discovery_.note(observation);
+    assessor_.resolve_fully(assessment, process);
+    discovery_.complete(assessment.facts.app);
 }
 
-Supervisor::Outcome Supervisor::inspect(const Pending& pending) {
+Supervisor::Outcome Supervisor::inspect(Pending& pending) {
     std::shared_ptr<const EnforcementPolicy> policy;
     {
         std::scoped_lock lock(policy_mutex_);
@@ -400,6 +446,7 @@ Supervisor::Outcome Supervisor::inspect(const Pending& pending) {
         return Outcome::Settled;
 
     const bool final = pending.attempt + 1 >= kMaxAttempts;
+    const bool stop_waiting = pending.waits >= kMaxParentWaits;
     std::uint32_t open_error = 0;
     const auto process = system::ProcessRef::open(pending.pid, &open_error);
     if (!process) {
@@ -419,8 +466,8 @@ Supervisor::Outcome Supervisor::inspect(const Pending& pending) {
         ++pid_reuse_skipped_;
         return Outcome::Settled;
     }
-    if (!claim(pending.pid, *created, pending.attempt > 0)) return Outcome::Settled;
-    if (pending.attempt == 0) ++inspected_;
+    if (!claim(pending.pid, *created, pending.attempt > 0 || pending.waits > 0)) return Outcome::Settled;
+    if (pending.attempt == 0 && pending.waits == 0) ++inspected_;
 
     const auto settle = [&](Outcome outcome) {
         mark(pending.pid, *created, outcome == Outcome::Retry ? State::Retrying : State::Settled);
@@ -440,20 +487,26 @@ Supervisor::Outcome Supervisor::inspect(const Pending& pending) {
     if (!guest && !observed) return settle(Outcome::Settled);
 
     const auto started = Clock::now();
-    auto assessment = assessor_.assess(*process, *created, *sid, guest ? policy.get() : nullptr, final,
-                                       [&](std::uint32_t parent) { return in_flight(parent, pending.pid); });
+    auto assessment = assessor_.assess(
+        *process, *created, *sid, guest ? policy.get() : nullptr, final,
+        stop_waiting ? Assessor::ParentPending{} : [&](std::uint32_t parent) {
+            return in_flight(parent, pending.pid) && (guest || relevant_to_observation(parent));
+        });
     record_assessment(Clock::now() - started);
     if (assessment.retry_stage) {
         if (process->exited()) return settle(Outcome::Settled);
+        if (std::string_view(assessment.retry_stage) == "parent") {
+            pending.waiting_for_parent = true;
+            pending.wait_parent = assessment.parent_pid;
+            ++retried_;
+            return settle(Outcome::Retry);
+        }
         return retry(assessment.retry_stage, assessment.error);
     }
     if (assessment.degraded && on_failure_) {
         on_failure_({pending.pid, assessment.degraded_stage, assessment.error, pending.attempt + 1, true});
     }
-    if (observed) {
-        assessor_.resolve_fully(assessment, *process);
-        observe(*process, assessment, *created);
-    }
+    if (observed) observe(*process, assessment, *created);
     if (!guest) return settle(Outcome::Settled);
 
     if (assessment.degraded) ++inspection_degraded_;

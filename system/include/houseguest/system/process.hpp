@@ -48,10 +48,12 @@ public:
     static ProcessSnapshot take();
     [[nodiscard]] std::optional<std::uint32_t> parent_of(std::uint32_t pid) const;
     [[nodiscard]] std::chrono::steady_clock::time_point taken() const { return taken_; }
+    [[nodiscard]] std::uint64_t taken_ticks() const { return taken_ticks_; }
 
 private:
     std::unordered_map<std::uint32_t, std::uint32_t> parents_;
     std::chrono::steady_clock::time_point taken_;
+    std::uint64_t taken_ticks_ = 0;
 };
 
 }  // namespace houseguest::system

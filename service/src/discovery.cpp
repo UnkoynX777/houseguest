@@ -115,6 +115,14 @@ void Discovery::note(const Observation& observation) {
     it->second.descendant |= observation.descendant || observation.root;
 }
 
+void Discovery::complete(const core::AppIdentity& identity) {
+    std::scoped_lock lock(mutex_);
+    const auto it = items_.find(core::normalize_path(identity.path) + "|" + identity.sha256);
+    if (it == items_.end()) return;
+    it->second.identity.publisher = identity.publisher;
+    if (!identity.package_family.empty()) it->second.identity.package_family = identity.package_family;
+}
+
 core::Json Discovery::classify(const Item& item, const std::string& root_directory,
                                const std::string& root_publisher) const {
     const auto path = core::normalize_path(item.identity.path);

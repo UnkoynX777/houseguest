@@ -49,6 +49,28 @@ try {
     $preview = HgJson call policy.preview (@{ profile_id = 'builtin-restricted'; guest_sids = @($me.sid) } | ConvertTo-Json -Compress)
     Check 'preview reports continuity facts' ($preview.continuity.install_trusted -eq $true)
 
+    $library = HgJson call apps.library (@{ profile_id = 'builtin-restricted' } | ConvertTo-Json -Compress)
+    Check 'the library lists installed programs with their status' ($library.apps.Count -gt 5 -and $library.allowed -ge 0 -and ($library.apps | Where-Object { $_.status -eq 'allowed' -and $_.listed -eq 'app-test' }).Count -ge 0)
+
+    $watch = @{ path = "$apps\launcher.exe"; label = 'Observed app'; minutes = 5 } | ConvertTo-Json -Compress
+    Check 'observation starts' ((HgJson call discovery.start $watch).running)
+    $observed = "$apps\child.exe -n 3 127.0.0.1 >nul & $apps\other.exe -n 3 127.0.0.1 >nul"
+    Start-Process "$apps\launcher.exe" -ArgumentList '/c', $observed -Wait -WindowStyle Hidden
+    Start-Sleep 2
+    $seen = HgJson call discovery.status
+    $names = @($seen.items | ForEach-Object { $_.name })
+    Write-Host ("observed: {0}" -f ($names -join ', '))
+    $sup = (HgJson call diagnostics).supervisor
+    Write-Host ('supervisor: inspected={0} retried={1} failed={2} degraded={3} unreadable={4} reuse={5}' -f $sup.inspected, $sup.retried, $sup.inspection_failed, $sup.inspection_degraded, $sup.unreadable, $sup.pid_reuse_skipped)
+    Check 'observation sees the main program and what it started' (($names -contains 'launcher.exe') -and ($names -contains 'child.exe') -and ($names -contains 'other.exe'))
+    $child = $seen.items | Where-Object { $_.name -eq 'child.exe' }
+    Check 'a descendant inside the app folder is recommended' ($child.verdict -eq 'recommended' -and $child.descendant)
+    Check 'the main program is marked as such' (($seen.items | Where-Object { $_.name -eq 'launcher.exe' }).verdict -eq 'main')
+    $pick = @{ profile_id = 'builtin-restricted'; name = 'Observed app'; mode = 'approved'; items = @(@{ path = $child.path; sha256 = $child.sha256 }) } | ConvertTo-Json -Depth 5 -Compress
+    $made = HgJson call discovery.apply $pick
+    Check 'only the chosen dependencies are saved with the application' ($made.app.components.Count -eq 2 -and (($made.app.components | Where-Object { $_.path -like '*other.exe' }).Count -eq 0))
+    Check 'the saved dependency is pinned and scoped to its application' ((($made.app.components | Where-Object { $_.role -ne 'main' }).scope -eq 'descendant') -and (($made.app.components | Where-Object { $_.role -ne 'main' }).sha256.Length -eq 64))
+
     $start = @{ profile_id = 'builtin-restricted'; guest_sids = @($me.sid); duration_minutes = 20; audit_only = $true; confirm_warnings = $true } | ConvertTo-Json -Compress
     $session = Hg call session.start $start
     Check 'audit-only session starts for the owner account' ($session -match '"armed": true')

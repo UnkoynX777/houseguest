@@ -102,6 +102,9 @@ private:
         std::uint32_t pid = 0;
         std::uint64_t event_ticks = 0;
         unsigned attempt = 0;
+        unsigned waits = 0;
+        bool waiting_for_parent = false;
+        std::uint32_t wait_parent = 0;
     };
     struct Delayed {
         Clock::time_point due;
@@ -119,15 +122,17 @@ private:
     void maintain(const std::stop_token& stop);
     void promote_due_retries();
     void schedule_retry(Pending pending);
-    Outcome inspect(const Pending& pending);
+    Outcome inspect(Pending& pending);
     Outcome retry_or_fail(const Pending& pending, const char* stage, std::uint32_t error, bool final);
     bool claim(std::uint32_t pid, std::uint64_t created_ticks, bool retrying);
     void mark(std::uint32_t pid, std::uint64_t created_ticks, State state);
     void forget_exited();
     bool known(std::uint32_t pid);
     bool in_flight(std::uint32_t pid, std::uint32_t except);
+    bool relevant_to_observation(std::uint32_t pid);
     void finished(std::uint32_t pid);
-    void observe(const system::ProcessRef& process, const Assessment& assessment, std::uint64_t created);
+    void wake_waiters(std::uint32_t pid);
+    void observe(const system::ProcessRef& process, Assessment& assessment, std::uint64_t created);
     void record_assessment(std::chrono::steady_clock::duration elapsed);
     void set_mode(SupervisionMode mode, const std::string& reason);
     void record_latency(std::uint64_t event_ticks);
@@ -172,6 +177,7 @@ private:
     std::atomic<std::uint64_t> unreadable_ = 0;
     std::atomic<std::uint64_t> spared_ = 0;
     std::atomic<bool> reconcile_requested_ = false;
+    std::atomic<bool> retries_changed_ = false;
 
     std::mutex wake_mutex_;
     std::condition_variable_any wake_;

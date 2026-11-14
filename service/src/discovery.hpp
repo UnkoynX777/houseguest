@@ -42,6 +42,7 @@ public:
     [[nodiscard]] bool is_root(const core::AppIdentity& identity);
     [[nodiscard]] bool related(const core::AppIdentity& identity);
     void note(const Observation& observation);
+    void complete(const core::AppIdentity& identity);
     [[nodiscard]] core::Json report();
 
     static constexpr std::size_t kMaxItems = 400;

@@ -76,6 +76,8 @@ private:
     core::Json explain(const core::Profile& profile, const std::filesystem::path& file,
                        const std::string& package_family);
     core::Json blocks(std::size_t limit);
+    core::Json approve_component(const std::string& actor, const std::string& profile_id,
+                                 const std::string& app_id, const std::string& path, const core::Json& args);
     void remember_review(const Denial& denial);
     struct Review {
         std::string id, app_id, kind, path, sha256, publisher, package_family, parent_path, profile_id, note;

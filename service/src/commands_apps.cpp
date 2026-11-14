@@ -267,6 +267,45 @@ Json Controller::explain(const core::Profile& profile, const std::filesystem::pa
     return result;
 }
 
+Json Controller::approve_component(const std::string& actor, const std::string& profile_id,
+                                   const std::string& app_id, const std::string& path, const Json& args) {
+    auto profile = find_profile(profile_id);
+    auto* app = find_application(profile, app_id);
+    if (!app) throw Failure("not_found", "The application is no longer in the profile.");
+    const auto file = system::path_from_utf8(path);
+    std::error_code ec;
+    if (!file.is_absolute() || !std::filesystem::is_regular_file(file, ec))
+        throw Failure("not_found", "The file no longer exists.");
+    const auto identity = resolver_.resolve(file, true, true);
+    if (identity.sha256.empty()) throw Failure("not_found", "The file could not be read.");
+    if (args.contains("expect_sha256") && args["expect_sha256"] != identity.sha256)
+        throw Failure("conflict", "The file changed after it was shown. Review it once more.");
+    if (core::is_sensitive_tool(identity.path) && !args.value("acknowledge_sensitive", false))
+        throw Failure("confirmation_required",
+                      "This is a tool that can run other programs. Confirm to approve it.");
+
+    const auto minutes = args.value("minutes", std::int64_t{0});
+    if (minutes < 0 || minutes > 60 * 24 * 30) throw Failure("bad_request", "Invalid duration.");
+    const auto existing = std::ranges::find_if(app->components, [&](const core::Component& c) {
+        return core::normalize_path(c.path) == core::normalize_path(identity.path);
+    });
+    if (existing != app->components.end()) {
+        existing->sha256 = identity.sha256;
+        if (!identity.publisher.empty()) existing->publisher = identity.publisher;
+    } else {
+        auto component = component_for(identity, role_from(args.value("role", std::string{"helper"})),
+                                       args.value("scope", std::string{"descendant"}) == "independent"
+                                           ? core::Scope::Independent
+                                           : core::Scope::Descendant,
+                                       {});
+        if (minutes > 0)
+            component.expires_at = std::chrono::system_clock::now() + std::chrono::minutes(minutes);
+        app->components.push_back(std::move(component));
+    }
+    store_profile(actor, profile, "app.dependency_approved");
+    return Json{{"approved", identity.path}};
+}
+
 void Controller::register_app_commands() {
     using Args = const Json&;
     using Who = const Caller&;
@@ -518,7 +557,24 @@ void Controller::register_app_commands() {
                 component_for(identity, role_from(item.value("role", "helper")),
                               descendant ? core::Scope::Descendant : core::Scope::Independent, {}));
         }
-        profile.apps.push_back(app);
+        const auto root_key = core::normalize_path(root_identity.path);
+        auto known = std::ranges::find_if(profile.apps, [&](const core::Application& candidate) {
+            return std::ranges::any_of(candidate.components, [&](const core::Component& c) {
+                return c.role == core::ComponentRole::Main && core::normalize_path(c.path) == root_key;
+            });
+        });
+        if (known != profile.apps.end()) {
+            for (auto& component : app.components) {
+                const bool present = std::ranges::any_of(known->components, [&](const core::Component& c) {
+                    return core::normalize_path(c.path) == core::normalize_path(component.path);
+                });
+                if (!present) known->components.push_back(std::move(component));
+            }
+            known->mode = app.mode;
+            app = *known;
+        } else {
+            profile.apps.push_back(app);
+        }
         if (args.value("save_to_library", false)) {
             auto copy = app;
             store_.state.library.push_back(std::move(copy));
@@ -561,40 +617,15 @@ void Controller::register_app_commands() {
             if (it == reviews_.end()) throw Failure("not_found", "This item is no longer pending.");
             review = it->second;
         }
-        auto profile = find_profile(review.profile_id);
-        auto* app = find_application(profile, review.app_id);
-        if (!app) throw Failure("not_found", "The application is no longer in the profile.");
-        const auto file = system::path_from_utf8(review.path);
-        std::error_code ec;
-        if (!std::filesystem::is_regular_file(file, ec))
-            throw Failure("not_found", "The file no longer exists.");
-        const auto identity = resolver_.resolve(file, true, true);
-        if (identity.sha256.empty()) throw Failure("not_found", "The file could not be read.");
-        if (args.contains("expect_sha256") && args["expect_sha256"] != identity.sha256)
-            throw Failure("conflict", "The file changed after it was shown. Review it once more.");
-        if (core::is_sensitive_tool(identity.path) && !args.value("acknowledge_sensitive", false))
-            throw Failure("confirmation_required",
-                          "This is a tool that can run other programs. Confirm to approve it.");
-
-        const auto minutes = args.value("minutes", std::int64_t{0});
-        if (minutes < 0 || minutes > 60 * 24 * 30) throw Failure("bad_request", "Invalid duration.");
-        const auto existing = std::ranges::find_if(app->components, [&](const core::Component& c) {
-            return core::normalize_path(c.path) == core::normalize_path(identity.path);
-        });
-        if (existing != app->components.end()) {
-            existing->sha256 = identity.sha256;
-            if (!identity.publisher.empty()) existing->publisher = identity.publisher;
-        } else {
-            auto component =
-                component_for(identity, core::ComponentRole::Helper, core::Scope::Descendant, {});
-            if (minutes > 0)
-                component.expires_at = std::chrono::system_clock::now() + std::chrono::minutes(minutes);
-            app->components.push_back(std::move(component));
-        }
-        store_profile(caller.sid, profile, "app.dependency_approved");
+        auto reply = approve_component(caller.sid, review.profile_id, review.app_id, review.path, args);
         std::scoped_lock lock(review_mutex_);
         reviews_.erase(review.id);
-        return Json{{"approved", identity.path}};
+        return reply;
+    });
+
+    add("apps.component.add", Access::Owner, [this](Who caller, Args args) {
+        return approve_component(caller.sid, require_text(args, "profile_id"), require_text(args, "app_id"),
+                                 require_text(args, "path"), args);
     });
 
     add("blocks.list", Access::Owner, [this](Who, Args args) {

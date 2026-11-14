@@ -12,7 +12,12 @@ namespace {
 using std::chrono::milliseconds;
 
 constexpr auto kSnapshotLifetime = milliseconds(100);
-constexpr auto kSnapshotMinimumGap = milliseconds(15);
+
+bool older_than(std::uint32_t pid, std::uint64_t child_created) {
+    const auto parent = system::ProcessRef::open(pid);
+    const auto created = parent ? parent->creation_ticks() : std::nullopt;
+    return created && *created < child_created;
+}
 
 bool contains(const std::vector<std::string>& list, const char* value) {
     return std::ranges::find(list, value) != list.end();
@@ -28,16 +33,12 @@ Assessor::Assessor(IdentityResolver& resolver, ContinuityGuard& continuity, Line
       protection_(core::Protection::windows_default(system_root, program_files)),
       snapshot_(system::ProcessSnapshot::take()) {}
 
-std::optional<std::uint32_t> Assessor::parent_of(std::uint32_t pid) {
+std::optional<std::uint32_t> Assessor::parent_of(std::uint32_t pid, std::uint64_t created) {
     std::scoped_lock lock(snapshot_mutex_);
     const auto age = std::chrono::steady_clock::now() - snapshot_.taken();
-    if (age > kSnapshotLifetime) snapshot_ = system::ProcessSnapshot::take();
-    if (auto parent = snapshot_.parent_of(pid)) return parent;
-    if (age > kSnapshotMinimumGap) {
+    if (age > kSnapshotLifetime || snapshot_.taken_ticks() <= created)
         snapshot_ = system::ProcessSnapshot::take();
-        return snapshot_.parent_of(pid);
-    }
-    return std::nullopt;
+    return snapshot_.parent_of(pid);
 }
 
 Assessment Assessor::assess(const system::ProcessRef& process, std::uint64_t created, const std::string& sid,
@@ -69,12 +70,14 @@ Assessment Assessor::assess(const system::ProcessRef& process, std::uint64_t cre
         a.image = *image;
     }
 
-    if (const auto parent = parent_of(process.pid()); parent && *parent != 0 && *parent != process.pid()) {
+    if (const auto parent = parent_of(process.pid(), created);
+        parent && *parent != 0 && *parent != process.pid()) {
         a.parent_pid = *parent;
         const auto membership = lineage_.find(*parent, created);
         if (membership && membership->sid == sid && membership->session == a.session) {
             f.lineage = membership->members;
-        } else if (!membership && !final && parent_pending && parent_pending(*parent)) {
+        } else if (!membership && !final && parent_pending && parent_pending(*parent) &&
+                   older_than(*parent, created)) {
             a.retry_stage = "parent";
             return a;
         }
@@ -141,13 +144,15 @@ Assessment Assessor::assess(const system::ProcessRef& process, std::uint64_t cre
     return a;
 }
 
-void Assessor::resolve_fully(Assessment& assessment, const system::ProcessRef& process) {
+void Assessor::resolve_fully(Assessment& assessment, const system::ProcessRef& process, bool with_publisher) {
     auto& f = assessment.facts;
-    if (!f.image_known || f.remote_image || (f.hash_resolved && f.publisher_resolved)) return;
-    auto full = resolver_.resolve_checked(assessment.image, true, true, process.package_family());
+    if (!f.image_known || f.remote_image || (f.hash_resolved && (f.publisher_resolved || !with_publisher)))
+        return;
+    auto full = resolver_.resolve_checked(assessment.image, true, with_publisher || f.publisher_resolved,
+                                          process.package_family());
     f.app = std::move(full.identity);
     f.hash_resolved = true;
-    f.publisher_resolved = true;
+    f.publisher_resolved = f.publisher_resolved || with_publisher;
 }
 
 }  // namespace houseguest::service
