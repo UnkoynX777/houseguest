@@ -79,6 +79,40 @@ Json open_text(HWND owner) {
     return {{"opened", true}, {"content", buffer.str()}};
 }
 
+Json pick_paths(HWND owner, const Json& args) {
+    const bool folder = args.value("kind", "executable") == "folder";
+    ComPtr<IFileOpenDialog> dialog;
+    if (FAILED(
+            CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
+        return {{"chosen", false}};
+    }
+    DWORD options = 0;
+    dialog->GetOptions(&options);
+    options |= FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
+    if (folder) {
+        options |= FOS_PICKFOLDERS;
+    } else {
+        options |= FOS_ALLOWMULTISELECT | FOS_FILEMUSTEXIST;
+        const COMDLG_FILTERSPEC filter[] = {{L"Programs", L"*.exe"}};
+        dialog->SetFileTypes(1, filter);
+    }
+    dialog->SetOptions(options);
+    if (FAILED(dialog->Show(owner))) return {{"chosen", false}};
+    ComPtr<IShellItemArray> results;
+    DWORD count = 0;
+    if (FAILED(dialog->GetResults(&results)) || FAILED(results->GetCount(&count))) return {{"chosen", false}};
+    Json paths = Json::array();
+    for (DWORD i = 0; i < count && i < 200; ++i) {
+        ComPtr<IShellItem> item;
+        PWSTR path = nullptr;
+        if (FAILED(results->GetItemAt(i, &item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)))
+            continue;
+        paths.push_back(system::to_utf8(path));
+        CoTaskMemFree(path);
+    }
+    return {{"chosen", !paths.empty()}, {"paths", std::move(paths)}};
+}
+
 bool relaunch_elevated() {
     wchar_t module[MAX_PATH];
     GetModuleFileNameW(nullptr, module, MAX_PATH);

@@ -15,6 +15,8 @@ add_library(houseguest_service_lib STATIC
   src/commands_session.cpp
   src/commands_system.cpp
   src/commands_apps.cpp
+  src/commands_catalog.cpp
+  src/catalog.cpp
   src/ipc_limits.cpp
   src/pipe_server.cpp)
 target_include_directories(houseguest_service_lib PUBLIC src ${CMAKE_BINARY_DIR}/generated)

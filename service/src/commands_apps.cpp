@@ -331,27 +331,33 @@ void Controller::register_app_commands() {
                     ++conflicts[finding["rules"].front().get<std::string>()];
             }
 
+            catalog_.refresh_if_stale(std::chrono::minutes(10), catalog_request());
+            const auto view = catalog_.view();
+            std::set<std::string> manual;
+            {
+                std::scoped_lock lock(mutex_);
+                for (const auto& entry : store_.state.manual_apps)
+                    manual.insert(system::normalize_app_key(system::path_from_utf8(entry.path)));
+            }
             Json list = Json::array();
             std::size_t allowed = 0, blocked = 0;
-            for (const auto& installed : system::discover_installed_apps()) {
+            for (const auto& installed : view.apps) {
                 const auto file = system::path_from_utf8(installed.path);
                 const auto decision = decide_file(*compiled.policy, file, installed.package_family, {});
                 const bool allow = decision.action == core::Action::Allow;
                 (allow ? allowed : blocked)++;
                 const auto key = core::normalize_path(installed.path);
-                Json row{{"name", installed.name},
-                         {"path", installed.path},
-                         {"company", installed.company},
-                         {"version", installed.version},
-                         {"description", installed.description},
-                         {"source", installed.source},
-                         {"package_family", installed.package_family},
-                         {"status", allow ? "allowed" : "blocked"},
-                         {"via", core::source_name(decision.source)},
-                         {"reason", decision.reason},
-                         {"rule_id", decision.rule_id},
-                         {"app_id", decision.app_id},
-                         {"blocks", blocked_by_path.contains(key) ? blocked_by_path[key] : 0}};
+                const auto app_key = system::normalize_app_key(file);
+                const auto seen = view.first_seen.find(app_key);
+                Json row = to_json(installed);
+                row["first_seen"] = seen == view.first_seen.end() ? 0 : seen->second;
+                row["manual"] = manual.contains(app_key);
+                row.update(Json{{"status", allow ? "allowed" : "blocked"},
+                                {"via", core::source_name(decision.source)},
+                                {"reason", decision.reason},
+                                {"rule_id", decision.rule_id},
+                                {"app_id", decision.app_id},
+                                {"blocks", blocked_by_path.contains(key) ? blocked_by_path[key] : 0}});
                 for (const auto& app : compiled.policy->profile.apps) {
                     const bool is_main = std::ranges::any_of(app.components, [&](const core::Component& c) {
                         return c.role == core::ComponentRole::Main &&
@@ -368,7 +374,12 @@ void Controller::register_app_commands() {
                 }
                 list.push_back(std::move(row));
             }
-            return Json{{"apps", std::move(list)}, {"allowed", allowed}, {"blocked", blocked}};
+            return Json{{"apps", std::move(list)},
+                        {"allowed", allowed},
+                        {"blocked", blocked},
+                        {"scanning", view.scanning},
+                        {"updated_at", view.updated_at},
+                        {"generation", view.generation}};
         },
         true);
 

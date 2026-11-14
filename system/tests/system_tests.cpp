@@ -1,7 +1,10 @@
 #include <windows.h>
 
+#include <set>
+
 #include <catch2/catch_test_macros.hpp>
 
+#include "houseguest/system/app_catalog.hpp"
 #include "houseguest/system/capabilities.hpp"
 #include "houseguest/system/crypto.hpp"
 #include "houseguest/system/process.hpp"
@@ -71,9 +74,51 @@ TEST_CASE("unsigned files have no publisher", "[signature]") {
 }
 
 TEST_CASE("discovery finds applications with existing paths", "[discovery]") {
-    const auto apps = discover_installed_apps();
-    REQUIRE_FALSE(apps.empty());
-    CHECK(std::filesystem::exists(path_from_utf8(apps.front().path)));
+    const auto catalog = discover_catalog({});
+    REQUIRE_FALSE(catalog.apps.empty());
+    CHECK(std::filesystem::exists(path_from_utf8(catalog.apps.front().path)));
+    CHECK_FALSE(catalog.sources.empty());
+}
+
+TEST_CASE("each executable appears once however many sources list it", "[discovery]") {
+    const auto catalog = discover_catalog({});
+    std::set<std::string> keys;
+    for (const auto& app : catalog.apps)
+        CHECK(keys.insert(normalize_app_key(path_from_utf8(app.path))).second);
+}
+
+TEST_CASE("installers and helpers are told apart from applications", "[discovery]") {
+    CHECK(classify_executable(R"(C:\Apps\Tool\unins000.exe)", "") == AppRole::Installer);
+    CHECK(classify_executable(R"(C:\Apps\Tool\vc_redist.x64.exe)", "") == AppRole::Installer);
+    CHECK(classify_executable(R"(C:\Apps\Tool\crashpad_handler.exe)", "") == AppRole::Helper);
+    CHECK(classify_executable(R"(C:\Apps\Tool\Tool Updater.exe)", "") == AppRole::Helper);
+    CHECK(classify_executable(R"(C:\Windows\System32\ping.exe)", "") == AppRole::Tool);
+    CHECK(classify_executable(R"(C:\Users\x\AppData\Local\Programs\Microsoft VS Code\Code.exe)", "") ==
+          AppRole::Application);
+}
+
+TEST_CASE("a portable folder yields its main program per sub folder", "[discovery]") {
+    const auto root = std::filesystem::temp_directory_path() / "hg-portable-scan";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "Alpha" / "bin");
+    std::filesystem::create_directories(root / "Beta");
+    const auto copy = [](const char* name, const std::filesystem::path& to) {
+        std::filesystem::copy_file(std::filesystem::path(R"(C:\Windows\System32)") / name, to);
+    };
+    copy("find.exe", root / "Alpha" / "Alpha.exe");
+    copy("find.exe", root / "Alpha" / "unins000.exe");
+    copy("find.exe", root / "Alpha" / "bin" / "crashpad_handler.exe");
+    copy("find.exe", root / "Beta" / "Beta.exe");
+    copy("find.exe", root / "loose.exe");
+
+    const auto apps = scan_folder(root, 3);
+    std::set<std::string> names;
+    for (const auto& app : apps) {
+        names.insert(std::filesystem::path(app.path).filename().string());
+        CHECK(app.kind == AppKind::Portable);
+    }
+    CHECK(names == std::set<std::string>{"Alpha.exe", "Beta.exe", "loose.exe"});
+    std::filesystem::remove_all(root);
 }
 
 TEST_CASE("current process is introspectable", "[process]") {

@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { ApiError, call } from '../api';
-import { describeBlock, describeDecision, describeNote, recommendation, roleLabel, sourceLabel } from '../explain';
+import { describeBlock, describeDecision, describeNote, recommendation, kindLabel, roleKindLabel, roleLabel, sourceLabel } from '../explain';
 import { t } from '../i18n';
 import { app, attempt, describe, formatTime, loadProfiles, notify, profileLabel, randomId } from '../store';
 import type { Application, BlockEntry, Component, ComponentView, DecisionInfo, DependencyMode, Explanation, LibraryApp, PendingReview } from '../types';
@@ -12,6 +12,16 @@ import Modal from './Modal.vue';
 
 const props = defineProps<{ entry: LibraryApp; profileId: string }>();
 const emit = defineEmits<{ close: []; changed: []; observe: [] }>();
+
+async function forgetManual() {
+  busy.value = true;
+  const done = await attempt(() => call('apps.manual.remove', { path: props.entry.path }), t('Removed from the library.'));
+  busy.value = false;
+  if (done) {
+    emit('changed');
+    emit('close');
+  }
+}
 
 type Tab = 'overview' | 'dependencies' | 'blocks' | 'advanced' | 'simulation';
 const tab = ref<Tab>('overview');
@@ -221,11 +231,16 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
             <button class="btn" @click="emit('observe')"><Icon name="flask" />{{ t('Observe a run') }}</button>
             <button class="btn danger right" :disabled="busy" @click="removeFromProfile"><Icon name="trash" />{{ t('Remove') }}</button>
           </template>
+          <button v-if="entry.manual" class="btn" :class="{ right: !application }" :disabled="busy" @click="forgetManual"><Icon name="trash" />{{ t('Remove from library') }}</button>
         </div>
 
         <dl class="kv">
           <dt>{{ t('Executable') }}</dt><dd class="mono">{{ entry.path }}</dd>
-          <dt>{{ t('Source') }}</dt><dd>{{ sourceLabel(entry.source) }}</dd>
+          <dt>{{ t('Type') }}</dt><dd>{{ kindLabel(entry.kind) }}<template v-if="entry.scope"> · {{ entry.scope === 'user' ? t('Only for this user') : t('All users') }}</template></dd>
+          <dt v-if="entry.version">{{ t('Version') }}</dt><dd v-if="entry.version">{{ entry.version }}</dd>
+          <dt v-if="entry.install_dir">{{ t('Folder') }}</dt><dd v-if="entry.install_dir" class="mono">{{ entry.install_dir }}</dd>
+          <dt>{{ t('Found by') }}</dt><dd>{{ (entry.sources?.length ? entry.sources : [entry.source]).map(sourceLabel).join(', ') }}</dd>
+          <dt v-if="entry.role !== 'application'">{{ t('Classified as') }}</dt><dd v-if="entry.role !== 'application'">{{ roleKindLabel(entry.role) }}</dd>
           <dt v-if="explanation.publisher">{{ t('Signed by') }}</dt><dd v-if="explanation.publisher">{{ explanation.publisher }}</dd>
           <dt v-if="explanation.sha256">SHA-256</dt><dd v-if="explanation.sha256" class="mono">{{ explanation.sha256 }}</dd>
           <dt v-if="entry.package_family">{{ t('Package') }}</dt><dd v-if="entry.package_family" class="mono">{{ entry.package_family }}</dd>

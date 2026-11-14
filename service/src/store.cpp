@@ -92,6 +92,11 @@ core::Json state_to_json(const State& state) {
     for (const auto& account : state.managed)
         managed.push_back({{"name", account.name}, {"sid", account.sid}});
     json["managed"] = std::move(managed);
+    core::Json manual = core::Json::array();
+    for (const auto& app : state.manual_apps)
+        manual.push_back({{"path", app.path}, {"name", app.name}, {"added_at", app.added_at}});
+    json["manual_apps"] = std::move(manual);
+    json["portable_roots"] = state.portable_roots;
     return json;
 }
 
@@ -108,6 +113,17 @@ State state_from_json(const core::Json& json) {
     for (const auto& item : json.at("profiles")) state.profiles.push_back(core::profile_from_json(item));
     if (const auto it = json.find("library"); it != json.end() && it->is_array()) {
         for (const auto& item : *it) state.library.push_back(core::application_from_json(item));
+    }
+    if (const auto it = json.find("manual_apps"); it != json.end() && it->is_array()) {
+        for (const auto& item : *it) {
+            state.manual_apps.push_back(
+                {item.value("path", ""), item.value("name", ""), item.value("added_at", std::int64_t{0})});
+        }
+    }
+    if (const auto it = json.find("portable_roots"); it != json.end() && it->is_array()) {
+        for (const auto& item : *it) {
+            if (item.is_string()) state.portable_roots.push_back(item.get<std::string>());
+        }
     }
     if (const auto it = json.find("managed"); it != json.end()) {
         for (const auto& account : *it) {

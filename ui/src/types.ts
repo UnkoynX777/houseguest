@@ -88,7 +88,19 @@ export interface AppEntry {
   package_family?: string;
 }
 
+export type AppKind = 'installed' | 'portable' | 'store' | 'manual';
+export type AppRole = 'application' | 'tool' | 'helper' | 'installer';
+
 export interface LibraryApp extends Required<AppEntry> {
+  install_dir: string;
+  sources: string[];
+  kind: AppKind;
+  role: AppRole;
+  scope: string;
+  modified: number;
+  size: number;
+  first_seen: number;
+  manual: boolean;
   status: 'allowed' | 'blocked';
   via: string;
   reason: string;
@@ -99,6 +111,37 @@ export interface LibraryApp extends Required<AppEntry> {
   dependencies?: number;
   pending?: number;
   conflicts?: number;
+}
+
+export interface SourceStatus {
+  name: string;
+  available: boolean;
+  reason: string;
+  found: number;
+  milliseconds: number;
+  scanned: boolean;
+}
+
+export interface SourcesReport {
+  sources: SourceStatus[];
+  portable_roots: string[];
+  manual: { path: string; name: string; missing: boolean }[];
+  scanning: boolean;
+  updated_at: number;
+  total: number;
+}
+
+export interface DiagnosisCheck {
+  step: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface Diagnosis {
+  verdict: string;
+  advice: string;
+  checks: DiagnosisCheck[];
+  app?: LibraryApp;
 }
 
 export interface DecisionInfo {

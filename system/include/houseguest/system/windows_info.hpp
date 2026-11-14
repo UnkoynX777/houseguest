@@ -16,27 +16,12 @@ struct LocalUser {
     bool disabled = false;
 };
 
-struct InstalledApp {
-    std::string name;
-    std::string path;
-    std::string company;
-    std::string version;
-    std::string description;
-    std::string source;
-    std::string package_family;
-};
-
 std::vector<LocalUser> list_local_users();
 // True only for a drive-letter path on a fixed, removable, optical or RAM disk. Network locations return
 // false so the privileged service never opens files that an unprivileged user can point at a remote server.
 bool is_local_disk_path(const std::filesystem::path& file);
 // Returns the signer subject only when the Authenticode signature chains to a trusted root.
 std::string trusted_publisher(const std::filesystem::path& file);
-
-std::vector<InstalledApp> discover_installed_apps();
-
-// File version details of one executable, for apps found outside the catalogues above.
-InstalledApp describe_executable(const std::filesystem::path& file);
 
 // True when the directory's owner or a grant in its ACL lets one of the given accounts, or a broad group
 // such as Users or Everyone, add files or change the directory. Used to decide whether a folder can be

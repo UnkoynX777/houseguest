@@ -60,6 +60,27 @@ An application has components: main executables, launchers, helpers, runtimes, u
 
 The service remembers which allowed processes belong to which application in a lineage table. Each record holds a handle to its process, so the system cannot give that process id to another program while the record exists, and a child's parent id is trusted only when the parent is older than the child and the owner, session and exit time agree. Membership is never inherited by a process that was not itself allowed.
 
+### Application library
+
+The library lists what can be allowed, and is separate from what the engine enforces: the engine decides by file identity, the library only finds files and shows their effective decision under the selected profile.
+
+`system/app_catalog` builds the list from complementary sources, each timed and isolated so one unavailable source never stops the others:
+
+- the Uninstall registry (64-bit and 32-bit machine views, plus every loaded user hive, which is where per-user installers such as VS Code and Discord register),
+- App Paths of the machine and of each loaded user,
+- Start menu shortcuts of all users and of every profile folder,
+- packaged apps read from the manifests under `WindowsApps` (newest version per package family),
+- conventional install folders (Program Files, per-user `Programs`) for folders no other source already explains,
+- winget, Scoop and Chocolatey folders,
+- PATH entries from the machine and user environment, classified as tools,
+- folders registered as portable and programs added by hand.
+
+Entries are merged by canonical long path, never by name, so one executable found by several sources appears once with all its sources. Executables are classified as application, tool, helper or installer from their name and location, and tools and helpers are hidden by default. Nothing is executed during discovery. The whole disk is never scanned: only the sources above, one or two levels inside install folders, and folders the owner registers.
+
+The service keeps the result in `catalog.json`, so the library answers at once after a restart and refreshes in a background thread of below-normal priority. A refresh requested while another runs is queued once. First-seen times feed the "found recently" filter; the first scan only sets a baseline. `apps.diagnose` re-checks one path step by step (existence, extension, local disk, readability, catalog membership) and says whether it is missing, filtered or a duplicate.
+
+Limits: other users' registry hives that are not loaded are not read; their programs are found through their profile folders (Start menu, `Programs`, package-manager folders). Windows services and drivers are not listed as applications.
+
 ### Observation
 
 The owner can watch one application run for up to 30 minutes. The service records the owner's processes started below it, or kept in its folder, with hash, signer and the evidence the owner needs (unsigned, outside the folder, writable location, tool that runs programs). Nothing is allowed by observation; the owner picks what to save.

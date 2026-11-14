@@ -220,6 +220,8 @@ void handle_host_command(const Json& id, const std::string& command, const Json&
         data = {{"started", started}};
     } else if (command == "host.save_text") {
         data = host::save_text(g.window, args);
+    } else if (command == "host.pick_paths") {
+        data = host::pick_paths(g.window, args);
     } else if (command == "host.open_text") {
         data = host::open_text(g.window);
     } else if (command == "host.info") {

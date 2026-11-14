@@ -37,6 +37,12 @@ struct ManagedAccount {
     std::string sid;
 };
 
+struct ManualApp {
+    std::string path;
+    std::string name;
+    std::int64_t added_at = 0;
+};
+
 struct State {
     std::string owner_sid;
     PinRecord pin;
@@ -47,6 +53,8 @@ struct State {
     std::vector<core::Profile> profiles;
     std::vector<core::Application> library;
     std::vector<ManagedAccount> managed;
+    std::vector<ManualApp> manual_apps;
+    std::vector<std::string> portable_roots;
     std::optional<Session> session;
 
     [[nodiscard]] bool configured() const { return !owner_sid.empty(); }

@@ -99,6 +99,7 @@ const char* enforcement_name(SupervisionMode mode) {
 
 Controller::Controller(std::filesystem::path data_directory, bool enable_enforcement)
     : store_(std::move(data_directory)),
+      catalog_(store_.directory() / L"catalog.json"),
       install_dir_(executable_directory()),
       continuity_(install_dir_),
       assessor_(resolver_, continuity_, lineage_, system::expand_known_folders("%SystemRoot%"),
@@ -127,6 +128,7 @@ Controller::Controller(std::filesystem::path data_directory, bool enable_enforce
     supervisor_->on_allowed([this](const Denial& allowed) { on_allowed(allowed); });
     if (enable_enforcement) supervisor_->start();
     register_commands();
+    if (enable_enforcement) catalog_.refresh(catalog_request());
 
     {
         std::scoped_lock lock(mutex_);
@@ -743,6 +745,7 @@ void Controller::register_commands() {
     register_session_commands();
     register_system_commands();
     register_app_commands();
+    register_catalog_commands();
 }
 
 }  // namespace houseguest::service

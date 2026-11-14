@@ -52,18 +52,19 @@ export function recommendation(entry: BlockEntry): string {
 }
 
 const categories: [string, RegExp][] = [
-  ['games', /game|steam|epic|riot|minecraft|mojang|ubisoft|blizzard|battle\.net|origin|valve|roblox|xbox|unity|rockstar|nvidia geforce|garena|2k|bethesda|paradox|gog/i],
-  ['browsers', /chrome|firefox|edge|opera|brave|vivaldi|browser/i],
-  ['communication', /discord|teams|zoom|slack|skype|whatsapp|telegram|signal|mail|outlook|thunderbird/i],
-  ['media', /vlc|spotify|obs|audacity|media|player|photo|video|music|netflix|itunes|gimp|paint|premiere|davinci/i],
-  ['development', /visual studio|code|git|node|python|java|jetbrains|android|docker|powershell|terminal|developer/i],
-  ['office', /word|excel|powerpoint|office|libreoffice|onenote|acrobat|reader|notepad|pdf/i],
-  ['system', /microsoft windows|windows|control|settings|task manager|registry|defender|security/i],
+  ['games', /\b(game|games|steam|epic games|riot|minecraft|mojang|ubisoft|blizzard|battle\.net|valve|roblox|xbox|rockstar|geforce experience|2k|bethesda|paradox|gog galaxy|fivem|overwolf)\b/i],
+  ['browsers', /\b(chrome|chromium|firefox|edge|opera|brave|vivaldi|browser|camoufox)\b/i],
+  ['communication', /\b(discord|teams|zoom|slack|skype|whatsapp|telegram|signal|outlook|thunderbird|mail)\b/i],
+  ['development', /\b(visual studio|vs code|code|cursor|git|github|node|nvm|python|java|jdk|jetbrains|intellij|pycharm|android studio|docker|powershell|terminal|dbeaver|rust|cargo|qt|cmake|postman|sdk|compiler)\b/i],
+  ['media', /\b(vlc|spotify|obs|audacity|media player|photos?|video|music|netflix|itunes|gimp|paint|premiere|davinci|ffmpeg|handbrake|wallpaper)\b/i],
+  ['office', /\b(word|excel|powerpoint|office|libreoffice|onenote|acrobat|reader|notepad|pdf|obsidian|notion)\b/i],
+  ['system', /\b(microsoft windows|control panel|task manager|registry|defender|security|revo|uninstaller|cleaner|driver|nvidia control|device|settings)\b/i],
 ];
 
 export function categoryOf(app: LibraryApp): string {
-  const haystack = `${app.name} ${app.company} ${app.description} ${app.path}`;
-  return categories.find(([, pattern]) => pattern.test(haystack))?.[0] ?? 'other';
+  const primary = `${app.name} ${app.company}`;
+  const haystack = `${primary} ${app.description} ${app.path}`;
+  return categories.find(([, pattern]) => pattern.test(primary))?.[0] ?? categories.find(([, pattern]) => pattern.test(haystack))?.[0] ?? 'other';
 }
 
 export function categoryLabel(key: string): string {
@@ -77,8 +78,19 @@ export function categoryLabel(key: string): string {
 
 export function sourceLabel(source: string): string {
   return (
-    { start_menu: t('Start menu'), app_paths: t('App paths'), installed: t('Installed programs'), store: t('Microsoft Store'), manual: t('Added by hand') } as Record<string, string>
+    {
+      registry: t('Installed programs'), installed: t('Installed programs'), app_paths: t('App paths'), start_menu: t('Start menu'), store: t('Microsoft Store'),
+      path: t('PATH folders'), folder: t('Program folders'), portable: t('Portable folder'), manual: t('Added by hand'), winget: t('winget'), scoop: t('Scoop'), chocolatey: t('Chocolatey'),
+    } as Record<string, string>
   )[source] ?? source;
+}
+
+export function kindLabel(kind: string): string {
+  return ({ installed: t('Installed'), portable: t('Portable'), store: t('Microsoft Store'), manual: t('Added by hand') } as Record<string, string>)[kind] ?? kind;
+}
+
+export function roleKindLabel(role: string): string {
+  return ({ application: t('Application'), tool: t('Command-line or system tool'), helper: t('Helper component'), installer: t('Installer or uninstaller') } as Record<string, string>)[role] ?? role;
 }
 
 export function roleLabel(role: string): string {

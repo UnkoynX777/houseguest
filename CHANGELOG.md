@@ -4,6 +4,15 @@ All notable changes are documented here. The project follows [Semantic Versionin
 
 ## [Unreleased]
 
+### Fixed
+- The library missed programs installed for a single user, such as Visual Studio Code, because only the machine registry was read and a program needed a `DisplayIcon` to appear. Discovery now reads every loaded user hive, resolves the main executable from the install location, and combines registry, App Paths, Start menu, packaged apps, install folders, package managers and PATH. On the development machine the list grew from 88 to 182 applications, with tools and helpers hidden by default.
+- Packaged apps are read from `WindowsApps` manifests instead of a registry key that only lists a few packages.
+
+### Added
+- Library tools: add an application, add by folder, register portable folders, source status, and a diagnosis that explains why a path is missing, duplicated or filtered.
+- Library filters for installed, portable, Microsoft Store, added by hand, found recently, with dependencies and uncategorized, plus a switch for tools and helpers.
+- A persistent catalog cache with background, cancellable refresh and progressive loading.
+
 ## [0.4.1]
 
 ### Fixed

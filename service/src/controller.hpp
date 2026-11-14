@@ -15,6 +15,7 @@
 
 #include "assessor.hpp"
 #include "audit.hpp"
+#include "catalog.hpp"
 #include "continuity.hpp"
 #include "discovery.hpp"
 #include "lineage.hpp"
@@ -61,6 +62,9 @@ private:
     void register_session_commands();
     void register_system_commands();
     void register_app_commands();
+    void register_catalog_commands();
+    system::CatalogRequest catalog_request();
+    system::CatalogRequest catalog_request_locked() const;
     void add(const char* name, Access access, std::function<core::Json(const Caller&, const core::Json&)> run,
              bool unlocked = false);
     void require_owner(const Caller& caller, const core::Json& request);
@@ -109,6 +113,7 @@ private:
     std::mutex mutex_;
     std::condition_variable_any timer_wake_;
     Store store_;
+    AppCatalog catalog_;
     std::filesystem::path install_dir_;
     std::unique_ptr<AuditLog> audit_;
     IdentityResolver resolver_;

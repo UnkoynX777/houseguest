@@ -49,17 +49,10 @@ void Controller::register_policy_commands() {
 
     add(
         "apps.discover", Access::Owner,
-        [](Who, Args) {
+        [this](Who, Args) {
             Json list = Json::array();
-            for (const auto& app : system::discover_installed_apps()) {
-                list.push_back({{"name", app.name},
-                                {"path", app.path},
-                                {"company", app.company},
-                                {"version", app.version},
-                                {"description", app.description},
-                                {"source", app.source},
-                                {"package_family", app.package_family}});
-            }
+            const auto view = catalog_.view();
+            for (const auto& app : view.apps) list.push_back(to_json(app));
             return list;
         },
         true);
@@ -120,7 +113,9 @@ void Controller::register_policy_commands() {
 
             Json apps = Json::array();
             std::size_t allowed = 0, denied = 0;
-            for (const auto& app : system::discover_installed_apps()) {
+            const auto view = catalog_.view();
+            for (const auto& app : view.apps) {
+                if (app.role != system::AppRole::Application) continue;
                 const auto decision =
                     decide_file(*compiled.policy, system::path_from_utf8(app.path), app.package_family, {});
                 (decision.action == core::Action::Allow ? allowed : denied)++;
