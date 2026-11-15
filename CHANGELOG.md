@@ -21,7 +21,7 @@ All notable changes are documented here. The project follows [Semantic Versionin
 ### Known limits
 - The Cloudflare setup and the Gemini assistant have not run against live accounts; they are tested with simulated responses.
 - shadcn-vue was evaluated and not adopted (see docs/interface-layers.md).
-- The in-page title bar and fixed window were not observed in a real WebView2 window before this release.
+- The in-page title bar and fixed window were checked in a real WebView2 window on Windows 10 Pro 22H2 after release (1000 x 700, caption drawn by the page); other Windows versions and display scales are not yet verified.
 
 ## [0.4.6] - 2026-11-15
 
