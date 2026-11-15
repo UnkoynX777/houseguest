@@ -23,6 +23,8 @@ add_library(houseguest_service_lib STATIC
   src/api/http.cpp
   src/api/devices.cpp
   src/api/router.cpp
+  src/api/service.cpp
+  src/commands_api.cpp
   src/api/listener.cpp
   src/pipe_server.cpp)
 target_include_directories(houseguest_service_lib PUBLIC src ${CMAKE_BINARY_DIR}/generated)
@@ -35,7 +37,7 @@ add_executable(houseguest-cli ../cli/main.cpp)
 target_link_libraries(houseguest-cli PRIVATE houseguest::system houseguest_warnings)
 
 if(HOUSEGUEST_BUILD_TESTS)
-  add_executable(houseguest_service_tests tests/store_tests.cpp tests/audit_tests.cpp tests/ipc_limits_tests.cpp tests/continuity_tests.cpp tests/protection_tests.cpp tests/http_tests.cpp tests/listener_tests.cpp tests/router_tests.cpp)
+  add_executable(houseguest_service_tests tests/store_tests.cpp tests/audit_tests.cpp tests/ipc_limits_tests.cpp tests/continuity_tests.cpp tests/protection_tests.cpp tests/http_tests.cpp tests/listener_tests.cpp tests/router_tests.cpp tests/api_service_tests.cpp)
   target_link_libraries(houseguest_service_tests PRIVATE houseguest_service_lib houseguest_warnings Catch2::Catch2WithMain)
   add_test(NAME houseguest_service_tests COMMAND houseguest_service_tests)
 endif()

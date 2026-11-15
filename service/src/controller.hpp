@@ -13,6 +13,7 @@
 
 #include "houseguest/system/capabilities.hpp"
 
+#include "api/service.hpp"
 #include "assessor.hpp"
 #include "audit.hpp"
 #include "catalog.hpp"
@@ -66,6 +67,11 @@ private:
     void register_system_commands();
     void register_app_commands();
     void register_catalog_commands();
+    void register_api_commands();
+    class ApiBridge;
+    void start_api();
+    core::Json run_api(const std::string& command, const core::Json& args, const std::string& device_id);
+    bool api_check_pin(const std::string& pin);
     system::CatalogRequest catalog_request();
     system::CatalogRequest catalog_request_locked() const;
     void add(const char* name, Access access, std::function<core::Json(const Caller&, const core::Json&)> run,
@@ -181,6 +187,8 @@ private:
     std::atomic<std::uint64_t> blocked_ = 0;
     std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     std::jthread timer_;
+    std::shared_ptr<api::Host> api_host_;
+    std::unique_ptr<api::ApiService> api_;
 };
 
 }  // namespace houseguest::service

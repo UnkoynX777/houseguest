@@ -129,6 +129,7 @@ Controller::Controller(std::filesystem::path data_directory, bool enable_enforce
     supervisor_->on_allowed([this](const Denial& allowed) { on_allowed(allowed); });
     if (enable_enforcement) supervisor_->start();
     register_commands();
+    if (enable_enforcement) start_api();
     if (enable_enforcement) {
         catalog_.refresh(catalog_request());
         watcher_ = std::make_unique<ChangeWatcher>(
@@ -175,6 +176,7 @@ Controller::~Controller() {
 }
 
 void Controller::shutdown() {
+    if (api_) api_->stop();
     if (watcher_) watcher_->stop();
     if (timer_.joinable()) {
         timer_.request_stop();
@@ -836,6 +838,7 @@ void Controller::register_commands() {
     register_system_commands();
     register_app_commands();
     register_catalog_commands();
+    register_api_commands();
 }
 
 }  // namespace houseguest::service
