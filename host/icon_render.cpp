@@ -8,8 +8,8 @@
 #include <wrl.h>
 
 #include <algorithm>
-#include <cwctype>
 #include <cstdint>
+#include <cwctype>
 #include <filesystem>
 #include <memory>
 
@@ -44,7 +44,8 @@ struct Candidate {
 
 bool is_image_file(const fs::path& file) {
     auto extension = file.extension().wstring();
-    std::ranges::transform(extension, extension.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+    std::ranges::transform(extension, extension.begin(),
+                           [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
     return extension == L".ico" || extension == L".png" || extension == L".jpg" || extension == L".jpeg" ||
            extension == L".bmp" || extension == L".gif";
 }
@@ -65,8 +66,8 @@ ComPtr<IWICImagingFactory> imaging() {
 std::optional<Picture> from_source(IWICImagingFactory* factory, IWICBitmapSource* source, int native) {
     ComPtr<IWICFormatConverter> converter;
     if (FAILED(factory->CreateFormatConverter(&converter)) ||
-        FAILED(converter->Initialize(source, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0,
-                                     WICBitmapPaletteTypeCustom)))
+        FAILED(converter->Initialize(source, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr,
+                                     0, WICBitmapPaletteTypeCustom)))
         return std::nullopt;
     UINT width = 0, height = 0;
     if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0 || width > kMaxEdge ||
@@ -105,7 +106,8 @@ std::optional<Picture> load_image(const fs::path& file, int pixels) {
             height == 0 || width > kMaxEdge || height > kMaxEdge)
             continue;
         const int edge = static_cast<int>(std::max(width, height));
-        const bool better = !best || (best_edge < pixels ? edge > best_edge : edge >= pixels && edge < best_edge);
+        const bool better =
+            !best || (best_edge < pixels ? edge > best_edge : edge >= pixels && edge < best_edge);
         if (better) {
             best = frame;
             best_edge = edge;
@@ -145,7 +147,8 @@ std::optional<Picture> icon_pixels(HICON icon) {
     header.bmiHeader.biCompression = BI_RGB;
     const HDC dc = CreateCompatibleDC(nullptr);
     if (!dc) return std::nullopt;
-    const bool read = GetDIBits(dc, info.hbmColor, 0, picture.height, picture.bgra.data(), &header, DIB_RGB_COLORS) != 0;
+    const bool read =
+        GetDIBits(dc, info.hbmColor, 0, picture.height, picture.bgra.data(), &header, DIB_RGB_COLORS) != 0;
     bool has_alpha = false;
     if (read) {
         for (std::size_t i = 3; i < picture.bgra.size(); i += 4) {
@@ -158,7 +161,8 @@ std::optional<Picture> icon_pixels(HICON icon) {
     if (read && !has_alpha && info.hbmMask) {
         std::vector<std::uint8_t> cut(picture.bgra.size());
         if (GetDIBits(dc, info.hbmMask, 0, picture.height, cut.data(), &header, DIB_RGB_COLORS) != 0) {
-            for (std::size_t i = 0; i < picture.bgra.size(); i += 4) picture.bgra[i + 3] = cut[i] == 0 ? 255 : 0;
+            for (std::size_t i = 0; i < picture.bgra.size(); i += 4)
+                picture.bgra[i + 3] = cut[i] == 0 ? 255 : 0;
             has_alpha = true;
         }
     }
@@ -171,7 +175,8 @@ std::optional<Picture> icon_pixels(HICON icon) {
 }
 
 // Reading resources out of damaged executables is done by system code that can fault on hostile input; the
-// exception is contained here so one bad file cannot take the window down. No C++ objects live in these frames.
+// exception is contained here so one bad file cannot take the window down. No C++ objects live in these
+// frames.
 int icon_resource_count(const wchar_t* file) {
     __try {
         return static_cast<int>(ExtractIconExW(file, -1, nullptr, nullptr, 0));
@@ -184,7 +189,8 @@ HICON extract_resource_icon(const wchar_t* file, int index, int edge) {
     HICON icon = nullptr;
     __try {
         UINT id = 0;
-        if (PrivateExtractIconsW(file, index, edge, edge, &icon, &id, 1, LR_DEFAULTCOLOR) != 1) icon = nullptr;
+        if (PrivateExtractIconsW(file, index, edge, edge, &icon, &id, 1, LR_DEFAULTCOLOR) != 1)
+            icon = nullptr;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         icon = nullptr;
     }
@@ -193,7 +199,8 @@ HICON extract_resource_icon(const wchar_t* file, int index, int edge) {
 
 std::optional<Picture> shell_picture(const fs::path& file, int edge) {
     ComPtr<IShellItemImageFactory> factory;
-    if (FAILED(SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&factory)))) return std::nullopt;
+    if (FAILED(SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&factory))))
+        return std::nullopt;
     HBITMAP bitmap = nullptr;
     if (FAILED(factory->GetImage({edge, edge}, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK, &bitmap)) || !bitmap)
         return std::nullopt;
@@ -201,7 +208,8 @@ std::optional<Picture> shell_picture(const fs::path& file, int edge) {
     const auto wic = imaging();
     if (!wic) return std::nullopt;
     ComPtr<IWICBitmap> source;
-    if (FAILED(wic->CreateBitmapFromHBITMAP(bitmap, nullptr, WICBitmapUseAlpha, &source))) return std::nullopt;
+    if (FAILED(wic->CreateBitmapFromHBITMAP(bitmap, nullptr, WICBitmapUseAlpha, &source)))
+        return std::nullopt;
     return from_source(wic.Get(), source.Get(), 0);
 }
 
@@ -220,12 +228,13 @@ std::optional<Picture> load_resource(const fs::path& file, int index, int pixels
 
 std::optional<Picture> load(const Candidate& candidate, int pixels) {
     return candidate.tier == Tier::Image ? load_image(candidate.file, pixels)
-                                          : load_resource(candidate.file, candidate.index, pixels);
+                                         : load_resource(candidate.file, candidate.index, pixels);
 }
 
 std::vector<Candidate> candidates_of(const std::string& executable, const std::vector<IconSource>& sources) {
     std::vector<Candidate> list;
-    const auto add = [&](const std::string& kind, const std::string& text, int index, Tier forced, bool use_forced) {
+    const auto add = [&](const std::string& kind, const std::string& text, int index, Tier forced,
+                         bool use_forced) {
         if (text.empty() || text.size() > 1024) return;
         auto file = system::path_from_utf8(text);
         if (!file.is_absolute() || !system::is_local_disk_path(file)) return;
@@ -255,7 +264,8 @@ std::string encode_png(const std::vector<std::uint8_t>& bgra, int edge) {
         FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) ||
         FAILED(encoder->CreateNewFrame(&frame, nullptr)) || FAILED(frame->Initialize(nullptr)) ||
         FAILED(frame->SetSize(edge, edge)) || FAILED(frame->SetPixelFormat(&format)) ||
-        FAILED(frame->WriteSource(bitmap.Get(), nullptr)) || FAILED(frame->Commit()) || FAILED(encoder->Commit()))
+        FAILED(frame->WriteSource(bitmap.Get(), nullptr)) || FAILED(frame->Commit()) ||
+        FAILED(encoder->Commit()))
         return {};
     HGLOBAL global = nullptr;
     if (FAILED(GetHGlobalFromStream(stream.Get(), &global))) return {};
@@ -269,7 +279,8 @@ std::string encode_png(const std::vector<std::uint8_t>& bgra, int edge) {
 
 // Draws the picture centred on a transparent square, scaled to fit without changing its proportions.
 std::string fit_square(const Picture& picture, int edge) {
-    const double scale = std::min(static_cast<double>(edge) / picture.width, static_cast<double>(edge) / picture.height);
+    const double scale =
+        std::min(static_cast<double>(edge) / picture.width, static_cast<double>(edge) / picture.height);
     const int width = std::clamp(static_cast<int>(picture.width * scale + 0.5), 1, edge);
     const int height = std::clamp(static_cast<int>(picture.height * scale + 0.5), 1, edge);
     std::vector<std::uint8_t> canvas(static_cast<std::size_t>(edge) * edge * 4, 0);
@@ -283,8 +294,10 @@ std::string fit_square(const Picture& picture, int edge) {
     ComPtr<IWICBitmapSource> scaled = source;
     if (width != picture.width || height != picture.height) {
         ComPtr<IWICBitmapScaler> scaler;
-        const auto mode = scale < 1.0 ? WICBitmapInterpolationModeFant : WICBitmapInterpolationModeHighQualityCubic;
-        if (FAILED(factory->CreateBitmapScaler(&scaler)) || FAILED(scaler->Initialize(source.Get(), width, height, mode)))
+        const auto mode =
+            scale < 1.0 ? WICBitmapInterpolationModeFant : WICBitmapInterpolationModeHighQualityCubic;
+        if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
+            FAILED(scaler->Initialize(source.Get(), width, height, mode)))
             return {};
         scaled = scaler;
     }
@@ -333,7 +346,8 @@ std::string icon_fingerprint(const std::string& executable, const std::vector<Ic
         text += path;
         text += '|' + std::to_string(index) + '|';
         if (const auto stamp = system::file_stamp(system::path_from_utf8(path))) {
-            text += std::to_string(stamp->size) + ':' + std::to_string(stamp->written) + ':' + std::to_string(stamp->changed);
+            text += std::to_string(stamp->size) + ':' + std::to_string(stamp->written) + ':' +
+                    std::to_string(stamp->changed);
         } else {
             text += "missing";
         }

@@ -1,7 +1,5 @@
 #include "icons.hpp"
 
-#include "icon_render.hpp"
-
 #include <windows.h>
 
 #include <objbase.h>
@@ -12,6 +10,8 @@
 
 #include "houseguest/system/crypto.hpp"
 #include "houseguest/system/text.hpp"
+
+#include "icon_render.hpp"
 
 namespace houseguest::host {
 namespace {
@@ -60,7 +60,8 @@ IconService::~IconService() {
     ready_.notify_all();
 }
 
-void IconService::request(const std::string& utf8_path, std::vector<IconSource> sources, int pixels, Reply reply) {
+void IconService::request(const std::string& utf8_path, std::vector<IconSource> sources, int pixels,
+                          Reply reply) {
     Reply dropped;
     {
         std::scoped_lock lock(mutex_);

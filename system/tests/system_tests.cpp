@@ -1,4 +1,5 @@
 #include <windows.h>
+
 #include <wincrypt.h>
 
 #include <algorithm>
@@ -184,8 +185,8 @@ TEST_CASE("the COM server index reads the machine registrations once and reuses 
     CHECK(index.rebuilds() == 1);
 }
 
-
-TEST_CASE("a file stamp changes when content is replaced even if size and write time are restored", "[stamp][safety]") {
+TEST_CASE("a file stamp changes when content is replaced even if size and write time are restored",
+          "[stamp][safety]") {
     const auto file = std::filesystem::temp_directory_path() / L"houseguest-stamp-test.bin";
     {
         std::ofstream out(file, std::ios::binary | std::ios::trunc);
@@ -298,12 +299,14 @@ TEST_CASE("a signed file that was modified keeps its certificate but is not vali
 }
 
 TEST_CASE("distinguished names keep every attribute but only friendly ones name the signer", "[signature]") {
-    const wchar_t* text = L"CN=\"Example Games, Inc.\", O=\"Example Games, Inc.\", C=US, "
-                          L"1.3.6.1.4.1.311.60.2.1.3=US, 2.5.4.15=Private Organization, 2.5.4.5=1234567";
+    const wchar_t* text =
+        L"CN=\"Example Games, Inc.\", O=\"Example Games, Inc.\", C=US, "
+        L"1.3.6.1.4.1.311.60.2.1.3=US, 2.5.4.15=Private Organization, 2.5.4.5=1234567";
     DWORD size = 0;
     CertStrToNameW(X509_ASN_ENCODING, text, CERT_X500_NAME_STR, nullptr, nullptr, &size, nullptr);
     std::vector<BYTE> encoded(size);
-    REQUIRE(CertStrToNameW(X509_ASN_ENCODING, text, CERT_X500_NAME_STR, nullptr, encoded.data(), &size, nullptr));
+    REQUIRE(
+        CertStrToNameW(X509_ASN_ENCODING, text, CERT_X500_NAME_STR, nullptr, encoded.data(), &size, nullptr));
     const auto name = parse_distinguished_name(encoded);
     CHECK(name.common_name == "Example Games, Inc.");
     CHECK(name.organization == "Example Games, Inc.");
@@ -349,16 +352,18 @@ TEST_CASE("icon locations are read in every form installers write them", "[icons
     CHECK_FALSE(parse_icon_location(std::wstring(5000, L'a')));
 }
 
-TEST_CASE("an installation record's icon and conflicting publishers are kept with their sources", "[discovery][icons]") {
+TEST_CASE("an installation record's icon and conflicting publishers are kept with their sources",
+          "[discovery][icons]") {
     const auto folder = std::filesystem::temp_directory_path() / "hg-icon-discovery";
     std::filesystem::remove_all(folder);
     std::filesystem::create_directories(folder / "App");
-    std::filesystem::copy_file(std::filesystem::path(R"(C:\Windows\System32\find.exe)"), folder / "App" / "Zephyr.exe");
+    std::filesystem::copy_file(std::filesystem::path(R"(C:\Windows\System32\find.exe)"),
+                               folder / "App" / "Zephyr.exe");
     std::ofstream(folder / "App" / "zephyr.ico", std::ios::binary) << "ico";
     const std::wstring key = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\HouseguestTestZephyr";
     HKEY handle = nullptr;
-    REQUIRE(RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &handle, nullptr) ==
-            ERROR_SUCCESS);
+    REQUIRE(RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &handle,
+                            nullptr) == ERROR_SUCCESS);
     const auto set = [&](const wchar_t* name, const std::wstring& value) {
         RegSetValueExW(handle, name, 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
                        static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));

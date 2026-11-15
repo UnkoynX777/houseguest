@@ -174,10 +174,11 @@ Protection Protection::windows_default(const std::string& system_root, const std
     Protection protection;
     const auto root = normalize_path(system_root);
     for (const auto& item : kSystemRoot) {
-        protection.entries_.push_back({root + "/" + std::string(item.relative), item.kind, signer_of(item.signer)});
+        protection.entries_.push_back(
+            {root + "/" + std::string(item.relative), item.kind, signer_of(item.signer)});
     }
-    protection.entries_.push_back(
-        {normalize_path(program_files) + "/" + std::string(kTouchKeyboard), ProtectedKind::Input, Signer::None});
+    protection.entries_.push_back({normalize_path(program_files) + "/" + std::string(kTouchKeyboard),
+                                   ProtectedKind::Input, Signer::None});
     protection.com_areas_ = {root + "/system32/*.exe", root + "/system32/**/*.exe", root + "/syswow64/*.exe",
                              root + "/syswow64/**/*.exe"};
     protection.dcom_launcher_ = root + "/system32/svchost.exe";
@@ -191,8 +192,8 @@ bool is_windows_signer(std::string_view publisher) {
 
 bool Protection::may_be_com_server(std::string_view path) const {
     return !is_sensitive_tool(path) && std::ranges::any_of(com_areas_, [&](const std::string& pattern) {
-               return path_matches(pattern, path);
-           });
+        return path_matches(pattern, path);
+    });
 }
 
 std::optional<ProtectedHit> Protection::classify_by_evidence(const ProcessFacts& facts) const {
@@ -215,8 +216,9 @@ std::optional<ProtectedHit> Protection::classify(const ProcessFacts& facts) cons
         if (entry.signer == Signer::None)
             return ProtectedHit{entry.kind, protected_kind_name(entry.kind), false};
         if (!facts.publisher_resolved) return ProtectedHit{entry.kind, protected_kind_name(entry.kind), true};
-        const bool signed_as_required = entry.signer == Signer::Windows ? is_windows_signer(facts.app.publisher)
-                                                                         : !facts.app.publisher.empty();
+        const bool signed_as_required = entry.signer == Signer::Windows
+                                            ? is_windows_signer(facts.app.publisher)
+                                            : !facts.app.publisher.empty();
         if (signed_as_required) return ProtectedHit{entry.kind, protected_kind_name(entry.kind), false};
         return std::nullopt;
     }

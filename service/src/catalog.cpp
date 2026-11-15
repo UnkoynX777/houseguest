@@ -59,13 +59,15 @@ core::Json to_json(const system::InstalledApp& app) {
     core::Json evidence = core::Json::array();
     for (const auto& item : app.evidence) evidence.push_back({{"kind", item.kind}, {"detail", item.detail}});
     core::Json icons = core::Json::array();
-    for (const auto& item : app.icons) icons.push_back({{"kind", item.kind}, {"path", item.path}, {"index", item.index}});
+    for (const auto& item : app.icons)
+        icons.push_back({{"kind", item.kind}, {"path", item.path}, {"index", item.index}});
     core::Json alternatives = core::Json::array();
     for (const auto& item : app.alternatives)
         alternatives.push_back({{"field", item.field}, {"value", item.value}, {"source", item.source}});
     return {{"icons", std::move(icons)},
             {"alternatives", std::move(alternatives)},
-            {"origins", {{"name", app.name_source}, {"company", app.company_source}, {"version", app.version_source}}},
+            {"origins",
+             {{"name", app.name_source}, {"company", app.company_source}, {"version", app.version_source}}},
             {"id", app.id},
             {"name", app.name},
             {"path", app.path},
@@ -133,7 +135,8 @@ system::InstalledApp app_from_json(const core::Json& json) {
     }
     if (const auto it = json.find("alternatives"); it != json.end() && it->is_array()) {
         for (const auto& item : *it)
-            app.alternatives.push_back({item.value("field", ""), item.value("value", ""), item.value("source", "")});
+            app.alternatives.push_back(
+                {item.value("field", ""), item.value("value", ""), item.value("source", "")});
     }
     if (const auto it = json.find("icons"); it != json.end() && it->is_array()) {
         for (const auto& item : *it)
@@ -326,7 +329,8 @@ void AppCatalog::scan(system::CatalogRequest request) {
 
     const auto started = std::chrono::steady_clock::now();
     auto catalog = system::discover_catalog(request);
-    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
     std::scoped_lock lock(mutex_);
     if (catalog.cancelled) {
         view_.apps = committed_;

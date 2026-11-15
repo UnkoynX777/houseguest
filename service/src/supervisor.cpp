@@ -537,7 +537,8 @@ Supervisor::Outcome Supervisor::inspect(Pending& pending) {
     if (decision.action == core::Action::Allow) {
         const bool by_evidence = decision.source == core::DecisionSource::Protected &&
                                  decision.reason == core::protected_kind_name(core::ProtectedKind::ComServer);
-        if (on_allow_ && (decision.source != core::DecisionSource::Protected || by_evidence)) on_allow_(denial);
+        if (on_allow_ && (decision.source != core::DecisionSource::Protected || by_evidence))
+            on_allow_(denial);
         return settle(Outcome::Settled);
     }
 

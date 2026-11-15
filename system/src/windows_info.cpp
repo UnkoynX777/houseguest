@@ -82,8 +82,9 @@ std::vector<LocalUser> list_local_users() {
 }
 
 std::optional<FileStamp> file_stamp(const std::filesystem::path& file) {
-    Handle handle(CreateFileW(file.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                              nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+    Handle handle(CreateFileW(file.c_str(), FILE_READ_ATTRIBUTES,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                              FILE_FLAG_BACKUP_SEMANTICS, nullptr));
     if (handle.get() == INVALID_HANDLE_VALUE) return std::nullopt;
     FILE_BASIC_INFO basic{};
     FILE_STANDARD_INFO standard{};

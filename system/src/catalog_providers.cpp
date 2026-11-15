@@ -444,9 +444,10 @@ std::vector<unsigned> parse_version(const std::string& text) {
     return parts;
 }
 
-// Packaged apps ship each logo as several files that differ by scale, target size and backplate ("Logo.scale-200.png",
-// "Logo.altform-unplated_targetsize-256.png"). The manifest names only the base, so the largest variant that exists
-// is chosen, preferring the unplated ones: they have no coloured tile behind the glyph and fill their canvas.
+// Packaged apps ship each logo as several files that differ by scale, target size and backplate
+// ("Logo.scale-200.png", "Logo.altform-unplated_targetsize-256.png"). The manifest names only the base, so
+// the largest variant that exists is chosen, preferring the unplated ones: they have no coloured tile behind
+// the glyph and fill their canvas.
 fs::path best_package_logo(const fs::path& package_root, const std::string& relative) {
     if (relative.empty() || relative.find("..") != std::string::npos) return {};
     const auto base = package_root / path_from_utf8(relative);
@@ -465,7 +466,8 @@ fs::path best_package_logo(const fs::path& package_root, const std::string& rela
             size = std::atoi(name.c_str() + at + 11) * 4;
         else if (const auto scale = name.find("scale-"); scale != std::string::npos)
             size = std::atoi(name.c_str() + scale + 6);
-        if (name.find("altform-lightunplated") != std::string::npos || name.find("contrast-") != std::string::npos)
+        if (name.find("altform-lightunplated") != std::string::npos ||
+            name.find("contrast-") != std::string::npos)
             size = 0;
         else if (name.find("altform-unplated") != std::string::npos)
             size += 100000;
@@ -607,7 +609,8 @@ void provide_xbox(ProviderContext& ctx) {
             if (visuals_at != std::string::npos) {
                 const auto visuals = " " + tag_at(config, visuals_at);
                 for (const char* attribute : {"Square44x44Logo", "Square150x150Logo", "StoreLogo"}) {
-                    if (const auto logo = best_package_logo(content, xml_attribute(visuals, attribute)); !logo.empty()) {
+                    if (const auto logo = best_package_logo(content, xml_attribute(visuals, attribute));
+                        !logo.empty()) {
                         claim.icons.push_back({"package", path_to_utf8(logo), 0});
                         break;
                     }

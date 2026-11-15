@@ -4,12 +4,13 @@
 #include <wincodec.h>
 #include <wrl.h>
 
-#include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "../icon_render.hpp"
 
@@ -37,8 +38,8 @@ std::string png_bytes(int width, int height, std::uint32_t colour) {
     std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width) * height, colour);
     ComPtr<IWICBitmap> bitmap;
     factory->CreateBitmapFromMemory(width, height, GUID_WICPixelFormat32bppBGRA, width * 4,
-                                    static_cast<UINT>(pixels.size() * 4), reinterpret_cast<BYTE*>(pixels.data()),
-                                    &bitmap);
+                                    static_cast<UINT>(pixels.size() * 4),
+                                    reinterpret_cast<BYTE*>(pixels.data()), &bitmap);
     ComPtr<IStream> stream;
     CreateStreamOnHGlobal(nullptr, TRUE, &stream);
     ComPtr<IWICBitmapEncoder> encoder;
@@ -189,12 +190,13 @@ TEST_CASE("a changed file changes the fingerprint and a missing one is distingui
     const auto before = icon_fingerprint("", {{"registry", ico.string(), 0}});
     write_ico(ico, 48, 0xFF112233);
     CHECK(icon_fingerprint("", {{"registry", ico.string(), 0}}) != before);
-    CHECK(icon_fingerprint("", {{"registry", ico.string() + ".gone", 0}}).find("missing") != std::string::npos);
+    CHECK(icon_fingerprint("", {{"registry", ico.string() + ".gone", 0}}).find("missing") !=
+          std::string::npos);
 }
 
-// Not part of the normal run. `houseguest_host_tests "[.survey]"` reads the library saved in HG_SURVEY (the output of
-// `apps.library`), renders every entry the way the window does, and reports where each picture came from compared
-// with asking the shell for the executable alone, which is what the window did before.
+// Not part of the normal run. `houseguest_host_tests "[.survey]"` reads the library saved in HG_SURVEY (the
+// output of `apps.library`), renders every entry the way the window does, and reports where each picture came
+// from compared with asking the shell for the executable alone, which is what the window did before.
 #include <shobjidl.h>
 
 #include <chrono>
@@ -226,21 +228,25 @@ TEST_CASE("survey of the machine's library", "[.survey]") {
         ++total;
         std::vector<IconSource> sources;
         for (const auto& icon : app.value("icons", houseguest::core::Json::array()))
-            sources.push_back({icon.value("kind", std::string()), icon.value("path", std::string()), icon.value("index", 0)});
+            sources.push_back({icon.value("kind", std::string()), icon.value("path", std::string()),
+                               icon.value("index", 0)});
         ComPtr<IShellItemImageFactory> factory;
         bool before = false;
         if (SUCCEEDED(SHCreateItemFromParsingName(fs::path(path).c_str(), nullptr, IID_PPV_ARGS(&factory)))) {
             HBITMAP bitmap = nullptr;
-            before = SUCCEEDED(factory->GetImage({64, 64}, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK, &bitmap)) && bitmap;
+            before = SUCCEEDED(factory->GetImage({64, 64}, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK, &bitmap)) &&
+                     bitmap;
             if (bitmap) DeleteObject(bitmap);
         }
         const auto started = std::chrono::steady_clock::now();
         const auto after = render_icon(path, sources, 64);
-        render_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+        render_ms +=
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
         before_ok += before;
         after_ok += after.has_value();
         declared += after && after->source != "executable";
-        std::cout << (before ? "old:ok  " : "old:none") << " new:" << (after ? after->source : std::string("none")) << "  "
+        std::cout << (before ? "old:ok  " : "old:none")
+                  << " new:" << (after ? after->source : std::string("none")) << "  "
                   << app.value("name", std::string()) << "  [" << sources.size() << " declared]\n";
         if (!output.empty() && after) {
             std::string name = app.value("id", std::string("x")) + ".png";
@@ -248,5 +254,6 @@ TEST_CASE("survey of the machine's library", "[.survey]") {
         }
     }
     std::cout << "entries=" << total << " old_with_picture=" << before_ok << " new_with_picture=" << after_ok
-              << " from_declared_sources=" << declared << " render_ms_total=" << static_cast<int>(render_ms) << "\n";
+              << " from_declared_sources=" << declared << " render_ms_total=" << static_cast<int>(render_ms)
+              << "\n";
 }

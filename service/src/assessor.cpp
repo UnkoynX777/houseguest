@@ -145,12 +145,14 @@ Assessment Assessor::assess(const system::ProcessRef& process, std::uint64_t cre
     return a;
 }
 
-void Assessor::gather_activation_facts(Assessment& a, std::uint64_t created, const core::Protection& protection) {
+void Assessor::gather_activation_facts(Assessment& a, std::uint64_t created,
+                                       const core::Protection& protection) {
     auto& f = a.facts;
     if (!f.image_known || f.remote_image || a.parent_pid == 0 || protection.covers(f.app.path) ||
         !protection.may_be_com_server(f.app.path))
         return;
-    if (!com_servers_.registered(system::path_from_utf8(f.app.path)) || !older_than(a.parent_pid, created)) return;
+    if (!com_servers_.registered(system::path_from_utf8(f.app.path)) || !older_than(a.parent_pid, created))
+        return;
     const auto parent = system::ProcessRef::open(a.parent_pid);
     const auto path = parent ? parent->image_path() : std::nullopt;
     if (!path) return;

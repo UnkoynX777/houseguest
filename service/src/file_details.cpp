@@ -21,7 +21,9 @@ Json name_json(const system::CertificateName& name) {
 }
 
 Json signature_json(const system::SignatureReport& report) {
-    const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    const auto now =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
     char code[16];
     snprintf(code, sizeof(code), "0x%08lX", static_cast<unsigned long>(report.status));
     return {{"state", system::state_name(report.state)},

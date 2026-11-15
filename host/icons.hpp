@@ -6,9 +6,9 @@
 #include <functional>
 #include <list>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
-#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -16,10 +16,10 @@
 
 namespace houseguest::host {
 
-// Resolves the picture for an application (see icon_render.hpp) and returns it as a PNG data URL. Work runs on
-// one worker thread that owns its COM apartment. Results, including "no picture", are cached in memory and in the
-// user's local app data keyed by every file that could supply the picture and its change stamp, so a changed
-// file gets a fresh icon and the window never waits.
+// Resolves the picture for an application (see icon_render.hpp) and returns it as a PNG data URL. Work runs
+// on one worker thread that owns its COM apartment. Results, including "no picture", are cached in memory and
+// in the user's local app data keyed by every file that could supply the picture and its change stamp, so a
+// changed file gets a fresh icon and the window never waits.
 class IconService {
 public:
     using Reply = std::function<void(std::string data_url)>;

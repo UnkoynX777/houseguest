@@ -21,8 +21,8 @@ struct Evidence {
     std::string detail;
 };
 
-// Where a picture for the entry can be read from. The kind says how the owner of the information vouches for it,
-// the index selects a resource inside an executable or library, and nothing here is ever executed.
+// Where a picture for the entry can be read from. The kind says how the owner of the information vouches for
+// it, the index selects a resource inside an executable or library, and nothing here is ever executed.
 struct IconSource {
     std::string kind;
     std::string path;

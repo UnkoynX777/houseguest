@@ -29,8 +29,8 @@ struct IconLocation {
     fs::path file;
     int index = 0;
 };
-// Reads the "file,index" form used by DisplayIcon and shortcuts, with or without quotes. Only absolute paths on
-// local disks are returned, and the file is not opened.
+// Reads the "file,index" form used by DisplayIcon and shortcuts, with or without quotes. Only absolute paths
+// on local disks are returned, and the file is not opened.
 std::optional<IconLocation> parse_icon_location(std::wstring text);
 
 std::wstring registry_text(HKEY root, const std::wstring& key, const wchar_t* value, REGSAM view = 0);

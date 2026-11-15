@@ -43,9 +43,11 @@ std::wstring environment(const wchar_t* name) {
 
 std::vector<Place> places(const ChangeWatcher::Roots& extra) {
     std::set<Place> found;
-    const auto add = [&](std::string label, const fs::path& folder, bool subtree, DWORD filter = kFolderEvents) {
+    const auto add = [&](std::string label, const fs::path& folder, bool subtree,
+                         DWORD filter = kFolderEvents) {
         std::error_code ec;
-        if (!folder.empty() && fs::is_directory(folder, ec)) found.insert({std::move(label), folder, subtree, filter});
+        if (!folder.empty() && fs::is_directory(folder, ec))
+            found.insert({std::move(label), folder, subtree, filter});
     };
 
     for (const auto* variable : {L"ProgramFiles", L"ProgramFiles(x86)", L"ProgramW6432"})
@@ -57,8 +59,8 @@ std::vector<Place> places(const ChangeWatcher::Roots& extra) {
     const auto drive = environment(L"SystemDrive");
     const fs::path users = drive.empty() ? fs::path(L"C:\\Users") : fs::path(drive + L"\\Users");
     std::error_code ec;
-    for (fs::directory_iterator it(users, fs::directory_options::skip_permission_denied, ec), end; it != end && !ec;
-         it.increment(ec)) {
+    for (fs::directory_iterator it(users, fs::directory_options::skip_permission_denied, ec), end;
+         it != end && !ec; it.increment(ec)) {
         std::error_code type_error;
         if (!it->is_directory(type_error)) continue;
         add("start menu", it->path() / L"AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs", true);
@@ -79,7 +81,8 @@ std::vector<Place> places(const ChangeWatcher::Roots& extra) {
     add("steam", fs::path(environment(L"ProgramFiles(x86)")) / L"Steam" / L"steamapps", false,
         FILE_NOTIFY_CHANGE_FILE_NAME);
     if (extra) {
-        for (const auto& folder : extra()) add("registered folder", folder, false, FILE_NOTIFY_CHANGE_DIR_NAME);
+        for (const auto& folder : extra())
+            add("registered folder", folder, false, FILE_NOTIFY_CHANGE_DIR_NAME);
     }
     return {found.begin(), found.end()};
 }
@@ -115,8 +118,8 @@ public:
         if (RegOpenKeyExW(root, path.c_str(), 0, KEY_NOTIFY | view, &key) != ERROR_SUCCESS) return;
         const HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (event == nullptr ||
-            RegNotifyChangeKeyValue(key, TRUE, REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, event, TRUE) !=
-                ERROR_SUCCESS) {
+            RegNotifyChangeKeyValue(key, TRUE, REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, event,
+                                    TRUE) != ERROR_SUCCESS) {
             if (event) CloseHandle(event);
             RegCloseKey(key);
             return;
@@ -155,7 +158,8 @@ std::vector<std::wstring> loaded_user_hives() {
     wchar_t name[256];
     for (DWORD index = 0;; ++index) {
         DWORD size = 256;
-        if (RegEnumKeyExW(users, index, name, &size, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS) break;
+        if (RegEnumKeyExW(users, index, name, &size, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS)
+            break;
         const std::wstring text(name, size);
         if (text.starts_with(L"S-1-5-21-") && !text.ends_with(L"_Classes")) hives.push_back(text);
     }
@@ -213,7 +217,8 @@ void ChangeWatcher::run(const std::stop_token& stop) {
                 const std::wstring uninstall = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
                 watches.add_registry(HKEY_LOCAL_MACHINE, uninstall, KEY_WOW64_64KEY, "registry");
                 watches.add_registry(HKEY_LOCAL_MACHINE, uninstall, KEY_WOW64_32KEY, "registry");
-                for (const auto& hive : hives) watches.add_registry(HKEY_USERS, hive + L"\\" + uninstall, 0, "registry");
+                for (const auto& hive : hives)
+                    watches.add_registry(HKEY_USERS, hive + L"\\" + uninstall, 0, "registry");
                 for (const auto& place : list) watches.add_folder(place);
                 watching_ = watches.size();
                 if (changed_set && !first_signal) {
@@ -230,12 +235,15 @@ void ChangeWatcher::run(const std::stop_token& stop) {
             const auto settle = *last_signal + kQuiet;
             const auto limit = *first_signal + kLongest;
             const auto due = std::min(settle, limit);
-            timeout = due <= now ? 0
-                                 : static_cast<DWORD>(std::chrono::duration_cast<std::chrono::milliseconds>(due - now).count());
+            timeout = due <= now
+                          ? 0
+                          : static_cast<DWORD>(
+                                std::chrono::duration_cast<std::chrono::milliseconds>(due - now).count());
         }
-        const DWORD waited = handles.empty() ? (Sleep(std::min<DWORD>(timeout, 1000)), WAIT_TIMEOUT)
-                                             : WaitForMultipleObjects(static_cast<DWORD>(handles.size()), handles.data(),
-                                                                      FALSE, std::min<DWORD>(timeout, 1000));
+        const DWORD waited = handles.empty()
+                                 ? (Sleep(std::min<DWORD>(timeout, 1000)), WAIT_TIMEOUT)
+                                 : WaitForMultipleObjects(static_cast<DWORD>(handles.size()), handles.data(),
+                                                          FALSE, std::min<DWORD>(timeout, 1000));
         if (waited < WAIT_OBJECT_0 + handles.size()) {
             const auto& item = watches.arm(waited - WAIT_OBJECT_0);
             ++signals_;

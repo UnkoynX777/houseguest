@@ -5,8 +5,9 @@
 #include <array>
 #include <memory>
 
-#include "catalog_support.hpp"
 #include "houseguest/system/text.hpp"
+
+#include "catalog_support.hpp"
 
 namespace houseguest::system {
 namespace {
@@ -37,7 +38,8 @@ struct ComServerIndex::Watch {
         bool ok = false;
         for (std::size_t i = 0; i < views.size(); ++i) {
             HKEY raw = nullptr;
-            if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, kClsid, 0, KEY_READ | KEY_NOTIFY | kViews[i], &raw) != ERROR_SUCCESS)
+            if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, kClsid, 0, KEY_READ | KEY_NOTIFY | kViews[i], &raw) !=
+                ERROR_SUCCESS)
                 continue;
             views[i].key.reset(raw);
             views[i].signal.reset(CreateEventW(nullptr, TRUE, FALSE, nullptr));

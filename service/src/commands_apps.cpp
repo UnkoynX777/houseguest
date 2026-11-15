@@ -346,8 +346,8 @@ void Controller::register_app_commands() {
             {
                 std::scoped_lock lock(mutex_);
                 for (const auto& entry : store_.state.manual_apps)
-                    manual.insert(core::normalize_path(
-                        system::normalize_app_key(system::path_from_utf8(entry.path))));
+                    manual.insert(
+                        core::normalize_path(system::normalize_app_key(system::path_from_utf8(entry.path))));
             }
             Json list = Json::array();
             std::size_t allowed = 0, blocked = 0;
@@ -378,8 +378,9 @@ void Controller::register_app_commands() {
                     ++library_hits_;
                 } else {
                     ++library_misses_;
-                    remembered.decision = decide_file(*compiled.policy, system::path_from_utf8(installed.path),
-                                                      installed.package_family, {});
+                    remembered.decision =
+                        decide_file(*compiled.policy, system::path_from_utf8(installed.path),
+                                    installed.package_family, {});
                     remembered.size = installed.size;
                     remembered.modified = installed.modified;
                 }
@@ -445,7 +446,8 @@ void Controller::register_app_commands() {
         [this](Who, Args args) {
             const auto file = system::path_from_utf8(require_text(args, "path"));
             std::error_code ec;
-            if (!file.is_absolute() || !system::is_local_disk_path(file) || !std::filesystem::is_regular_file(file, ec))
+            if (!file.is_absolute() || !system::is_local_disk_path(file) ||
+                !std::filesystem::is_regular_file(file, ec))
                 throw Failure("not_found", "File not found.");
             return details_.describe(file);
         },

@@ -6,8 +6,8 @@
 
 namespace houseguest::host {
 
-// A place a picture may be read from. The kind records who declared it ("registry", "shortcut", "package"), the
-// index selects a resource inside an executable or library. Nothing is ever executed to read it.
+// A place a picture may be read from. The kind records who declared it ("registry", "shortcut", "package"),
+// the index selects a resource inside an executable or library. Nothing is ever executed to read it.
 struct IconSource {
     std::string kind;
     std::string path;

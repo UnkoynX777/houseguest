@@ -1,11 +1,11 @@
 #include "catalog_support.hpp"
 
-#include <cwctype>
 #include <shobjidl.h>
 #include <tlhelp32.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cwctype>
 #include <deque>
 #include <fstream>
 #include <set>
@@ -71,7 +71,8 @@ std::optional<IconLocation> parse_icon_location(std::wstring text) {
     if (const auto comma = text.rfind(L','); comma != std::wstring::npos) {
         const auto tail = text.substr(comma + 1);
         const auto digits = tail.find_first_of(L"0123456789");
-        const bool numeric = !tail.empty() && tail.find_first_not_of(L" -0123456789\"") == std::wstring::npos &&
+        const bool numeric = !tail.empty() &&
+                             tail.find_first_not_of(L" -0123456789\"") == std::wstring::npos &&
                              digits != std::wstring::npos;
         if (numeric) {
             index = _wtoi(tail.c_str());
@@ -131,7 +132,9 @@ std::vector<std::wstring> subkeys(HKEY root, const std::wstring& key, REGSAM vie
     return names;
 }
 
-fs::path resolve_shortcut(const fs::path& link) { return read_shortcut(link).target; }
+fs::path resolve_shortcut(const fs::path& link) {
+    return read_shortcut(link).target;
+}
 
 ShortcutTarget read_shortcut(const fs::path& link) {
     IShellLinkW* shell_link = nullptr;
@@ -178,25 +181,30 @@ VersionInfo read_version(const fs::path& file) {
     std::vector<Translation> translations;
     Translation* declared = nullptr;
     UINT length = 0;
-    if (VerQueryValueW(block.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&declared), &length) &&
+    if (VerQueryValueW(block.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&declared),
+                       &length) &&
         declared != nullptr) {
-        for (UINT i = 0; i < std::min<UINT>(length / sizeof(Translation), 8); ++i) translations.push_back(declared[i]);
+        for (UINT i = 0; i < std::min<UINT>(length / sizeof(Translation), 8); ++i)
+            translations.push_back(declared[i]);
     }
-    for (const Translation common : {Translation{0x0409, 0x04B0}, Translation{0x0409, 0x04E4}, Translation{0x0000, 0x04B0}})
+    for (const Translation common :
+         {Translation{0x0409, 0x04B0}, Translation{0x0409, 0x04E4}, Translation{0x0000, 0x04B0}})
         translations.push_back(common);
 
     const auto field = [&](const wchar_t* name) -> std::string {
         for (const auto& translation : translations) {
             wchar_t query[96];
-            swprintf_s(query, L"\\StringFileInfo\\%04x%04x\\%s", translation.language, translation.code_page, name);
+            swprintf_s(query, L"\\StringFileInfo\\%04x%04x\\%s", translation.language, translation.code_page,
+                       name);
             wchar_t* value = nullptr;
             UINT size_out = 0;
-            if (!VerQueryValueW(block.data(), query, reinterpret_cast<void**>(&value), &size_out) || value == nullptr ||
-                size_out == 0)
+            if (!VerQueryValueW(block.data(), query, reinterpret_cast<void**>(&value), &size_out) ||
+                value == nullptr || size_out == 0)
                 continue;
             std::wstring text(value, wcsnlen(value, 512));
             while (!text.empty() && std::iswspace(text.back())) text.pop_back();
-            text.erase(0, std::ranges::find_if_not(text, [](wchar_t c) { return std::iswspace(c); }) - text.begin());
+            text.erase(
+                0, std::ranges::find_if_not(text, [](wchar_t c) { return std::iswspace(c); }) - text.begin());
             if (!text.empty()) return to_utf8(text);
         }
         return {};
@@ -212,10 +220,13 @@ VersionInfo read_version(const fs::path& file) {
     if (info.version.empty()) {
         VS_FIXEDFILEINFO* fixed = nullptr;
         UINT fixed_size = 0;
-        if (VerQueryValueW(block.data(), L"\\", reinterpret_cast<void**>(&fixed), &fixed_size) && fixed != nullptr &&
-            fixed_size >= sizeof(VS_FIXEDFILEINFO) && fixed->dwSignature == 0xFEEF04BD && fixed->dwFileVersionMS != 0) {
-            info.version = std::to_string(HIWORD(fixed->dwFileVersionMS)) + "." + std::to_string(LOWORD(fixed->dwFileVersionMS)) +
-                           "." + std::to_string(HIWORD(fixed->dwFileVersionLS)) + "." + std::to_string(LOWORD(fixed->dwFileVersionLS));
+        if (VerQueryValueW(block.data(), L"\\", reinterpret_cast<void**>(&fixed), &fixed_size) &&
+            fixed != nullptr && fixed_size >= sizeof(VS_FIXEDFILEINFO) && fixed->dwSignature == 0xFEEF04BD &&
+            fixed->dwFileVersionMS != 0) {
+            info.version = std::to_string(HIWORD(fixed->dwFileVersionMS)) + "." +
+                           std::to_string(LOWORD(fixed->dwFileVersionMS)) + "." +
+                           std::to_string(HIWORD(fixed->dwFileVersionLS)) + "." +
+                           std::to_string(LOWORD(fixed->dwFileVersionLS));
         }
     }
     return info;
@@ -227,8 +238,8 @@ namespace houseguest::system {
 
 FileMetadata read_file_metadata(const std::filesystem::path& file) {
     const auto info = catalog::read_version(file);
-    return {info.company, info.product, info.description, info.version, info.product_version,
-            info.copyright, info.original_name, info.internal_name};
+    return {info.company,         info.product,   info.description,   info.version,
+            info.product_version, info.copyright, info.original_name, info.internal_name};
 }
 
 }  // namespace houseguest::system

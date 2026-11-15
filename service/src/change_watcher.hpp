@@ -10,12 +10,12 @@
 
 namespace houseguest::service {
 
-// Tells the service when something that feeds the application library has changed, so the library is refreshed
-// when it needs to be and not on a timer. It watches a fixed, small set of places: the Start menu and desktop
-// folders, the top level of every program folder and fixed volume (new install folders), packaged apps, Steam
-// library manifests, folders registered as portable, and the Uninstall registry keys. Nothing is watched
-// recursively except the Start menu, and a burst of changes is reported once after it settles. The set is
-// recomputed periodically, which also notices volumes that appear or go away.
+// Tells the service when something that feeds the application library has changed, so the library is
+// refreshed when it needs to be and not on a timer. It watches a fixed, small set of places: the Start menu
+// and desktop folders, the top level of every program folder and fixed volume (new install folders), packaged
+// apps, Steam library manifests, folders registered as portable, and the Uninstall registry keys. Nothing is
+// watched recursively except the Start menu, and a burst of changes is reported once after it settles. The
+// set is recomputed periodically, which also notices volumes that appear or go away.
 class ChangeWatcher {
 public:
     using Roots = std::function<std::vector<std::filesystem::path>()>;

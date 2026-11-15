@@ -55,27 +55,29 @@ void add_unique(std::vector<std::string>& list, const std::string& value) {
     if (std::ranges::find(list, value) == list.end()) list.push_back(value);
 }
 
-// How much a source can be trusted to describe the product, as opposed to one file of it. A platform or a package
-// manifest names the product it distributes; the installer's uninstall record was written by the product's own
-// installer; anything else is a hint. Ties keep the first answer, and the disagreeing one is kept as an alternative.
+// How much a source can be trusted to describe the product, as opposed to one file of it. A platform or a
+// package manifest names the product it distributes; the installer's uninstall record was written by the
+// product's own installer; anything else is a hint. Ties keep the first answer, and the disagreeing one is
+// kept as an alternative.
 int information_rank(const std::string& source) {
-    if (source == "packages" || source == "xbox_games" || source == "steam" || source == "epic" || source == "gog" ||
-        source == "ubisoft" || source == "ea" || source == "battle_net")
+    if (source == "packages" || source == "xbox_games" || source == "steam" || source == "epic" ||
+        source == "gog" || source == "ubisoft" || source == "ea" || source == "battle_net")
         return 3;
     if (source == "windows_registry") return 2;
     return 1;
 }
 
-void note_alternative(InstalledApp& app, const char* field, const std::string& value, const std::string& source) {
+void note_alternative(InstalledApp& app, const char* field, const std::string& value,
+                      const std::string& source) {
     if (value.empty() || app.alternatives.size() >= 12) return;
-    const bool known = std::ranges::any_of(app.alternatives, [&](const Alternative& a) {
-        return a.field == field && a.value == value;
-    });
+    const bool known = std::ranges::any_of(
+        app.alternatives, [&](const Alternative& a) { return a.field == field && a.value == value; });
     if (!known) app.alternatives.push_back({field, value, source});
 }
 
-void adopt(InstalledApp& app, const char* field, std::string& target, std::string& target_source, int& target_rank,
-           const std::string& value, int rank, const std::string& source, bool keep_disagreement) {
+void adopt(InstalledApp& app, const char* field, std::string& target, std::string& target_source,
+           int& target_rank, const std::string& value, int rank, const std::string& source,
+           bool keep_disagreement) {
     if (value.empty()) return;
     if (target.empty()) {
         target = value;
@@ -202,9 +204,7 @@ private:
         }
         std::size_t best = entries.size();
         for (std::size_t i = 0; i < entries.size(); ++i) {
-            if (!entries[i].has_exe ||
-                !key_inside(root_key, entries[i].exe_key))
-                continue;
+            if (!entries[i].has_exe || !key_inside(root_key, entries[i].exe_key)) continue;
             if (best == entries.size() || entries[i].app.evidence.size() > entries[best].app.evidence.size())
                 best = i;
         }
@@ -238,13 +238,13 @@ private:
         add_unique(entry.app.sources, claim.source);
         entry.app.source = entry.app.sources.front();
         add_evidence(entry, claim.evidence);
-        adopt(entry.app, "name", entry.app.name, entry.app.name_source, entry.name_rank, claim.name, claim.name_rank,
-              claim.source, true);
+        adopt(entry.app, "name", entry.app.name, entry.app.name_source, entry.name_rank, claim.name,
+              claim.name_rank, claim.source, true);
         const int rank = information_rank(claim.source);
-        adopt(entry.app, "company", entry.app.company, entry.app.company_source, entry.company_rank, claim.publisher,
-              rank, claim.source, true);
-        adopt(entry.app, "version", entry.app.version, entry.app.version_source, entry.version_rank, claim.version,
-              rank, claim.source, false);
+        adopt(entry.app, "company", entry.app.company, entry.app.company_source, entry.company_rank,
+              claim.publisher, rank, claim.source, true);
+        adopt(entry.app, "version", entry.app.version, entry.app.version_source, entry.version_rank,
+              claim.version, rank, claim.source, false);
         const auto fill = [](std::string& target, const std::string& value) {
             if (target.empty()) target = value;
         };
@@ -280,8 +280,8 @@ private:
         }
     }
 
-    // Resolving a path to its canonical form and checking that a file exists both touch the disk, and the same
-    // few hundred paths are asked about by many claims, so each answer is looked up once per build.
+    // Resolving a path to its canonical form and checking that a file exists both touch the disk, and the
+    // same few hundred paths are asked about by many claims, so each answer is looked up once per build.
     const std::string& key_of(const fs::path& path) {
         auto [it, inserted] = keys_.try_emplace(path.native());
         if (inserted) it->second = canonical_key(path);

@@ -8,13 +8,14 @@
 #include <wintrust.h>
 // clang-format on
 
+#include "houseguest/system/signature.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstring>
 #include <optional>
 
 #include "houseguest/system/crypto.hpp"
-#include "houseguest/system/signature.hpp"
 #include "houseguest/system/text.hpp"
 #include "houseguest/system/windows_info.hpp"
 
@@ -77,9 +78,9 @@ CertificateName parse_distinguished_name(std::span<const std::uint8_t> encoded) 
     CertificateName name;
     CERT_NAME_INFO* info = nullptr;
     DWORD size = 0;
-    if (encoded.empty() || !CryptDecodeObjectEx(X509_ASN_ENCODING, X509_NAME, encoded.data(),
-                                                static_cast<DWORD>(encoded.size()), CRYPT_DECODE_ALLOC_FLAG, nullptr,
-                                                &info, &size) ||
+    if (encoded.empty() ||
+        !CryptDecodeObjectEx(X509_ASN_ENCODING, X509_NAME, encoded.data(), static_cast<DWORD>(encoded.size()),
+                             CRYPT_DECODE_ALLOC_FLAG, nullptr, &info, &size) ||
         info == nullptr)
         return name;
     for (DWORD i = info->cRDN; i > 0 && name.fields.size() < kMaxFields; --i) {
@@ -88,12 +89,13 @@ CertificateName parse_distinguished_name(std::span<const std::uint8_t> encoded) 
             const auto& attribute = rdn.rgRDNAttr[j];
             if (attribute.pszObjId == nullptr) continue;
             wchar_t value[kMaxValue + 1] = {};
-            CertRDNValueToStrW(attribute.dwValueType, const_cast<CERT_RDN_VALUE_BLOB*>(&attribute.Value), value,
-                               kMaxValue);
+            CertRDNValueToStrW(attribute.dwValueType, const_cast<CERT_RDN_VALUE_BLOB*>(&attribute.Value),
+                               value, kMaxValue);
             NameField field;
             field.oid = attribute.pszObjId;
             field.value = to_utf8(value);
-            const auto known = std::ranges::find_if(kLabels, [&](const Label& l) { return field.oid == l.oid; });
+            const auto known =
+                std::ranges::find_if(kLabels, [&](const Label& l) { return field.oid == l.oid; });
             field.label = known != kLabels.end() ? known->label : "OID " + field.oid;
             if (field.oid == "2.5.4.3" && name.common_name.empty()) name.common_name = field.value;
             if (field.oid == "2.5.4.10" && name.organization.empty()) name.organization = field.value;
@@ -111,7 +113,8 @@ void describe(const CERT_CONTEXT* certificate, SignatureReport& report) {
     const auto* info = certificate->pCertInfo;
     report.subject = name_of(info->Subject);
     report.issuer = name_of(info->Issuer);
-    report.signer = !report.subject.common_name.empty() ? report.subject.common_name : report.subject.organization;
+    report.signer =
+        !report.subject.common_name.empty() ? report.subject.common_name : report.subject.organization;
     report.not_before = unix_of(info->NotBefore);
     report.not_after = unix_of(info->NotAfter);
     BYTE sha1[20];
@@ -159,7 +162,8 @@ Outcome verify(WINTRUST_DATA& data) {
                     outcome.certificate = true;
                     describe(cert->pCert, outcome.report);
                     wchar_t text[512] = {};
-                    CertNameToStrW(X509_ASN_ENCODING, &cert->pCert->pCertInfo->Subject, CERT_X500_NAME_STR, text, 512);
+                    CertNameToStrW(X509_ASN_ENCODING, &cert->pCert->pCertInfo->Subject, CERT_X500_NAME_STR,
+                                   text, 512);
                     outcome.subject = to_utf8(text);
                 }
             }
@@ -209,8 +213,8 @@ Outcome embedded(const std::filesystem::path& file) {
 
 // Files that carry no signature of their own, as most of Windows does, are vouched for by a security catalog.
 std::optional<Outcome> cataloged(const std::filesystem::path& file) {
-    Handle handle(CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-                              FILE_ATTRIBUTE_NORMAL, nullptr));
+    Handle handle(CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
     if (handle.get() == INVALID_HANDLE_VALUE) return std::nullopt;
 
     for (const wchar_t* algorithm : {BCRYPT_SHA256_ALGORITHM, static_cast<const wchar_t*>(nullptr)}) {
@@ -221,8 +225,10 @@ std::optional<Outcome> cataloged(const std::filesystem::path& file) {
         DWORD hash_size = 0;
         CryptCATAdminCalcHashFromFileHandle2(admin, handle.get(), &hash_size, nullptr, 0);
         std::vector<BYTE> hash(hash_size);
-        if (hash_size != 0 && CryptCATAdminCalcHashFromFileHandle2(admin, handle.get(), &hash_size, hash.data(), 0)) {
-            if (HCATINFO catalog = CryptCATAdminEnumCatalogFromHash(admin, hash.data(), hash_size, 0, nullptr)) {
+        if (hash_size != 0 &&
+            CryptCATAdminCalcHashFromFileHandle2(admin, handle.get(), &hash_size, hash.data(), 0)) {
+            if (HCATINFO catalog =
+                    CryptCATAdminEnumCatalogFromHash(admin, hash.data(), hash_size, 0, nullptr)) {
                 CATALOG_INFO info{sizeof(info)};
                 if (CryptCATCatalogInfoFromContext(catalog, &info, 0)) {
                     std::wstring tag;

@@ -11,9 +11,9 @@
 namespace houseguest::system {
 
 // The programs an administrator registered as COM local servers (HKLM CLSID \ LocalServer32, both registry
-// views). Only machine-wide registrations count: a restricted account cannot write them. The index is built on
-// first use and rebuilt on the next lookup after Windows reports a change below the CLSID keys, so a registration
-// added or removed is seen without polling and without a thread.
+// views). Only machine-wide registrations count: a restricted account cannot write them. The index is built
+// on first use and rebuilt on the next lookup after Windows reports a change below the CLSID keys, so a
+// registration added or removed is seen without polling and without a thread.
 class ComServerIndex {
 public:
     ComServerIndex();

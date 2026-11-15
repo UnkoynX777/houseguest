@@ -120,7 +120,8 @@ TEST_CASE("directory-wide protection needs a valid signature", "[protection][saf
 
 TEST_CASE("Windows infrastructure needs the Windows signing identity", "[protection][safety]") {
     Profile p{"p", "x", Action::Deny, {}, {}};
-    const std::string windows = "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
+    const std::string windows =
+        "CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
     const std::string office = "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, C=US";
     auto f = facts("C:\\Windows\\System32\\CompPkgSrv.exe");
     f.publisher_resolved = false;
@@ -150,7 +151,8 @@ TEST_CASE("a program that merely sits in System32 stays under the profile", "[pr
     }
 }
 
-TEST_CASE("a registered COM server started by the DCOM launcher is system infrastructure", "[protection][safety]") {
+TEST_CASE("a registered COM server started by the DCOM launcher is system infrastructure",
+          "[protection][safety]") {
     Profile p{"p", "x", Action::Deny, {}, {}};
     const std::string windows = "CN=Microsoft Windows, O=Microsoft Corporation";
     const std::string svchost = "C:\\Windows\\System32\\svchost.exe";
@@ -162,7 +164,8 @@ TEST_CASE("a registered COM server started by the DCOM launcher is system infras
     CHECK(d.reason == "windows_com_server");
 
     SECTION("a profile rule cannot turn it off") {
-        Profile deny{"p", "x", Action::Deny, {Rule{"d", Action::Deny, PathMatcher{"c:/**"}, 1000, std::nullopt}}, {}};
+        Profile deny{
+            "p", "x", Action::Deny, {Rule{"d", Action::Deny, PathMatcher{"c:/**"}, 1000, std::nullopt}}, {}};
         CHECK(evaluate(deny, kProtection, f, kNow).action == Action::Allow);
     }
     SECTION("without registration it is an ordinary program") {
