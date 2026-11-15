@@ -143,9 +143,29 @@ const volumes = computed(() => [...new Set(listed.value.map((entry) => entry.vol
 const hiddenCount = computed(() => entries.value.length - entries.value.filter((entry) => entry.role === 'application').length);
 const isRecent = (entry: LibraryApp) => entry.first_seen > 0 && Date.now() / 1000 - entry.first_seen < recentWindow;
 
+// Chip counts describe what each chip would show given the platform, drive and search already chosen.
+const scoped = computed(() => {
+  const needle = search.value.trim().toLowerCase();
+  return listed.value.filter(
+    (entry) =>
+      (!platform.value || entry.platform === platform.value) &&
+      (!volume.value || entry.volume === volume.value) &&
+      (!needle || `${entry.name} ${entry.company} ${entry.path} ${entry.description}`.toLowerCase().includes(needle)),
+  );
+});
+
+function clearFilters() {
+  status.value = 'all';
+  kind.value = 'all';
+  category.value = '';
+  platform.value = '';
+  volume.value = '';
+  search.value = '';
+}
+
 const categories = computed(() => {
   const counts = new Map<string, number>();
-  for (const entry of listed.value) counts.set(categoryOf(entry), (counts.get(categoryOf(entry)) ?? 0) + 1);
+  for (const entry of scoped.value) counts.set(categoryOf(entry), (counts.get(categoryOf(entry)) ?? 0) + 1);
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
 });
 
@@ -162,7 +182,7 @@ function matchesKind(entry: LibraryApp): boolean {
 
 const visible = computed(() => {
   const needle = search.value.trim().toLowerCase();
-  const rows = listed.value.filter(
+  const rows = scoped.value.filter(
     (entry) =>
       matchesKind(entry) &&
       (!platform.value || entry.platform === platform.value) &&
@@ -182,21 +202,21 @@ const visible = computed(() => {
 });
 
 const totals = computed(() => ({
-  allowed: listed.value.filter((e) => e.status === 'allowed').length,
-  blocked: listed.value.filter((e) => e.status === 'blocked').length,
-  withDependencies: listed.value.filter((e) => e.listed && (e.dependencies ?? 0) > 0).length,
-  attention: listed.value.filter(attention).length,
-  unresolved: listed.value.filter((e) => !resolved(e)).length,
+  allowed: scoped.value.filter((e) => e.status === 'allowed').length,
+  blocked: scoped.value.filter((e) => e.status === 'blocked').length,
+  withDependencies: scoped.value.filter((e) => e.listed && (e.dependencies ?? 0) > 0).length,
+  attention: scoped.value.filter(attention).length,
+  unresolved: scoped.value.filter((e) => !resolved(e)).length,
 }));
 
 const kindCounts = computed(() => ({
-  installed: listed.value.filter((e) => e.kind === 'installed').length,
-  portable: listed.value.filter((e) => e.kind === 'portable').length,
-  store: listed.value.filter((e) => e.kind === 'store').length,
-  manual: listed.value.filter((e) => e.kind === 'manual').length,
-  recent: listed.value.filter(isRecent).length,
+  installed: scoped.value.filter((e) => e.kind === 'installed').length,
+  portable: scoped.value.filter((e) => e.kind === 'portable').length,
+  store: scoped.value.filter((e) => e.kind === 'store').length,
+  manual: scoped.value.filter((e) => e.kind === 'manual').length,
+  recent: scoped.value.filter(isRecent).length,
   dependencies: totals.value.withDependencies,
-  uncategorized: listed.value.filter((e) => categoryOf(e) === 'other').length,
+  uncategorized: scoped.value.filter((e) => categoryOf(e) === 'other').length,
 }));
 
 const chosen = computed(() => entries.value.filter((e) => selected.value.has(key(e))));
@@ -306,7 +326,7 @@ function afterObservation() {
 
     <div class="row wrap">
       <div class="chips" role="group" :aria-label="t('Status')">
-        <button class="chip" :aria-pressed="status === 'all'" @click="status = 'all'">{{ t('All') }} · {{ listed.length }}</button>
+        <button class="chip" :aria-pressed="status === 'all'" @click="status = 'all'">{{ t('All') }} · {{ scoped.length }}</button>
         <button class="chip" :aria-pressed="status === 'allowed'" @click="status = 'allowed'">{{ t('Allowed') }} · {{ totals.allowed }}</button>
         <button class="chip" :aria-pressed="status === 'blocked'" @click="status = 'blocked'">{{ t('Blocked') }} · {{ totals.blocked }}</button>
         <button v-if="totals.attention" class="chip" :aria-pressed="status === 'attention'" @click="status = 'attention'">{{ t('Needs attention') }} · {{ totals.attention }}</button>
@@ -343,7 +363,9 @@ function afterObservation() {
     </div>
 
     <Skeleton v-if="loading || (scanning && !entries.length)" :kind="view === 'grid' ? 'app-grid' : 'app-list'" :count="view === 'grid' ? 12 : 9" />
-    <EmptyState v-else-if="!visible.length" icon="apps" :text="t('No applications match your filters.')" />
+    <EmptyState v-else-if="!visible.length" icon="apps" :text="t('No applications match your filters.')">
+      <button class="btn" @click="clearFilters">{{ t('Clear filters') }}</button>
+    </EmptyState>
 
     <VirtualList v-else-if="view === 'grid'" :items="visible" :item-key="key" :item-height="188" :min-width="172" :gap="12" v-slot="{ item: entry }">
       <div class="app-card" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
