@@ -4,6 +4,8 @@ All notable changes are documented here. The project follows [Semantic Versionin
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-11-15
+
 ### Fixed
 - Opening the Blocks tab of a program made the detail panel disappear while it stayed open internally, so only Escape recovered it. Audit events of some kinds (a process the kernel protects) carry no note, and reading it raised an error that removed the whole panel. Events are now read into a fixed shape, a tab that cannot be drawn fails alone with a retry, and a failed or slow load no longer leaves placeholders forever or empties the panel on reload.
 - Panels, dialogs and menus now share one layer system: they are drawn above everything regardless of page containers, only the top one answers Escape, the page behind is unreachable while one is open, the focus returns to where it came from, and a page left in the background no longer keeps its dialogs. Stacking values are tokens. See docs/interface-layers.md.
