@@ -245,3 +245,22 @@ TEST_CASE("changes made by a device are audited", "[api]") {
     REQUIRE_FALSE(h.audit.empty());
     CHECK(h.audit.back() == "api.session.stop");
 }
+
+TEST_CASE("a page may call the API that served it, and no other site may", "[api][security]") {
+    Harness h;
+    const auto device = h.devices.issue("tablet", Scope::Write, h.now);
+    auto own = h.make("POST", "/v1/session/stop", device.token, "{}");
+    own.headers["origin"] = "http://127.0.0.1:5000";
+    CHECK(h.router->handle(own).status == 200);
+    auto public_page = h.make("POST", "/v1/session/stop", device.token, "{}");
+    public_page.headers["host"] = "hg.example.com";
+    public_page.headers["origin"] = "https://hg.example.com";
+    CHECK(h.router->handle(public_page).status == 200);
+    auto other_port = h.make("POST", "/v1/session/stop", device.token, "{}");
+    other_port.headers["origin"] = "http://127.0.0.1:6000";
+    CHECK(h.router->handle(other_port).status == 403);
+    auto scheme_swap = h.make("POST", "/v1/session/stop", device.token, "{}");
+    scheme_swap.headers["host"] = "hg.example.com";
+    scheme_swap.headers["origin"] = "https://hg.example.com.evil.net";
+    CHECK(h.router->handle(scheme_swap).status == 403);
+}

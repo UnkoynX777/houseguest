@@ -29,7 +29,7 @@ constexpr Route kRoutes[] = {
     {"POST", "/v1/profiles", "profiles.save", Risk::Sensitive},
     {"POST", "/v1/session/start", "session.start", Risk::Sensitive},
     {"POST", "/v1/session/stop", "session.stop", Risk::Change},
-    {"POST", "/v1/session/extend", "session.extend", Risk::Change},
+    {"POST", "/v1/session/extend", "session.extend", Risk::Sensitive},
 };
 
 std::string lower(std::string text) {
@@ -150,7 +150,11 @@ Response Router::handle(const Request& request) {
         return failure(403, "host_not_allowed", "Unexpected Host header.", request);
 
     const auto origin = std::string(request.header("origin"));
-    if (!origin.empty() && !config_.origins.contains(origin))
+    // Browsers add Origin to same-origin POSTs too. The page's own address is fine, because the Host header was
+    // checked above; any other site is refused.
+    const auto host = lower(std::string(request.header("host")));
+    const bool same_origin = origin == "http://" + host || origin == "https://" + host;
+    if (!origin.empty() && !same_origin && !config_.origins.contains(origin))
         return failure(403, "origin_not_allowed", "This origin may not use the API.", request);
 
     if (request.method == "OPTIONS") {

@@ -22,6 +22,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'The panel and layer checks failed.' }
     node "$here\v5.mjs"
     if ($LASTEXITCODE -ne 0) { throw 'The v5 interface checks failed.' }
+    node "$here\remote-panel.mjs"
+    if ($LASTEXITCODE -ne 0) { throw 'The remote panel checks failed.' }
     if ($Shots) { node "$here\shots.mjs" $Shots }
 }
 finally {
