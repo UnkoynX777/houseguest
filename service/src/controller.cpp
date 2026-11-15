@@ -176,6 +176,7 @@ Controller::~Controller() {
 }
 
 void Controller::shutdown() {
+    if (remote_) remote_->shutdown();
     if (api_) api_->stop();
     if (watcher_) watcher_->stop();
     if (timer_.joinable()) {
@@ -841,6 +842,7 @@ void Controller::register_commands() {
     register_app_commands();
     register_catalog_commands();
     register_api_commands();
+    register_remote_commands();
 }
 
 }  // namespace houseguest::service

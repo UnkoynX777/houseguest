@@ -159,15 +159,15 @@ Response Router::handle(const Request& request) {
         return response;
     }
 
-    if (request.method == "GET" && request.target == "/v1/health")
-        return reply(200, Json{{"ok", true}, {"data", config_.health ? config_.health() : Json::object()}}, request);
-
     if (config_.precheck) {
         if (const auto refusal = config_.precheck(request)) {
             if (config_.audit) config_.audit("api", "api.denied", {{"reason", *refusal}, {"path", request.target}});
             return failure(403, "identity_required", *refusal, request);
         }
     }
+
+    if (request.method == "GET" && request.target == "/v1/health")
+        return reply(200, Json{{"ok", true}, {"data", config_.health ? config_.health() : Json::object()}}, request);
 
     const auto header = std::string(request.header("authorization"));
     std::optional<Device> device;

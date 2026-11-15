@@ -4,6 +4,7 @@
 #include <fstream>
 
 #include "houseguest/system/crypto.hpp"
+#include "houseguest/system/https.hpp"
 
 #include "../command_support.hpp"
 
@@ -21,7 +22,17 @@ std::string lower(std::string text) {
 }  // namespace
 
 ApiService::ApiService(Host& host, std::filesystem::path directory)
-    : host_(host), file_(std::move(directory) / L"api-devices.json") {
+    : host_(host),
+      file_(std::move(directory) / L"api-devices.json"),
+      gate_([](const std::string& url) -> std::optional<std::string> {
+                system::HttpsRequest request;
+                request.url = url;
+                request.max_response = 256 * 1024;
+                const auto response = system::https_request(request);
+                if (!response.ok()) return std::nullopt;
+                return response.body;
+            },
+            [] { return now_seconds(); }) {
     load();
 }
 
@@ -110,6 +121,7 @@ void ApiService::allow_hostname(const std::string& hostname) {
         }
     }
     config.devices = &devices_;
+    config.precheck = [this](const Request& request) { return gate_.check(request); };
     config.gateway = [this](const std::string& command, const Json& args, const Device& device) {
         return host_.run(command, args, device.id);
     };

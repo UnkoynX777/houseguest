@@ -39,6 +39,7 @@ public:
     [[nodiscard]] core::Json verify_token();
     [[nodiscard]] core::Json accounts();
     [[nodiscard]] core::Json zones();
+    [[nodiscard]] std::string access_domain(const std::string& account_id);
     [[nodiscard]] TunnelCredentials create_tunnel(const std::string& account_id, const std::string& name);
     void delete_tunnel(const std::string& account_id, const std::string& tunnel_id);
     void create_dns_record(const std::string& zone_id, const std::string& hostname, const std::string& tunnel_id);

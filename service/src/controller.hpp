@@ -19,6 +19,7 @@
 #include "catalog.hpp"
 #include "change_watcher.hpp"
 #include "continuity.hpp"
+#include "remote.hpp"
 #include "discovery.hpp"
 #include "file_details.hpp"
 #include "lineage.hpp"
@@ -68,6 +69,7 @@ private:
     void register_app_commands();
     void register_catalog_commands();
     void register_api_commands();
+    void register_remote_commands();
     class ApiBridge;
     void start_api();
     core::Json run_api(const std::string& command, const core::Json& args, const std::string& device_id);
@@ -192,6 +194,7 @@ private:
     int remote_failures_ = 0;
     std::shared_ptr<api::Host> api_host_;
     std::unique_ptr<api::ApiService> api_;
+    std::unique_ptr<RemoteAccess> remote_;
 };
 
 }  // namespace houseguest::service

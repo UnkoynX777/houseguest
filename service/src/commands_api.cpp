@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <set>
 
+#include "houseguest/system/https.hpp"
+
+#include "cloudflare/process.hpp"
 #include "command_support.hpp"
 #include "controller.hpp"
 
@@ -47,7 +50,13 @@ void Controller::start_api() {
         // The local API is optional: enforcement and the pipe keep working without it.
         audit_->append("service", "api.start_failed", {{"error", error}});
         api_.reset();
+        return;
     }
+    remote_ = std::make_unique<RemoteAccess>(
+        *api_, store_.directory(), [](const system::HttpsRequest& request) { return system::https_request(request); },
+        cloudflare::windows_launcher(),
+        std::vector<std::filesystem::path>{install_dir_, store_.directory() / L"bin"});
+    remote_->resume();
 }
 
 Json Controller::run_api(const std::string& command, const Json& args, const std::string& device_id) {
@@ -122,6 +131,66 @@ void Controller::register_api_commands() {
             if (api_) api_->revoke_all();
             audit_->append(caller.sid, "api.device.revoked_all", {});
             return Json::object();
+        },
+        true);
+}
+
+}  // namespace houseguest::service
+
+namespace houseguest::service {
+
+void Controller::register_remote_commands() {
+    using Args = const Json&;
+    using Who = const Caller&;
+    auto need = [this] {
+        if (!remote_) throw Failure("unavailable", "Remote access is not available.");
+        return remote_.get();
+    };
+    auto text = [](Args args, const char* key) { return args.contains(key) && args[key].is_string() ? args[key].get<std::string>() : std::string(); };
+
+    add("remote.status", Access::Owner, [need](Who, Args) { return need()->status(); }, true);
+    add("remote.logs", Access::Owner, [need](Who, Args) { return need()->logs(); }, true);
+    add("remote.discover", Access::Owner,
+        [need, text](Who, Args args) { return need()->discover(text(args, "api_token")); }, true);
+    add("remote.setup", Access::Owner,
+        [this, need, text](Who caller, Args args) {
+            RemoteAccess::SetupRequest request{text(args, "api_token"), text(args, "account_id"), text(args, "zone_id"),
+                                               text(args, "hostname"), {}};
+            if (args.contains("emails") && args["emails"].is_array())
+                for (const auto& e : args["emails"])
+                    if (e.is_string()) request.emails.push_back(e.get<std::string>());
+            auto result = need()->setup(request);
+            audit_->append(caller.sid, "remote.setup", {{"hostname", result["hostname"]}});
+            return result;
+        },
+        true);
+    add("remote.install", Access::Owner,
+        [this, need](Who caller, Args) {
+            auto result = need()->install_component();
+            audit_->append(caller.sid, "remote.component_installed", {});
+            return result;
+        },
+        true);
+    add("remote.enable", Access::Owner,
+        [this, need](Who caller, Args) {
+            auto result = need()->enable();
+            audit_->append(caller.sid, "remote.enabled", {});
+            return result;
+        },
+        true);
+    add("remote.disable", Access::Owner,
+        [this, need](Who caller, Args) {
+            auto result = need()->disable();
+            audit_->append(caller.sid, "remote.disabled", {});
+            return result;
+        },
+        true);
+    add("remote.test", Access::Owner, [need](Who, Args) { return need()->test(); }, true);
+    add("remote.reset", Access::Owner,
+        [this, need, text](Who caller, Args args) {
+            auto result = need()->reset(text(args, "api_token"));
+            audit_->append(caller.sid, "remote.reset", {{"removed", result["removed"]}});
+            return result;
         },
         true);
 }

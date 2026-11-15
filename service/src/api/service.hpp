@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "access.hpp"
 #include "devices.hpp"
 #include "listener.hpp"
 #include "router.hpp"
@@ -45,6 +46,7 @@ public:
     [[nodiscard]] core::Json devices_json() const;
     // Lets the Cloudflare layer register the public hostname and its allowed origin once a tunnel is configured.
     void allow_hostname(const std::string& hostname);
+    [[nodiscard]] AccessGate& access() { return gate_; }
 
 private:
     void load();
@@ -54,6 +56,7 @@ private:
     Host& host_;
     std::filesystem::path file_;
     DeviceRegistry devices_;
+    AccessGate gate_;
     std::unique_ptr<Listener> listener_;
     std::atomic<std::shared_ptr<Router>> router_;
     std::mutex save_mutex_;

@@ -70,6 +70,13 @@ Json Api::verify_token() { return call("GET", "/user/tokens/verify"); }
 Json Api::accounts() { return call("GET", "/accounts?per_page=20"); }
 Json Api::zones() { return call("GET", "/zones?per_page=50&status=active"); }
 
+std::string Api::access_domain(const std::string& account_id) {
+    const auto org = call("GET", "/accounts/" + account_id + "/access/organizations");
+    if (!org.is_object() || !org.contains("auth_domain") || !org["auth_domain"].is_string())
+        throw ApiError("Cloudflare Zero Trust is not set up for this account yet.");
+    return org["auth_domain"].get<std::string>();
+}
+
 TunnelCredentials Api::create_tunnel(const std::string& account_id, const std::string& name) {
     const auto secret = standard_base64(system::random_bytes(32));
     const auto result = call("POST", "/accounts/" + account_id + "/cfd_tunnel",
