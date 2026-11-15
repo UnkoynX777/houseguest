@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <set>
 
 #include "command_support.hpp"
@@ -70,14 +71,20 @@ Json Controller::run_api(const std::string& command, const Json& args, const std
 }
 
 bool Controller::api_check_pin(const std::string& pin) {
+    // Remote confirmations have their own failure counter: a stolen device token can neither lock the owner out
+    // of the local PIN nor probe it without limit. The local counter is never touched from here.
     std::scoped_lock lock(mutex_);
     if (!store_.state.configured()) return false;
-    try {
-        verify_pin(pin);
+    const auto now = now_seconds();
+    if (remote_locked_until_ > now) return false;
+    if (pin_matches(pin)) {
+        remote_failures_ = 0;
         return true;
-    } catch (const Failure&) {
-        return false;
     }
+    if (++remote_failures_ >= 5)
+        remote_locked_until_ = now + std::min<std::int64_t>(3600, 60LL << std::min(remote_failures_ - 5, 5));
+    audit_->append("api", "api.pin.failed", {{"failures", remote_failures_}});
+    return false;
 }
 
 void Controller::register_api_commands() {

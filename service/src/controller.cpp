@@ -668,20 +668,22 @@ void Controller::set_pin(const std::string& pin) {
     store_.state.pin = {system::to_hex(salt), system::to_hex(hash), kPinIterations};
 }
 
+bool Controller::pin_matches(const std::string& pin) const {
+    const auto& state = store_.state;
+    const auto salt = system::from_hex(state.pin.salt_hex);
+    const auto expected = system::from_hex(state.pin.hash_hex);
+    if (!salt || !expected || pin.size() > kMaxPin) return false;
+    const auto actual = system::pbkdf2_sha256(pin, *salt, state.pin.iterations, expected->size());
+    return system::constant_time_equal(actual, *expected);
+}
+
 void Controller::verify_pin(const std::string& pin) {
     auto& state = store_.state;
     const auto now = now_seconds();
     if (state.locked_until > now) {
         throw Failure("rate_limited", "Too many attempts.", {{"retry_after", state.locked_until - now}});
     }
-    const auto salt = system::from_hex(state.pin.salt_hex);
-    const auto expected = system::from_hex(state.pin.hash_hex);
-    bool match = false;
-    if (salt && expected && pin.size() <= kMaxPin) {
-        const auto actual = system::pbkdf2_sha256(pin, *salt, state.pin.iterations, expected->size());
-        match = system::constant_time_equal(actual, *expected);
-    }
-    if (match) {
+    if (pin_matches(pin)) {
         if (state.failed_attempts != 0) {
             state.failed_attempts = 0;
             state.locked_until = 0;

@@ -79,6 +79,7 @@ private:
     void require_owner(const Caller& caller, const core::Json& request);
     std::string verify_pin_and_issue_token(const Caller& caller, const std::string& pin);
     void verify_pin(const std::string& pin);
+    bool pin_matches(const std::string& pin) const;
     void set_pin(const std::string& pin);
     std::string issue_token(const std::string& sid);
 
@@ -187,6 +188,8 @@ private:
     std::atomic<std::uint64_t> blocked_ = 0;
     std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     std::jthread timer_;
+    std::int64_t remote_locked_until_ = 0;
+    int remote_failures_ = 0;
     std::shared_ptr<api::Host> api_host_;
     std::unique_ptr<api::ApiService> api_;
 };

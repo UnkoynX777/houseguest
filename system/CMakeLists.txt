@@ -1,5 +1,7 @@
 add_library(houseguest_system STATIC
   src/crypto.cpp
+  src/jwt.cpp
+  src/https.cpp
   src/text.cpp
   src/windows_info.cpp
   src/signature.cpp
@@ -19,10 +21,10 @@ if(HOUSEGUEST_INSTANCES)
 endif()
 target_link_libraries(houseguest_system
   PUBLIC houseguest::core
-  PRIVATE houseguest_warnings bcrypt crypt32 wintrust netapi32 wtsapi32 ole32 version shell32 shlwapi advapi32)
+  PRIVATE houseguest_warnings bcrypt crypt32 wintrust netapi32 wtsapi32 ole32 version shell32 shlwapi advapi32 winhttp)
 
 if(HOUSEGUEST_BUILD_TESTS)
-  add_executable(houseguest_system_tests tests/system_tests.cpp)
+  add_executable(houseguest_system_tests tests/system_tests.cpp tests/jwt_tests.cpp)
   target_include_directories(houseguest_system_tests PRIVATE src)
   target_link_libraries(houseguest_system_tests PRIVATE houseguest::system houseguest_warnings Catch2::Catch2WithMain)
   add_test(NAME houseguest_system_tests COMMAND houseguest_system_tests)
