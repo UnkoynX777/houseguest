@@ -2,11 +2,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { ApiError, call } from '../api';
-import { describeBlock, describeDecision, describeNote, recommendation, kindLabel, roleKindLabel, roleLabel, sourceLabel } from '../explain';
+import { describeBlock, describeDecision, describeNote, formatSize, kindLabel, platformLabel, recommendation, roleKindLabel, roleLabel, shortPath, signatureHint, signatureLabel, signatureTone, sourceLabel } from '../explain';
 import { t } from '../i18n';
 import { app, attempt, describe, formatTime, loadProfiles, notify, profileLabel, randomId } from '../store';
-import type { Application, BlockEntry, Component, ComponentView, DecisionInfo, DependencyMode, Explanation, LibraryApp, PendingReview } from '../types';
+import { signerName } from '../certificate';
+import type { Application, BlockEntry, Component, ComponentView, DecisionInfo, DependencyMode, Explanation, FileDetails, LibraryApp, PendingReview } from '../types';
 import AppIcon from './AppIcon.vue';
+import CopyText from './CopyText.vue';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
 
@@ -47,8 +49,36 @@ const tabs = computed<{ id: Tab; label: string; icon: string }[]>(() => [
   { id: 'simulation', label: t('Simulation'), icon: 'flask' },
 ]);
 
+const details = ref<FileDetails>();
+const detailsPhase = ref<'loading' | 'ready' | 'error'>('loading');
+const detailsError = ref('');
+let detailsToken = 0;
+
+// The signature check and the version resource are read by the service while the rest of the panel is already
+// usable, and the answer is remembered there until the file changes.
+async function loadDetails() {
+  const mine = ++detailsToken;
+  detailsPhase.value = 'loading';
+  try {
+    const reply = await call<FileDetails>('apps.details', { path: props.entry.path });
+    if (mine !== detailsToken) return;
+    details.value = reply;
+    detailsPhase.value = 'ready';
+  } catch (error) {
+    if (mine !== detailsToken) return;
+    detailsError.value = describe(error);
+    detailsPhase.value = 'error';
+  }
+}
+
+const signature = computed(() => details.value?.signature);
+const declared = computed(() => details.value?.declared);
+const folderOf = (path: string) => path.replace(/[\\/][^\\/]*$/, '');
+const dateOf = (seconds?: number) => (seconds ? formatTime(seconds) : '');
+
 async function reload() {
   loading.value = true;
+  loadDetails();
   await loadProfiles();
   explanation.value = await attempt(() => call<Explanation>('apps.explain', { profile_id: props.profileId, path: props.entry.path, package_family: props.entry.package_family }));
   loading.value = false;
@@ -184,7 +214,7 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
   <div class="drawer-scrim" @mousedown="emit('close')" />
   <aside class="drawer" role="dialog" aria-modal="true" :aria-label="entry.name">
     <div class="drawer-head">
-      <AppIcon :path="entry.path" :name="entry.name" :size="52" />
+      <AppIcon :path="entry.path" :sources="entry.icons" :name="entry.name" :size="52" />
       <div class="grow">
         <h2 class="truncate">{{ entry.name }}</h2>
         <div class="muted truncate">{{ entry.company || t('Unknown publisher') }}<template v-if="entry.version"> · {{ entry.version }}</template></div>
@@ -235,16 +265,94 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
         </div>
 
         <dl class="kv">
-          <dt>{{ t('Executable') }}</dt><dd class="mono">{{ entry.path }}</dd>
           <dt>{{ t('Type') }}</dt><dd>{{ kindLabel(entry.kind) }}<template v-if="entry.scope"> · {{ entry.scope === 'user' ? t('Only for this user') : t('All users') }}</template></dd>
-          <dt v-if="entry.version">{{ t('Version') }}</dt><dd v-if="entry.version">{{ entry.version }}</dd>
-          <dt v-if="entry.install_dir">{{ t('Folder') }}</dt><dd v-if="entry.install_dir" class="mono">{{ entry.install_dir }}</dd>
-          <dt>{{ t('Found by') }}</dt><dd>{{ (entry.sources?.length ? entry.sources : [entry.source]).map(sourceLabel).join(', ') }}</dd>
-          <dt v-if="entry.role !== 'application'">{{ t('Classified as') }}</dt><dd v-if="entry.role !== 'application'">{{ roleKindLabel(entry.role) }}</dd>
-          <dt v-if="explanation.publisher">{{ t('Signed by') }}</dt><dd v-if="explanation.publisher">{{ explanation.publisher }}</dd>
-          <dt v-if="explanation.sha256">SHA-256</dt><dd v-if="explanation.sha256" class="mono">{{ explanation.sha256 }}</dd>
-          <dt v-if="entry.package_family">{{ t('Package') }}</dt><dd v-if="entry.package_family" class="mono">{{ entry.package_family }}</dd>
+          <dt>{{ t('Version') }}</dt><dd><template v-if="entry.version || declared?.file_version">{{ entry.version || declared?.file_version }}</template><span v-else-if="detailsPhase === 'loading'" class="skeleton" style="display: inline-block; width: 80px; height: 12px" /><span v-else class="absent">{{ t('Not declared') }}</span></dd>
+          <dt>{{ t('Location') }}</dt><dd><CopyText :value="entry.path" :display="shortPath(entry.install_dir || folderOf(entry.path))" reveal :label="t('path')" /></dd>
+          <dt>{{ t('Signature') }}</dt>
+          <dd>
+            <div v-if="detailsPhase === 'loading'" class="skeleton" style="height: 18px; width: 70%" />
+            <div v-else-if="detailsPhase === 'error'" class="signature-line"><span class="muted">{{ t('The signature could not be read.') }}</span><button class="btn sm" @click="loadDetails">{{ t('Try again') }}</button></div>
+            <div v-else-if="signature" class="signature-line">
+              <span class="badge" :class="signatureTone(signature.state)" :title="signatureHint(signature.state)"><span class="dot" />{{ signatureLabel(signature.state) }}</span>
+              <span v-if="signature.signer && signature.state !== 'unsigned'">{{ t('Signed by') }}: <strong>{{ signature.signer }}</strong></span>
+            </div>
+          </dd>
         </dl>
+
+        <details class="fold">
+          <summary><Icon name="chevron" :size="16" />{{ t('Technical details') }}</summary>
+          <div class="fold-body">
+            <section>
+              <h4>{{ t('File') }}</h4>
+              <dl class="kv">
+                <dt>{{ t('Executable') }}</dt><dd><CopyText :value="entry.path" mono reveal :label="t('path')" /></dd>
+                <dt v-if="entry.install_dir">{{ t('Folder') }}</dt><dd v-if="entry.install_dir"><CopyText :value="entry.install_dir" mono reveal :label="t('path')" /></dd>
+                <dt v-if="details?.size !== undefined">{{ t('Size') }}</dt><dd v-if="details?.size !== undefined">{{ formatSize(details.size) }}</dd>
+                <dt>SHA-256</dt><dd><CopyText v-if="explanation.sha256" :value="explanation.sha256" mono label="SHA-256" /><span v-else class="absent">{{ t('Could not be calculated') }}</span></dd>
+                <dt v-if="entry.package_family">{{ t('Package') }}</dt><dd v-if="entry.package_family"><CopyText :value="entry.package_family" mono :label="t('package')" /></dd>
+              </dl>
+            </section>
+
+            <section>
+              <h4>{{ t('Found by Houseguest') }}</h4>
+              <dl class="kv">
+                <dt>{{ t('Found by') }}</dt><dd>{{ (entry.sources?.length ? entry.sources : [entry.source]).map(sourceLabel).join(', ') }}</dd>
+                <dt>{{ t('Publisher in the installation record') }}</dt><dd><template v-if="entry.company">{{ entry.company }}</template><span v-else class="absent">{{ t('Not recorded') }}</span></dd>
+                <dt v-if="entry.platform">{{ t('Platform') }}</dt><dd v-if="entry.platform">{{ platformLabel(entry.platform) }}</dd>
+                <dt v-if="entry.role !== 'application'">{{ t('Classified as') }}</dt><dd v-if="entry.role !== 'application'">{{ roleKindLabel(entry.role) }}</dd>
+              </dl>
+            </section>
+
+            <section>
+              <h4>{{ t('Declared by the program') }}</h4>
+              <div v-if="detailsPhase === 'loading'" class="skeleton" style="height: 70px" />
+              <template v-else-if="declared">
+                <dl class="kv">
+                  <dt>{{ t('Company') }}</dt><dd><template v-if="declared.company">{{ declared.company }}</template><span v-else class="absent">{{ t('Not declared') }}</span></dd>
+                  <dt>{{ t('Product') }}</dt><dd><template v-if="declared.product">{{ declared.product }}</template><span v-else class="absent">{{ t('Not declared') }}</span></dd>
+                  <dt>{{ t('Description') }}</dt><dd><template v-if="declared.description">{{ declared.description }}</template><span v-else class="absent">{{ t('Not declared') }}</span></dd>
+                  <dt>{{ t('File version') }}</dt><dd><template v-if="declared.file_version">{{ declared.file_version }}</template><span v-else class="absent">{{ t('Not declared') }}</span></dd>
+                  <dt v-if="declared.product_version && declared.product_version !== declared.file_version">{{ t('Product version') }}</dt><dd v-if="declared.product_version && declared.product_version !== declared.file_version">{{ declared.product_version }}</dd>
+                  <dt v-if="declared.original_name">{{ t('Original file name') }}</dt><dd v-if="declared.original_name">{{ declared.original_name }}</dd>
+                  <dt v-if="declared.copyright">{{ t('Copyright') }}</dt><dd v-if="declared.copyright">{{ declared.copyright }}</dd>
+                </dl>
+                <p class="note">{{ t('These values are written by whoever built the file. They are not checked and do not affect what is allowed.') }}</p>
+              </template>
+              <p v-else class="absent">{{ t('Not available') }}</p>
+            </section>
+
+            <section>
+              <h4>{{ t('Digital signature') }}</h4>
+              <div v-if="detailsPhase === 'loading'" class="skeleton" style="height: 90px" />
+              <p v-else-if="detailsPhase === 'error'" class="absent">{{ detailsError }}</p>
+              <template v-else-if="signature">
+                <p class="note" style="margin: 0 0 8px">{{ signatureHint(signature.state) }}</p>
+                <dl v-if="signature.signer" class="kv">
+                  <dt>{{ t('Signer') }}</dt><dd>{{ signature.signer }}</dd>
+                  <dt>{{ t('Issued by') }}</dt><dd>{{ signature.issuer.common_name || signature.issuer.organization || t('Unknown') }}</dd>
+                  <dt>{{ t('Valid') }}</dt><dd>{{ dateOf(signature.not_before) }} – {{ dateOf(signature.not_after) }}<template v-if="signature.certificate_expired"> · {{ signature.timestamped ? t('expired, but signed with a trusted timestamp') : t('expired') }}</template></dd>
+                  <dt>{{ t('Source') }}</dt><dd>{{ signature.via_catalog ? t('Windows security catalog') : t('Signature inside the file') }}<template v-if="signature.timestamped"> · {{ t('timestamped') }}</template></dd>
+                  <dt>{{ t('Algorithm') }}</dt><dd>{{ signature.algorithm }}</dd>
+                  <dt>{{ t('Serial number') }}</dt><dd><CopyText :value="signature.serial" mono :label="t('serial number')" /></dd>
+                  <dt>SHA-1</dt><dd><CopyText :value="signature.thumbprint_sha1" mono :label="t('thumbprint')" /></dd>
+                  <dt>SHA-256</dt><dd><CopyText :value="signature.thumbprint_sha256" mono :label="t('thumbprint')" /></dd>
+                </dl>
+                <details v-if="signature.subject.fields.length" class="fold" style="margin-top: 10px">
+                  <summary><Icon name="chevron" :size="16" />{{ t('Certificate subject') }}</summary>
+                  <div class="fold-body"><dl class="kv"><template v-for="(field, i) in signature.subject.fields" :key="i"><dt :title="field.oid">{{ field.label }}</dt><dd>{{ field.value }}</dd></template></dl></div>
+                </details>
+                <details v-if="signature.issuer.fields.length" class="fold" style="margin-top: 8px">
+                  <summary><Icon name="chevron" :size="16" />{{ t('Certificate issuer') }}</summary>
+                  <div class="fold-body"><dl class="kv"><template v-for="(field, i) in signature.issuer.fields" :key="i"><dt :title="field.oid">{{ field.label }}</dt><dd>{{ field.value }}</dd></template></dl></div>
+                </details>
+                <p class="note">{{ t('Windows checked the signature and the chain of trust. Revocation lists are not downloaded, so a certificate revoked very recently may still appear valid.') }}</p>
+                <dl v-if="explanation.publisher" class="kv" style="margin-top: 10px">
+                  <dt>{{ t('Pinned by Houseguest') }}</dt><dd><CopyText :value="explanation.publisher" mono :lines="2" :label="t('signer identity')" /></dd>
+                </dl>
+              </template>
+            </section>
+          </div>
+        </details>
         <p v-if="!application" class="hint">{{ t('Allowing a program pins its exact file and signer. Windows and Houseguest components are always protected and do not need to be listed.') }}</p>
       </template>
 
@@ -281,7 +389,7 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
               <div class="meta">
                 <span class="mini bad">{{ t('Blocked {n} times', { n: review.count }) }}</span>
                 <span v-if="review.kind === 'component_changed'" class="mini warn">{{ t('File changed') }}</span>
-                <span v-if="review.publisher" class="mini">{{ review.publisher }}</span>
+                <span v-if="review.publisher" class="mini" :title="review.publisher">{{ signerName(review.publisher) || t('Signed') }}</span>
                 <span v-else class="mini warn">{{ t('Unsigned') }}</span>
                 <span v-if="review.parent" class="mini">{{ t('Started by {name}', { name: fileName(review.parent) }) }}</span>
               </div>

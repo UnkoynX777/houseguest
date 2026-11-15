@@ -12,7 +12,7 @@ endif()
 
 configure_file(houseguest.rc.in ${CMAKE_CURRENT_BINARY_DIR}/houseguest.rc @ONLY)
 
-add_executable(houseguest WIN32 main.cpp dialogs.cpp geometry.cpp icons.cpp recovery.cpp service_monitor.cpp tray.cpp
+add_executable(houseguest WIN32 main.cpp dialogs.cpp geometry.cpp icon_render.cpp icons.cpp recovery.cpp service_monitor.cpp tray.cpp
   ui_settings.cpp
   houseguest.manifest ${CMAKE_CURRENT_BINARY_DIR}/houseguest.rc)
 target_include_directories(houseguest PRIVATE ${WEBVIEW2_DIR}/build/native/include ${CMAKE_CURRENT_SOURCE_DIR})
@@ -29,8 +29,8 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/ui/dist/index.html)
 endif()
 
 if(HOUSEGUEST_BUILD_TESTS)
-  add_executable(houseguest_host_tests tests/geometry_tests.cpp geometry.cpp)
+  add_executable(houseguest_host_tests tests/geometry_tests.cpp tests/icon_tests.cpp geometry.cpp icon_render.cpp)
   target_compile_definitions(houseguest_host_tests PRIVATE NOMINMAX UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
-  target_link_libraries(houseguest_host_tests PRIVATE houseguest_warnings Catch2::Catch2WithMain shcore user32)
+  target_link_libraries(houseguest_host_tests PRIVATE houseguest::system houseguest_warnings Catch2::Catch2WithMain shcore shell32 ole32 windowscodecs user32)
   add_test(NAME houseguest_host_tests COMMAND houseguest_host_tests)
 endif()

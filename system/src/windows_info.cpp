@@ -81,85 +81,6 @@ std::vector<LocalUser> list_local_users() {
     return users;
 }
 
-namespace {
-
-std::string verified_signer_subject(WINTRUST_DATA& data) {
-    GUID action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-    const auto window = static_cast<HWND>(INVALID_HANDLE_VALUE);
-    data.cbStruct = sizeof(data);
-    data.dwUIChoice = WTD_UI_NONE;
-    data.fdwRevocationChecks = WTD_REVOKE_NONE;
-    data.dwStateAction = WTD_STATEACTION_VERIFY;
-    data.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
-
-    std::string subject;
-    if (WinVerifyTrust(window, &action, &data) == ERROR_SUCCESS) {
-        if (auto* provider = WTHelperProvDataFromStateData(data.hWVTStateData)) {
-            if (auto* signer = WTHelperGetProvSignerFromChain(provider, 0, FALSE, 0)) {
-                if (auto* cert = WTHelperGetProvCertFromChain(signer, 0)) {
-                    wchar_t name[512] = {};
-                    CertNameToStrW(X509_ASN_ENCODING, &cert->pCert->pCertInfo->Subject, CERT_X500_NAME_STR,
-                                   name, 512);
-                    subject = to_utf8(name);
-                }
-            }
-        }
-    }
-    data.dwStateAction = WTD_STATEACTION_CLOSE;
-    WinVerifyTrust(window, &action, &data);
-    return subject;
-}
-
-std::string catalog_signer_subject(const std::filesystem::path& file) {
-    Handle handle(CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
-                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
-    if (handle.get() == INVALID_HANDLE_VALUE) return {};
-
-    for (const wchar_t* algorithm : {BCRYPT_SHA256_ALGORITHM, static_cast<const wchar_t*>(nullptr)}) {
-        HCATADMIN admin = nullptr;
-        if (!CryptCATAdminAcquireContext2(&admin, nullptr, algorithm, nullptr, 0)) continue;
-        std::string subject;
-
-        DWORD hash_size = 0;
-        CryptCATAdminCalcHashFromFileHandle2(admin, handle.get(), &hash_size, nullptr, 0);
-        std::vector<BYTE> hash(hash_size);
-        if (hash_size != 0 &&
-            CryptCATAdminCalcHashFromFileHandle2(admin, handle.get(), &hash_size, hash.data(), 0)) {
-            if (HCATINFO catalog =
-                    CryptCATAdminEnumCatalogFromHash(admin, hash.data(), hash_size, 0, nullptr)) {
-                CATALOG_INFO info{sizeof(info)};
-                if (CryptCATCatalogInfoFromContext(catalog, &info, 0)) {
-                    std::wstring tag;
-                    for (const BYTE byte : hash) {
-                        wchar_t pair[3];
-                        swprintf_s(pair, L"%02X", byte);
-                        tag += pair;
-                    }
-                    WINTRUST_CATALOG_INFO catalog_info{};
-                    catalog_info.cbStruct = sizeof(catalog_info);
-                    catalog_info.pcwszCatalogFilePath = info.wszCatalogFile;
-                    catalog_info.pcwszMemberTag = tag.c_str();
-                    catalog_info.pcwszMemberFilePath = file.c_str();
-                    catalog_info.hMemberFile = handle.get();
-                    catalog_info.pbCalculatedFileHash = hash.data();
-                    catalog_info.cbCalculatedFileHash = hash_size;
-                    catalog_info.hCatAdmin = admin;
-                    WINTRUST_DATA data{};
-                    data.dwUnionChoice = WTD_CHOICE_CATALOG;
-                    data.pCatalog = &catalog_info;
-                    subject = verified_signer_subject(data);
-                }
-                CryptCATAdminReleaseCatalogContext(admin, catalog, 0);
-            }
-        }
-        CryptCATAdminReleaseContext(admin, 0);
-        if (!subject.empty()) return subject;
-    }
-    return {};
-}
-
-}  // namespace
-
 std::optional<FileStamp> file_stamp(const std::filesystem::path& file) {
     Handle handle(CreateFileW(file.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                               nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
@@ -180,17 +101,6 @@ std::optional<FileStamp> file_stamp(const std::filesystem::path& file) {
         std::memcpy(&stamp.id_high, id.FileId.Identifier + sizeof(stamp.id_low), sizeof(stamp.id_high));
     }
     return stamp;
-}
-
-std::string trusted_publisher(const std::filesystem::path& file) {
-    WINTRUST_FILE_INFO file_info{};
-    file_info.cbStruct = sizeof(file_info);
-    file_info.pcwszFilePath = file.c_str();
-    WINTRUST_DATA data{};
-    data.dwUnionChoice = WTD_CHOICE_FILE;
-    data.pFile = &file_info;
-    auto subject = verified_signer_subject(data);
-    return subject.empty() ? catalog_signer_subject(file) : subject;
 }
 
 SessionActionResult disconnect_sessions(const std::vector<std::string>& user_sids, bool logoff) {

@@ -8,13 +8,18 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <optional>
 #include <unordered_map>
+#include <vector>
+
+#include "icon_render.hpp"
 
 namespace houseguest::host {
 
-// Extracts the icon Windows shows for an executable and returns it as a PNG data URL. Extraction runs on one
-// worker thread that owns its COM apartment, results are cached in memory and in the user's local app data
-// keyed by path, size and modification time, so a changed file gets a fresh icon and the window never waits.
+// Resolves the picture for an application (see icon_render.hpp) and returns it as a PNG data URL. Work runs on
+// one worker thread that owns its COM apartment. Results, including "no picture", are cached in memory and in the
+// user's local app data keyed by every file that could supply the picture and its change stamp, so a changed
+// file gets a fresh icon and the window never waits.
 class IconService {
 public:
     using Reply = std::function<void(std::string data_url)>;
@@ -24,7 +29,7 @@ public:
     IconService(const IconService&) = delete;
     IconService& operator=(const IconService&) = delete;
 
-    void request(const std::string& utf8_path, int pixels, Reply reply);
+    void request(const std::string& utf8_path, std::vector<IconSource> sources, int pixels, Reply reply);
 
     static constexpr std::size_t kMemoryEntries = 600;
     static constexpr std::size_t kQueueLimit = 400;
@@ -32,12 +37,13 @@ public:
 private:
     struct Job {
         std::string path;
+        std::vector<IconSource> sources;
         int pixels;
         Reply reply;
     };
 
-    std::string produce(const std::string& utf8_path, int pixels);
-    std::string cached(const std::string& key);
+    std::string produce(const std::string& utf8_path, const std::vector<IconSource>& sources, int pixels);
+    std::optional<std::string> cached(const std::string& key);
     void remember(const std::string& key, const std::string& value);
     void run(const std::stop_token& stop);
 

@@ -13,7 +13,7 @@
 namespace houseguest::service {
 namespace {
 
-constexpr int kCacheVersion = 2;
+constexpr int kCacheVersion = 3;
 
 std::int64_t now_seconds() {
     return std::chrono::duration_cast<std::chrono::seconds>(
@@ -58,7 +58,10 @@ core::Json to_json(const system::InstalledApp& app) {
             {{"path", candidate.path}, {"score", candidate.score}, {"reasons", candidate.reasons}});
     core::Json evidence = core::Json::array();
     for (const auto& item : app.evidence) evidence.push_back({{"kind", item.kind}, {"detail", item.detail}});
-    return {{"id", app.id},
+    core::Json icons = core::Json::array();
+    for (const auto& item : app.icons) icons.push_back({{"kind", item.kind}, {"path", item.path}, {"index", item.index}});
+    return {{"icons", std::move(icons)},
+            {"id", app.id},
             {"name", app.name},
             {"path", app.path},
             {"company", app.company},
@@ -117,6 +120,10 @@ system::InstalledApp app_from_json(const core::Json& json) {
             }
             app.candidates.push_back(std::move(candidate));
         }
+    }
+    if (const auto it = json.find("icons"); it != json.end() && it->is_array()) {
+        for (const auto& item : *it)
+            app.icons.push_back({item.value("kind", ""), item.value("path", ""), item.value("index", 0)});
     }
     if (const auto it = json.find("evidence"); it != json.end() && it->is_array()) {
         for (const auto& item : *it)

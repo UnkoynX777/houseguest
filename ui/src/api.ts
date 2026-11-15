@@ -66,14 +66,42 @@ function send<T>(cmd: string, args: object, token?: string): Promise<T> {
 export const call = <T = any>(cmd: string, args: object = {}) => send<T>(cmd, args, auth.token || undefined);
 export const host = <T = any>(cmd: string, args: object = {}) => send<T>(`host.${cmd}`, args);
 
-const icons = new Map<string, Promise<string>>();
+export interface IconSource {
+  kind: string;
+  path: string;
+  index: number;
+}
 
-export function icon(path: string, size = 48): Promise<string> {
-  const key = `${size}|${path.toLowerCase()}`;
+const icons = new Map<string, Promise<string>>();
+const hints = new Map<string, IconSource[]>();
+let epoch = -1;
+
+// Pixels to ask for: the size on screen times the display scale, in the steps the host caches.
+export function iconPixels(size: number): number {
+  const wanted = Math.ceil(size * (window.devicePixelRatio || 1));
+  return [32, 48, 64, 96, 128, 192, 256].find((step) => step >= wanted) ?? 256;
+}
+
+// The library knows where each application's pictures are declared; every other page shows the same
+// program from a path alone, so what the library learned is shared with them.
+export function rememberIconSources(apps: { path?: string; icons?: IconSource[] }[]) {
+  for (const entry of apps) {
+    if (entry.path && entry.icons?.length) hints.set(entry.path.toLowerCase(), entry.icons);
+  }
+}
+
+export const iconSourcesFor = (path: string): IconSource[] => hints.get(path.toLowerCase()) ?? [];
+
+export function icon(path: string, size: number, sources: IconSource[], generation: number): Promise<string> {
+  if (generation !== epoch) {
+    icons.clear();
+    epoch = generation;
+  }
+  const key = `${size}|${path.toLowerCase()}|${sources.map((s) => `${s.kind}:${s.path}:${s.index}`).join('|')}`;
   let known = icons.get(key);
   if (!known) {
     if (icons.size > 1500) icons.clear();
-    known = host<{ png: string }>('icon', { path, size }).then((reply) => reply.png, () => '');
+    known = host<{ png: string }>('icon', { path, size, sources }).then((reply) => reply.png, () => '');
     icons.set(key, known);
   }
   return known;

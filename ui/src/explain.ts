@@ -1,5 +1,5 @@
 import { t } from './i18n';
-import type { BlockEntry, DecisionInfo, LibraryApp } from './types';
+import type { SignatureState, BlockEntry, DecisionInfo, LibraryApp } from './types';
 
 const protectedKinds: Record<string, string> = {
   kernel_critical: 'Windows marks this process as critical, so it is never ended.',
@@ -142,4 +142,48 @@ export function riskLabel(risk: string): string {
       sensitive_tool: t('Can run other programs'), not_started_by_app: t('Not started by the app'), different_signer: t('Different signer'),
     } as Record<string, string>
   )[risk] ?? risk;
+}
+
+export function signatureLabel(state: SignatureState): string {
+  return {
+    valid: t('Valid signature'),
+    untrusted: t('Signature not trusted'),
+    expired: t('Certificate expired'),
+    invalid: t('Signature invalid'),
+    unsigned: t('Not signed'),
+    unverified: t('Could not be verified'),
+  }[state];
+}
+
+export const signatureTone = (state: SignatureState): 'ok' | 'warn' | 'bad' | 'info' =>
+  ({ valid: 'ok', untrusted: 'warn', expired: 'warn', invalid: 'bad', unsigned: 'info', unverified: 'info' } as const)[state];
+
+export function signatureHint(state: SignatureState): string {
+  return {
+    valid: t('The file is unchanged since it was signed and the certificate is trusted by Windows.'),
+    untrusted: t('A signature is present, but Windows does not trust the certificate that made it.'),
+    expired: t('A signature is present, but its certificate expired and nothing proves the file was signed in time.'),
+    invalid: t('The file was changed after it was signed, or its certificate was revoked or blocked.'),
+    unsigned: t('The file carries no digital signature, so its publisher cannot be confirmed.'),
+    unverified: t('Windows could not complete the check, for example because the file could not be read.'),
+  }[state];
+}
+
+export function shortPath(path: string, max = 58): string {
+  if (path.length <= max) return path;
+  const parts = path.split(/[\\/]/);
+  if (parts.length <= 4) return path;
+  return `${parts.slice(0, 2).join('\\')}\\…\\${parts.slice(-2).join('\\')}`;
+}
+
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unit]}`;
 }

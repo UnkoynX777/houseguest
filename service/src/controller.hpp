@@ -19,6 +19,7 @@
 #include "change_watcher.hpp"
 #include "continuity.hpp"
 #include "discovery.hpp"
+#include "file_details.hpp"
 #include "lineage.hpp"
 #include "store.hpp"
 #include "supervisor.hpp"
@@ -120,6 +121,7 @@ private:
     std::filesystem::path install_dir_;
     std::unique_ptr<AuditLog> audit_;
     IdentityResolver resolver_;
+    FileDetails details_;
     ContinuityGuard continuity_;
     Lineage lineage_;
     Assessor assessor_;

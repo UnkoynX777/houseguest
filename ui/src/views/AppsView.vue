@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, toRef, watch } from 'vue';
 
-import { call, host } from '../api';
+import { call, host, rememberIconSources } from '../api';
 import AppIcon from '../components/AppIcon.vue';
 import AppPanel from '../components/AppPanel.vue';
 import DiscoveryModal from '../components/DiscoveryModal.vue';
@@ -55,7 +55,12 @@ watch(() => app.profiles, settleProfile);
 
 const library = useResource<Library>(
   () => `apps.library:${profileId.value}`,
-  async () => (profileId.value ? await call<Library>('apps.library', { profile_id: profileId.value }) : { apps: [], scanning: false }),
+  async () => {
+    if (!profileId.value) return { apps: [], scanning: false };
+    const result = await call<Library>('apps.library', { profile_id: profileId.value });
+    rememberIconSources(result.apps);
+    return result;
+  },
   ['policy', 'catalog'],
   300_000,
 );
@@ -348,7 +353,7 @@ function afterObservation() {
           <span v-if="entry.conflicts" class="mini bad" :title="t('A rule conflicts with this program')"><Icon name="alert" /></span>
           <span class="state-dot" :class="entry.status" :title="stateText(entry)" />
         </span>
-        <AppIcon :path="iconPath(entry)" :name="entry.name" :size="52" />
+        <AppIcon :path="iconPath(entry)" :sources="entry.icons" :name="entry.name" :size="52" />
         <div class="name truncate" :title="entry.name">{{ entry.name }}</div>
         <div class="sub truncate" :title="entry.company">{{ entry.company || sourceLabel(entry.source) }}</div>
         <div class="minis">
@@ -366,7 +371,7 @@ function afterObservation() {
      <VirtualList :items="visible" :item-key="key" :item-height="56" v-slot="{ item: entry }">
       <div class="app-row" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
         <input class="pick" type="checkbox" :checked="selected.has(key(entry))" :aria-label="t('Select {name}', { name: entry.name })" @click.stop @change="toggle(entry)" />
-        <AppIcon :path="iconPath(entry)" :name="entry.name" :size="34" />
+        <AppIcon :path="iconPath(entry)" :sources="entry.icons" :name="entry.name" :size="34" />
         <div style="min-width: 0"><strong class="truncate" style="display: block">{{ entry.name }}</strong><span class="hint truncate" style="display: block">{{ entry.company || sourceLabel(entry.source) }}</span></div>
         <div class="hint mono truncate hide-narrow" :title="entry.path || entry.install_dir">{{ entry.path || entry.install_dir }}</div>
         <div class="row hide-narrow" style="gap: 6px">

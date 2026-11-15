@@ -6,6 +6,7 @@ import { riskLabel, roleLabel } from '../explain';
 import { t } from '../i18n';
 import { attempt, describe, formatDuration, notify } from '../store';
 import type { DependencyMode, DiscoveryReport, LibraryApp, ObservedItem } from '../types';
+import { signerName } from '../certificate';
 import AppIcon from './AppIcon.vue';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
@@ -116,7 +117,7 @@ onUnmounted(() => {
 <template>
   <Modal :title="t('Find what {name} needs', { name: entry.name })" wide @close="cancel">
     <template v-if="step === 'start'">
-      <div class="row"><AppIcon :path="entry.path" :name="entry.name" :size="48" /><div class="grow"><strong>{{ entry.name }}</strong><div class="hint mono truncate">{{ entry.path }}</div></div></div>
+      <div class="row"><AppIcon :path="entry.path" :name="entry.name" :size="48" /><div class="grow"><strong>{{ entry.name }}</strong><div class="hint mono truncate" :title="entry.path">{{ entry.path }}</div></div></div>
       <p>{{ t('Houseguest watches the programs your account starts while you use this application, then lists them so you can approve the ones it really needs. Nothing is allowed automatically.') }}</p>
       <div class="field">
         <label>{{ t('How long to watch') }}</label>
@@ -154,7 +155,7 @@ onUnmounted(() => {
               <div style="min-width: 0">
                 <strong>{{ item.name }}</strong> <span class="mini">{{ roleLabel(item.role) }}</span>
                 <div class="hint mono truncate" :title="item.path">{{ item.path }}</div>
-                <div v-if="item.publisher" class="hint truncate">{{ item.publisher }}</div>
+                <div v-if="item.publisher" class="hint truncate" :title="item.publisher">{{ t('Signed by') }}: {{ signerName(item.publisher) || item.publisher }}</div>
                 <div class="row wrap" style="gap: 6px; margin-top: 4px"><span v-for="risk in item.risks" :key="risk" class="risk">{{ riskLabel(risk) }}</span></div>
               </div>
               <span class="faint">×{{ item.runs }}</span>

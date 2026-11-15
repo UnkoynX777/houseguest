@@ -30,6 +30,7 @@ constexpr std::size_t kMaxEvidence = 10;
 constexpr auto kProgressInterval = std::chrono::milliseconds(750);
 constexpr std::size_t kMaxCandidates = 6;
 constexpr std::size_t kMaxDiscardLog = 300;
+constexpr std::size_t kMaxIconSources = 6;
 constexpr int kConfidentScore = 45;
 constexpr int kConfidentMargin = 12;
 constexpr std::int64_t kRescanAfterSeconds = 24 * 3600;
@@ -219,6 +220,13 @@ private:
             }
         }
         for (auto& item : claim.executables) entry.executables.push_back(item);
+        for (auto& icon : claim.icons) {
+            if (entry.app.icons.size() < kMaxIconSources &&
+                std::ranges::none_of(entry.app.icons, [&](const IconSource& known) {
+                    return known.kind == icon.kind && known.path == icon.path && known.index == icon.index;
+                }))
+                entry.app.icons.push_back(std::move(icon));
+        }
         if (entry.known.size() < 400) {
             for (auto& file : claim.known_executables) entry.known.push_back(file);
         }

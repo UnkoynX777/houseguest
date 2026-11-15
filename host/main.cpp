@@ -2,6 +2,7 @@
 
 #include <dwmapi.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <wrl.h>
 
 #include <algorithm>
@@ -18,6 +19,7 @@
 #endif
 #include "houseguest/system/pipe.hpp"
 #include "houseguest/system/text.hpp"
+#include "houseguest/system/windows_info.hpp"
 
 #include "dialogs.hpp"
 #include "geometry.hpp"
@@ -194,16 +196,39 @@ void open_recovery() {
     if (outcome == host::RecoveryResult::RestartInterface) restart_interface();
 }
 
+Json reveal_in_explorer(const std::string& utf8) {
+    const auto target = houseguest::system::path_from_utf8(utf8);
+    std::error_code ec;
+    if (utf8.empty() || utf8.size() > 1024 || !target.is_absolute() || !houseguest::system::is_local_disk_path(target) ||
+        !std::filesystem::exists(target, ec))
+        return {{"opened", false}};
+    if (std::filesystem::is_directory(target, ec))
+        return {{"opened", reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", target.c_str(), nullptr, nullptr,
+                                                                    SW_SHOWNORMAL)) > 32}};
+    PIDLIST_ABSOLUTE pidl = ILCreateFromPathW(target.c_str());
+    if (!pidl) return {{"opened", false}};
+    const bool opened = SUCCEEDED(SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0));
+    ILFree(pidl);
+    return {{"opened", opened}};
+}
+
 void handle_host_command(const Json& id, const std::string& command, const Json& args) {
     Json data;
     if (command == "host.icon") {
         const auto path = args.value("path", std::string());
-        const int pixels = std::clamp(args.value("size", 48), 16, 128);
+        const int pixels = std::clamp(args.value("size", 48), 16, 256);
+        std::vector<host::IconSource> sources;
+        if (const auto it = args.find("sources"); it != args.end() && it->is_array()) {
+            for (const auto& item : *it) {
+                if (sources.size() >= 6 || !item.is_object()) break;
+                sources.push_back({item.value("kind", std::string()), item.value("path", std::string()), item.value("index", 0)});
+            }
+        }
         if (!g.icons || path.empty() || path.size() > 1024) {
             post_to_view({{"id", id}, {"ok", true}, {"data", {{"png", ""}}}});
             return;
         }
-        g.icons->request(path, pixels, [id](std::string url) {
+        g.icons->request(path, std::move(sources), pixels, [id](std::string url) {
             post_to_view({{"id", id}, {"ok", true}, {"data", {{"png", std::move(url)}}}});
         });
         return;
@@ -224,6 +249,8 @@ void handle_host_command(const Json& id, const std::string& command, const Json&
         data = host::pick_paths(g.window, args);
     } else if (command == "host.open_text") {
         data = host::open_text(g.window);
+    } else if (command == "host.reveal") {
+        data = reveal_in_explorer(args.value("path", std::string()));
     } else if (command == "host.info") {
         data = {{"elevated", host::is_elevated()}};
     } else if (command == "host.get_prefs") {

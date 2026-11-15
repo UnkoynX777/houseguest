@@ -6,6 +6,8 @@ import { describeBlock, recommendation } from '../explain';
 import { t } from '../i18n';
 import { app, describe, formatTime, notify, refreshStatus } from '../store';
 import type { BlockEntry } from '../types';
+import { signerName } from '../certificate';
+import CopyText from './CopyText.vue';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
 
@@ -56,9 +58,9 @@ async function allowTemporarily(minutes: number) {
       <dt>{{ t('Why') }}</dt><dd>{{ describeBlock(block) }}</dd>
       <dt v-if="block.rule">{{ t('Rule') }}</dt><dd v-if="block.rule" class="mono">{{ block.rule }}</dd>
       <dt v-if="block.parent">{{ t('Started by') }}</dt><dd v-if="block.parent" class="mono">{{ block.parent }}</dd>
-      <dt>{{ t('Executable') }}</dt><dd class="mono">{{ block.path }}</dd>
-      <dt>{{ t('Signed by') }}</dt><dd>{{ block.publisher || t('Not signed or not trusted') }}</dd>
-      <dt v-if="block.sha256">SHA-256</dt><dd v-if="block.sha256" class="mono">{{ block.sha256 }}</dd>
+      <dt>{{ t('Executable') }}</dt><dd><CopyText :value="block.path" mono reveal :label="t('path')" /></dd>
+      <dt>{{ t('Signed by') }}</dt><dd :title="block.publisher"><template v-if="block.publisher">{{ signerName(block.publisher) || block.publisher }}</template><span v-else class="muted">{{ t('Not signed or not trusted') }}</span></dd>
+      <dt v-if="block.sha256">SHA-256</dt><dd v-if="block.sha256"><CopyText :value="block.sha256" mono label="SHA-256" /></dd>
     </dl>
     <div v-if="recommendation(block)" class="banner"><Icon name="about" /><span>{{ recommendation(block) }}</span></div>
     <label v-if="needsAcknowledge" class="check"><input v-model="acknowledge" type="checkbox" />{{ t('I understand that approved tools can run other programs.') }}</label>

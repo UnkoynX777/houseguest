@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader.vue';
 import { computed, onActivated, onDeactivated, ref, watch } from 'vue';
 
 import { call } from '../api';
+import { signerName } from '../certificate';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import PreviewPanel from '../components/PreviewPanel.vue';
@@ -112,7 +113,7 @@ const setAction = (action: Action) => editing.value && (editing.value.action = a
             <tr v-for="rule in rules" :key="rule.id">
               <td style="width: 1%"><span class="badge" :class="rule.action === 'allow' ? 'ok' : 'bad'">{{ rule.action === 'allow' ? t('Allow') : t('Block') }}</span></td>
               <td style="max-width: 0">
-                <span class="badge info" style="margin-right: 8px">{{ typeLabel(rule.match.type) }}</span><span class="mono truncate">{{ rule.match.value }}</span>
+                <span class="badge info" style="margin-right: 8px">{{ typeLabel(rule.match.type) }}</span><span class="truncate" :class="{ mono: rule.match.type !== 'publisher' }" :title="rule.match.value">{{ rule.match.type === 'publisher' ? signerName(rule.match.value) || rule.match.value : rule.match.value }}</span>
                 <div v-if="rule.expires_at" class="hint">{{ t('Expires {time}', { time: formatTime(rule.expires_at) }) }}</div>
               </td>
               <td style="width: 1%" class="faint">{{ rule.priority }}</td>

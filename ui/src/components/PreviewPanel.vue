@@ -43,7 +43,7 @@ const rows = computed(() =>
           <tr v-for="app in rows" :key="app.path">
             <td>
               <div>{{ app.name }}</div>
-              <div class="hint truncate mono" style="max-width: 460px">{{ app.path }}</div>
+              <div class="hint truncate mono" style="max-width: 460px" :title="app.path">{{ app.path }}</div>
             </td>
             <td style="width: 1%">
               <span class="badge" :class="app.action === 'allow' ? 'ok' : 'bad'">{{ app.action === 'allow' ? t('Allowed') : t('Blocked') }}</span>

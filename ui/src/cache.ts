@@ -1,4 +1,4 @@
-import { shallowReactive } from 'vue';
+import { ref, shallowReactive } from 'vue';
 
 // One place for data that is shown but never decides anything. Every slot belongs to a page, remembers when it
 // was fetched and which kind of change makes it stale, and is refreshed in the background so a page that was
@@ -128,12 +128,18 @@ const generations: Partial<Record<Dep, number>> = {};
 
 // The service reports a counter per kind of data in every status. A counter that moved since the last look is
 // the event that makes the matching slots stale.
+// Moves whenever the library changed on the machine, so pictures that were read from files are asked for again.
+export const catalogEpoch = ref(0);
+
 export function syncGenerations(reported: Partial<Record<Dep, number>> | undefined) {
   if (!reported) return;
   for (const dep of ['policy', 'catalog', 'history'] as const) {
     const value = reported[dep];
     if (value === undefined) continue;
-    if (generations[dep] !== undefined && generations[dep] !== value) markStale(dep);
+    if (generations[dep] !== undefined && generations[dep] !== value) {
+      markStale(dep);
+      if (dep === 'catalog') catalogEpoch.value++;
+    }
     generations[dep] = value;
   }
 }

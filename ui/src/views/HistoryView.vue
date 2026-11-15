@@ -5,6 +5,8 @@ import { ApiError, call, host } from '../api';
 import AppIcon from '../components/AppIcon.vue';
 import BlockReview from '../components/BlockReview.vue';
 import EmptyState from '../components/EmptyState.vue';
+import { signerName } from '../certificate';
+import CopyText from '../components/CopyText.vue';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import PageHeader from '../components/PageHeader.vue';
@@ -124,6 +126,8 @@ const reason = (entry: AuditEntry) => {
 const asBlock = (entry: AuditEntry): BlockEntry => ({ ...(entry.detail as unknown as BlockEntry), event: entry.event, ts: entry.ts });
 const reviewable = (entry: AuditEntry) => ['app.blocked', 'app.would_block', 'app.block_failed'].includes(entry.event);
 
+const copyable = (label: string) => label === t('Program') || label === t('SHA-256') || label === t('Signer identity');
+
 const details = computed(() => {
   const entry = selected.value;
   if (!entry) return [];
@@ -135,7 +139,7 @@ const details = computed(() => {
   ];
   if (isApp(entry)) {
     if (d.windows_component) lines.push([t('Note'), t('This program is signed by Windows but is not one of the components Houseguest protects, so your profile decided. If something stopped working, allow it in the profile.')]);
-    lines.push([t('Program'), d.path ?? ''], [t('Started by'), parent ? `${parent} (${d.parent})` : t('Unknown')], [t('Profile'), d.profile || ''], [t('Rule'), d.rule || d.source || ''], [t('Publisher'), d.publisher || t('Unsigned')], [t('SHA-256'), d.sha256 || ''], [t('Technical reason'), `${d.source ?? ''} · ${d.reason ?? ''}${d.note ? ` · ${d.note}` : ''}`]);
+    lines.push([t('Program'), d.path ?? ''], [t('Started by'), parent ? `${parent} (${d.parent})` : t('Unknown')], [t('Profile'), d.profile || ''], [t('Rule'), d.rule || d.source || ''], [t('Signed by'), d.publisher ? signerName(d.publisher) || d.publisher : t('Unsigned')], [t('Signer identity'), d.publisher && signerName(d.publisher) ? d.publisher : ''], [t('SHA-256'), d.sha256 || ''], [t('Technical reason'), `${d.source ?? ''} · ${d.reason ?? ''}${d.note ? ` · ${d.note}` : ''}`]);
   } else {
     for (const [key, value] of Object.entries(d)) lines.push([key, typeof value === 'string' ? value : JSON.stringify(value)]);
   }
@@ -221,7 +225,7 @@ const filtered = computed(() => filter.value !== 'all' || !!query.value.trim() |
 
     <Modal v-if="selected" :title="isApp(selected) ? appName(selected) : eventLabel(selected)" @close="selected = undefined">
       <p v-if="isApp(selected)" class="muted">{{ reason(selected) }}</p>
-      <dl class="detail-grid"><template v-for="[label, value] in details" :key="label"><dt>{{ label }}</dt><dd :class="{ mono: label === t('SHA-256') || label === t('Program') }">{{ value }}</dd></template></dl>
+      <dl class="detail-grid"><template v-for="[label, value] in details" :key="label"><dt>{{ label }}</dt><dd :class="{ mono: label === t('Signer identity') }"><CopyText v-if="copyable(label)" :value="value" mono :reveal="label === t('Program')" :label="label" /><template v-else>{{ value }}</template></dd></template></dl>
       <template #footer>
         <button v-if="reviewable(selected)" class="btn" @click="reviewing = asBlock(selected); selected = undefined">{{ t('Review') }}</button>
         <button class="btn primary" @click="selected = undefined">{{ t('Close') }}</button>

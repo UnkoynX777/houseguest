@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <wincrypt.h>
 
 #include <filesystem>
 #include <fstream>
@@ -11,6 +12,7 @@
 #include "houseguest/system/com_servers.hpp"
 #include "houseguest/system/crypto.hpp"
 #include "houseguest/system/process.hpp"
+#include "houseguest/system/signature.hpp"
 #include "houseguest/system/text.hpp"
 #include "houseguest/system/windows_info.hpp"
 
@@ -213,4 +215,101 @@ TEST_CASE("a file stamp changes when content is replaced even if size and write 
     std::error_code ec;
     std::filesystem::remove(file, ec);
     CHECK_FALSE(houseguest::system::file_stamp(file).has_value());
+}
+
+namespace {
+
+std::filesystem::path scratch_file(const wchar_t* name) {
+    const auto folder = std::filesystem::temp_directory_path() / L"houseguest-signature-tests";
+    std::filesystem::create_directories(folder);
+    return folder / name;
+}
+
+}  // namespace
+
+TEST_CASE("a file Windows vouches for through a catalog reads as a valid signature with a readable signer",
+          "[signature]") {
+    const auto report = inspect_signature(system_file("%SystemRoot%\\System32\\kernel32.dll"));
+    REQUIRE(report.state == SignatureState::Valid);
+    CHECK(report.signer == "Microsoft Windows");
+    CHECK(report.issuer.common_name.find("Microsoft") != std::string::npos);
+    CHECK(report.signer.find("OID") == std::string::npos);
+    CHECK(report.signer.find('=') == std::string::npos);
+    CHECK(report.thumbprint_sha1.size() == 40);
+    CHECK(report.thumbprint_sha256.size() == 64);
+    CHECK(report.not_after > report.not_before);
+    CHECK_FALSE(report.revocation_checked);
+}
+
+TEST_CASE("an unsigned file is reported as unsigned, not as an error", "[signature]") {
+    const auto file = scratch_file(L"plain.exe");
+    std::ofstream(file, std::ios::binary | std::ios::trunc) << "MZ not signed";
+    const auto report = inspect_signature(file);
+    CHECK(report.state == SignatureState::Unsigned);
+    CHECK(report.signer.empty());
+    CHECK(report.thumbprint_sha1.empty());
+    CHECK(trusted_publisher(file).empty());
+}
+
+TEST_CASE("a file that cannot be read is unverified, not unsigned", "[signature]") {
+    const auto report = inspect_signature(scratch_file(L"does-not-exist.exe"));
+    CHECK(report.state == SignatureState::Unverified);
+}
+
+TEST_CASE("a signed file that was modified keeps its certificate but is not valid", "[signature][safety]") {
+    // Find any file with an embedded signature in the system folder, copy it and change one byte of its code.
+    std::filesystem::path donor;
+    std::error_code ec;
+    int looked = 0;
+    for (std::filesystem::directory_iterator it(system_file("%ProgramFiles%\\Windows Defender"), ec), end;
+         it != end && !ec && looked < 40; it.increment(ec)) {
+        if (it->path().extension() != L".exe") continue;
+        ++looked;
+        const auto report = inspect_signature(it->path());
+        if (report.state == SignatureState::Valid && !report.via_catalog) {
+            donor = it->path();
+            break;
+        }
+    }
+    if (donor.empty()) {
+        WARN("no embedded-signature program found on this machine; the check was not run");
+        return;
+    }
+    const auto copy = scratch_file(L"modified.exe");
+    std::filesystem::copy_file(donor, copy, std::filesystem::copy_options::overwrite_existing);
+    {
+        std::fstream file(copy, std::ios::binary | std::ios::in | std::ios::out);
+        const auto size = std::filesystem::file_size(copy);
+        file.seekg(static_cast<std::streamoff>(size / 3));
+        char byte = 0;
+        file.read(&byte, 1);
+        byte = static_cast<char>(byte ^ 0x5a);
+        file.seekp(static_cast<std::streamoff>(size / 3));
+        file.write(&byte, 1);
+    }
+    const auto report = inspect_signature(copy);
+    CHECK(report.state == SignatureState::Invalid);
+    CHECK_FALSE(report.signer.empty());
+    CHECK(trusted_publisher(copy).empty());
+    CHECK(trusted_publisher(donor) != "");
+}
+
+TEST_CASE("distinguished names keep every attribute but only friendly ones name the signer", "[signature]") {
+    const wchar_t* text = L"CN=\"Example Games, Inc.\", O=\"Example Games, Inc.\", C=US, "
+                          L"1.3.6.1.4.1.311.60.2.1.3=US, 2.5.4.15=Private Organization, 2.5.4.5=1234567";
+    DWORD size = 0;
+    CertStrToNameW(X509_ASN_ENCODING, text, CERT_X500_NAME_STR, nullptr, nullptr, &size, nullptr);
+    std::vector<BYTE> encoded(size);
+    REQUIRE(CertStrToNameW(X509_ASN_ENCODING, text, CERT_X500_NAME_STR, nullptr, encoded.data(), &size, nullptr));
+    const auto name = parse_distinguished_name(encoded);
+    CHECK(name.common_name == "Example Games, Inc.");
+    CHECK(name.organization == "Example Games, Inc.");
+    CHECK(name.country == "US");
+    REQUIRE(name.fields.size() == 6);
+    const auto jurisdiction = std::ranges::find(name.fields, "1.3.6.1.4.1.311.60.2.1.3", &NameField::oid);
+    REQUIRE(jurisdiction != name.fields.end());
+    CHECK(jurisdiction->label == "Jurisdiction country");
+    CHECK(name.fields.front().label == "Serial number");
+    CHECK(parse_distinguished_name({}).fields.empty());
+    CHECK(parse_distinguished_name(bytes("not der")).fields.empty());
 }

@@ -153,6 +153,7 @@ struct ShortcutJob {
     const char* scope = "";
     fs::path target;
     std::string address;
+    std::optional<IconLocation> icon;
 };
 
 void parse_shortcut(ShortcutJob& job) {
@@ -165,7 +166,9 @@ void parse_shortcut(ShortcutJob& job) {
             job.address.pop_back();
         return;
     }
-    job.target = resolve_shortcut(job.link);
+    auto shortcut = read_shortcut(job.link);
+    job.target = std::move(shortcut.target);
+    job.icon = std::move(shortcut.icon);
 }
 
 void claim_shortcut(ProviderContext& ctx, const ShortcutJob& job) {
@@ -203,6 +206,11 @@ void claim_shortcut(ProviderContext& ctx, const ShortcutJob& job) {
     }
     claim.root = job.target.parent_path();
     claim.executables.emplace_back(job.target, 70);
+    if (job.icon) {
+        std::error_code icon_error;
+        if (fs::is_regular_file(job.icon->file, icon_error))
+            claim.icons.push_back({"shortcut", path_to_utf8(job.icon->file), job.icon->index});
+    }
     ctx.claim(std::move(claim));
 }
 
@@ -337,10 +345,11 @@ void claim_uninstall(ProviderContext& ctx, const std::vector<InstallFolder>& fol
         claim.version = to_utf8(registry_text(root, key, L"DisplayVersion", view));
         claim.evidence.push_back({"registry.uninstall", to_utf8(key)});
 
-        auto icon = registry_text(root, key, L"DisplayIcon", view);
-        if (const auto comma = icon.rfind(L','); comma != std::wstring::npos) icon.resize(comma);
-        if (!icon.empty()) {
-            const auto candidate = expand(icon);
+        if (const auto icon = parse_icon_location(registry_text(root, key, L"DisplayIcon", view))) {
+            std::error_code icon_error;
+            if (fs::is_regular_file(icon->file, icon_error))
+                claim.icons.push_back({"registry", path_to_utf8(icon->file), icon->index});
+            const auto& candidate = icon->file;
             if (usable_executable(candidate) && classify_executable(candidate, {}) != AppRole::Installer &&
                 lower(candidate.string()).find("\\windows\\installer\\") == std::string::npos &&
                 lower(candidate.string()).find("\\package cache\\") == std::string::npos) {
@@ -435,6 +444,39 @@ std::vector<unsigned> parse_version(const std::string& text) {
     return parts;
 }
 
+// Packaged apps ship each logo as several files that differ by scale, target size and backplate ("Logo.scale-200.png",
+// "Logo.altform-unplated_targetsize-256.png"). The manifest names only the base, so the largest variant that exists
+// is chosen, preferring the unplated ones: they have no coloured tile behind the glyph and fill their canvas.
+fs::path best_package_logo(const fs::path& package_root, const std::string& relative) {
+    if (relative.empty() || relative.find("..") != std::string::npos) return {};
+    const auto base = package_root / path_from_utf8(relative);
+    const auto folder = base.parent_path();
+    const auto stem = lower(path_to_utf8(base.stem()));
+    std::error_code ec;
+    fs::path best;
+    int best_size = -1;
+    int scanned = 0;
+    for (fs::directory_iterator it(folder, fs::directory_options::skip_permission_denied, ec), end;
+         it != end && !ec && scanned < 400; it.increment(ec), ++scanned) {
+        const auto name = lower(path_to_utf8(it->path().filename()));
+        if (!name.starts_with(stem) || !name.ends_with(".png")) continue;
+        int size = 1;
+        if (const auto at = name.find("targetsize-"); at != std::string::npos)
+            size = std::atoi(name.c_str() + at + 11) * 4;
+        else if (const auto scale = name.find("scale-"); scale != std::string::npos)
+            size = std::atoi(name.c_str() + scale + 6);
+        if (name.find("altform-lightunplated") != std::string::npos || name.find("contrast-") != std::string::npos)
+            size = 0;
+        else if (name.find("altform-unplated") != std::string::npos)
+            size += 100000;
+        if (size > best_size) {
+            best_size = size;
+            best = it->path();
+        }
+    }
+    return best;
+}
+
 void provide_packages(ProviderContext& ctx) {
     const auto root = environment_path(L"ProgramFiles") / L"WindowsApps";
     std::error_code ec;
@@ -513,6 +555,13 @@ void provide_packages(ProviderContext& ctx) {
             claim.product_id = claim.package_family + "!" + xml_attribute(application, "Id");
             claim.root = package.location;
             claim.executables.emplace_back(target, 90);
+            for (const char* attribute : {"Square44x44Logo", "Square150x150Logo"}) {
+                if (const auto logo = best_package_logo(package.location, xml_attribute(visual, attribute));
+                    !logo.empty()) {
+                    claim.icons.push_back({"package", path_to_utf8(logo), 0});
+                    break;
+                }
+            }
             claim.evidence.push_back(
                 {"package.manifest", path_to_utf8(package.location / L"AppxManifest.xml")});
             ctx.claim(std::move(claim));
@@ -555,6 +604,15 @@ void provide_xbox(ProviderContext& ctx) {
             claim.scope = "machine";
             claim.root = content;
             if (!executable.empty()) claim.executables.emplace_back(content / path_from_utf8(executable), 90);
+            if (visuals_at != std::string::npos) {
+                const auto visuals = " " + tag_at(config, visuals_at);
+                for (const char* attribute : {"Square44x44Logo", "Square150x150Logo", "StoreLogo"}) {
+                    if (const auto logo = best_package_logo(content, xml_attribute(visuals, attribute)); !logo.empty()) {
+                        claim.icons.push_back({"package", path_to_utf8(logo), 0});
+                        break;
+                    }
+                }
+            }
             claim.evidence.push_back({"xbox.config", path_to_utf8(content / L"MicrosoftGame.Config")});
             ctx.claim(std::move(claim));
         }

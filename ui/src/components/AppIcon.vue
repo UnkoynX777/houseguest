@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { icon } from '../api';
+import { icon, iconPixels, iconSourcesFor, type IconSource } from '../api';
+import { catalogEpoch } from '../cache';
 
-const props = defineProps<{ path: string; name: string; size?: number }>();
+const props = defineProps<{ path: string; name: string; size?: number; sources?: IconSource[] }>();
 
 const box = ref<HTMLElement>();
 const url = ref('');
@@ -14,9 +15,12 @@ const initials = computed(() => props.name.replace(/[^\p{L}\p{N} ]/gu, '').trim(
 let observer: IntersectionObserver | undefined;
 let wanted = false;
 
+let request = 0;
 async function load() {
-  if (!wanted || !props.path) return;
-  url.value = await icon(props.path, dimension.value > 48 ? 96 : 64);
+  if (!wanted || (!props.path && !props.sources?.length)) return;
+  const mine = ++request;
+  const picture = await icon(props.path || props.sources![0].path, iconPixels(dimension.value), props.sources ?? iconSourcesFor(props.path), catalogEpoch.value);
+  if (mine === request) url.value = picture;
 }
 
 onMounted(() => {
@@ -39,6 +43,7 @@ watch(
     load();
   },
 );
+watch(catalogEpoch, load);
 </script>
 
 <template>

@@ -24,6 +24,7 @@ struct Claim {
     std::vector<std::pair<fs::path, int>> executables;
     std::vector<FileEntry> known_executables;
     std::vector<Evidence> evidence;
+    std::vector<IconSource> icons;
     int name_rank = 1;
     bool user_facing = true;
 };

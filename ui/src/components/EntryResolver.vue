@@ -42,7 +42,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
   <div class="drawer-scrim" @mousedown="emit('close')" />
   <aside class="drawer" role="dialog" aria-modal="true" :aria-label="entry.name">
     <div class="drawer-head">
-      <AppIcon :path="entry.candidates[0]?.path ?? ''" :name="entry.name" :size="52" />
+      <AppIcon :path="entry.candidates[0]?.path ?? ''" :sources="entry.icons" :name="entry.name" :size="52" />
       <div class="grow">
         <h2 class="truncate">{{ entry.name }}</h2>
         <div class="muted truncate">{{ platformLabel(entry.platform) }}<template v-if="entry.volume"> · {{ entry.volume }}</template><template v-if="entry.company"> · {{ entry.company }}</template></div>

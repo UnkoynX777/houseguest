@@ -2,6 +2,7 @@ add_library(houseguest_system STATIC
   src/crypto.cpp
   src/text.cpp
   src/windows_info.cpp
+  src/signature.cpp
   src/app_catalog.cpp
   src/catalog_support.cpp
   src/catalog_providers.cpp

@@ -111,6 +111,7 @@ export interface LibraryApp extends Required<AppEntry> {
   resolution: Resolution;
   candidates: ExecutableCandidate[];
   evidence: { kind: string; detail: string }[];
+  icons?: { kind: string; path: string; index: number }[];
   offline: boolean;
   sources: string[];
   kind: AppKind;
@@ -350,4 +351,48 @@ export interface Diagnostics {
   install_directory: string;
   backups: number;
   uptime_seconds: number;
+}
+
+export type SignatureState = 'unsigned' | 'valid' | 'untrusted' | 'expired' | 'invalid' | 'unverified';
+
+export interface CertificateName {
+  common_name: string;
+  organization: string;
+  country: string;
+  fields: { label: string; oid: string; value: string }[];
+}
+
+export interface SignatureInfo {
+  state: SignatureState;
+  signer: string;
+  via_catalog: boolean;
+  timestamped: boolean;
+  certificate_expired: boolean;
+  subject: CertificateName;
+  issuer: CertificateName;
+  thumbprint_sha1: string;
+  thumbprint_sha256: string;
+  serial: string;
+  algorithm: string;
+  not_before: number;
+  not_after: number;
+  status_code: string;
+  revocation_checked: boolean;
+}
+
+export interface FileDetails {
+  path: string;
+  exists: boolean;
+  size?: number;
+  declared?: {
+    company: string;
+    product: string;
+    description: string;
+    file_version: string;
+    product_version: string;
+    copyright: string;
+    original_name: string;
+    internal_name: string;
+  };
+  signature?: SignatureInfo;
 }

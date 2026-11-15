@@ -99,7 +99,7 @@ async function stop() {
         <div class="row"><h2 class="grow">{{ t('Waiting for your decision') }}</h2><span class="badge warn">{{ reviews.length }}</span></div>
         <p class="muted">{{ t('Allowed programs asked for these, and they are blocked until you decide.') }}</p>
         <div v-for="review in reviews.slice(0, 5)" :key="review.id" class="row">
-          <div class="grow" style="min-width: 0"><strong>{{ review.path.split(/[\\/]/).pop() }}</strong><div class="hint mono truncate">{{ review.path }}</div></div>
+          <div class="grow" style="min-width: 0"><strong>{{ review.path.split(/[\\/]/).pop() }}</strong><div class="hint mono truncate" :title="review.path">{{ review.path }}</div></div>
           <span class="faint">{{ t('Blocked {n} times', { n: review.count }) }}</span>
           <button class="btn sm" @click="go('apps', review.profile_id)">{{ t('Review') }}</button>
         </div>

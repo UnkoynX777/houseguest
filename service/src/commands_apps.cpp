@@ -440,6 +440,17 @@ void Controller::register_app_commands() {
         },
         true);
 
+    add(
+        "apps.details", Access::Owner,
+        [this](Who, Args args) {
+            const auto file = system::path_from_utf8(require_text(args, "path"));
+            std::error_code ec;
+            if (!file.is_absolute() || !system::is_local_disk_path(file) || !std::filesystem::is_regular_file(file, ec))
+                throw Failure("not_found", "File not found.");
+            return details_.describe(file);
+        },
+        true);
+
     add("apps.save", Access::Owner, [this](Who caller, Args args) {
         auto profile = find_profile(require_text(args, "profile_id"));
         auto app = core::application_from_json(args.at("app"));

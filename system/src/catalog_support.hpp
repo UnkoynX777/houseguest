@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,10 +25,23 @@ double token_overlap(const std::vector<std::string>& wanted, const std::vector<s
 fs::path expand(std::wstring text);
 fs::path environment_path(const wchar_t* name);
 
+struct IconLocation {
+    fs::path file;
+    int index = 0;
+};
+// Reads the "file,index" form used by DisplayIcon and shortcuts, with or without quotes. Only absolute paths on
+// local disks are returned, and the file is not opened.
+std::optional<IconLocation> parse_icon_location(std::wstring text);
+
 std::wstring registry_text(HKEY root, const std::wstring& key, const wchar_t* value, REGSAM view = 0);
 DWORD registry_number(HKEY root, const std::wstring& key, const wchar_t* value, REGSAM view = 0);
 std::vector<std::wstring> subkeys(HKEY root, const std::wstring& key, REGSAM view = 0);
 
+struct ShortcutTarget {
+    fs::path target;
+    std::optional<IconLocation> icon;
+};
+ShortcutTarget read_shortcut(const fs::path& link);
 fs::path resolve_shortcut(const fs::path& link);
 
 struct VersionInfo {
@@ -35,6 +49,8 @@ struct VersionInfo {
     std::string product;
     std::string description;
     std::string version;
+    std::string product_version;
+    std::string copyright;
     std::string original_name;
     std::string internal_name;
 };

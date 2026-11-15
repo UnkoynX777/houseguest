@@ -1,11 +1,12 @@
 #include "icons.hpp"
 
+#include "icon_render.hpp"
+
 #include <windows.h>
 
-#include <shobjidl.h>
-#include <wincodec.h>
-#include <wrl.h>
+#include <objbase.h>
 
+#include <chrono>
 #include <fstream>
 #include <sstream>
 
@@ -14,8 +15,6 @@
 
 namespace houseguest::host {
 namespace {
-
-using Microsoft::WRL::ComPtr;
 
 constexpr char kAlphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 constexpr std::string_view kPrefix = "data:image/png;base64,";
@@ -35,40 +34,6 @@ std::string base64(const std::string& bytes) {
     return out;
 }
 
-std::string png_of(HBITMAP bitmap) {
-    ComPtr<IWICImagingFactory> factory;
-    if (FAILED(
-            CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))))
-        return {};
-    ComPtr<IWICBitmap> source;
-    if (FAILED(factory->CreateBitmapFromHBITMAP(bitmap, nullptr, WICBitmapUseAlpha, &source))) return {};
-    ComPtr<IStream> stream;
-    if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, &stream))) return {};
-    ComPtr<IWICBitmapEncoder> encoder;
-    if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
-        FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) {
-        return {};
-    }
-    ComPtr<IWICBitmapFrameEncode> frame;
-    if (FAILED(encoder->CreateNewFrame(&frame, nullptr)) || FAILED(frame->Initialize(nullptr))) return {};
-    UINT width = 0, height = 0;
-    source->GetSize(&width, &height);
-    WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
-    if (FAILED(frame->SetSize(width, height)) || FAILED(frame->SetPixelFormat(&format)) ||
-        FAILED(frame->WriteSource(source.Get(), nullptr)) || FAILED(frame->Commit()) ||
-        FAILED(encoder->Commit())) {
-        return {};
-    }
-    HGLOBAL global = nullptr;
-    if (FAILED(GetHGlobalFromStream(stream.Get(), &global))) return {};
-    const auto size = GlobalSize(global);
-    const auto* data = static_cast<const char*>(GlobalLock(global));
-    if (!data) return {};
-    std::string png(data, size);
-    GlobalUnlock(global);
-    return png;
-}
-
 std::string read_file(const std::filesystem::path& file) {
     std::ifstream in(file, std::ios::binary);
     std::ostringstream buffer;
@@ -81,6 +46,12 @@ std::string read_file(const std::filesystem::path& file) {
 IconService::IconService(std::filesystem::path cache_directory) : directory_(std::move(cache_directory)) {
     std::error_code ec;
     std::filesystem::create_directories(directory_, ec);
+    const auto limit = std::filesystem::file_time_type::clock::now() - std::chrono::hours(24 * 45);
+    for (std::filesystem::directory_iterator it(directory_, ec), end; it != end && !ec; it.increment(ec)) {
+        std::error_code stale;
+        if (it->path().extension() == L".png" && it->last_write_time(stale) < limit && !stale)
+            std::filesystem::remove(it->path(), stale);
+    }
     worker_ = std::jthread([this](const std::stop_token& stop) { run(stop); });
 }
 
@@ -89,7 +60,7 @@ IconService::~IconService() {
     ready_.notify_all();
 }
 
-void IconService::request(const std::string& utf8_path, int pixels, Reply reply) {
+void IconService::request(const std::string& utf8_path, std::vector<IconSource> sources, int pixels, Reply reply) {
     Reply dropped;
     {
         std::scoped_lock lock(mutex_);
@@ -97,16 +68,16 @@ void IconService::request(const std::string& utf8_path, int pixels, Reply reply)
             dropped = std::move(queue_.front().reply);
             queue_.pop_front();
         }
-        queue_.push_back({utf8_path, pixels, std::move(reply)});
+        queue_.push_back({utf8_path, std::move(sources), pixels, std::move(reply)});
     }
     ready_.notify_one();
     if (dropped) dropped({});
 }
 
-std::string IconService::cached(const std::string& key) {
+std::optional<std::string> IconService::cached(const std::string& key) {
     std::scoped_lock lock(mutex_);
     const auto it = memory_.find(key);
-    if (it == memory_.end()) return {};
+    if (it == memory_.end()) return std::nullopt;
     order_.splice(order_.begin(), order_, it->second.second);
     return it->second.first;
 }
@@ -125,18 +96,15 @@ void IconService::remember(const std::string& key, const std::string& value) {
     }
 }
 
-std::string IconService::produce(const std::string& utf8_path, int pixels) {
-    const auto file = system::path_from_utf8(utf8_path);
-    std::error_code ec;
-    const auto modified = std::filesystem::last_write_time(file, ec).time_since_epoch().count();
-    const auto size = std::filesystem::file_size(file, ec);
-    const auto key = utf8_path + "|" + std::to_string(pixels) + "|" + std::to_string(modified) + "|" +
-                     std::to_string(size);
-    if (auto hit = cached(key); !hit.empty()) return hit;
+std::string IconService::produce(const std::string& utf8_path, const std::vector<IconSource>& sources,
+                                 int pixels) {
+    const auto key = icon_fingerprint(utf8_path, sources) + "#" + std::to_string(pixels);
+    if (auto hit = cached(key)) return *hit;
 
     const auto name =
         system::to_hex(system::sha256({reinterpret_cast<const std::uint8_t*>(key.data()), key.size()}));
     const auto on_disk = directory_ / system::path_from_utf8(name + ".png");
+    std::error_code ec;
     if (std::filesystem::exists(on_disk, ec)) {
         if (auto png = read_file(on_disk); !png.empty()) {
             auto url = std::string(kPrefix) + base64(png);
@@ -145,18 +113,14 @@ std::string IconService::produce(const std::string& utf8_path, int pixels) {
         }
     }
 
-    ComPtr<IShellItemImageFactory> factory;
-    if (FAILED(SHCreateItemFromParsingName(file.c_str(), nullptr, IID_PPV_ARGS(&factory)))) return {};
-    HBITMAP bitmap = nullptr;
-    if (FAILED(factory->GetImage({pixels, pixels}, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK, &bitmap)) ||
-        !bitmap)
+    const auto rendered = render_icon(utf8_path, sources, pixels);
+    if (!rendered) {
+        remember(key, {});
         return {};
-    const auto png = png_of(bitmap);
-    DeleteObject(bitmap);
-    if (png.empty()) return {};
+    }
     std::ofstream(on_disk, std::ios::binary | std::ios::trunc)
-        .write(png.data(), static_cast<std::streamsize>(png.size()));
-    auto url = std::string(kPrefix) + base64(png);
+        .write(rendered->png.data(), static_cast<std::streamsize>(rendered->png.size()));
+    auto url = std::string(kPrefix) + base64(rendered->png);
     remember(key, url);
     return url;
 }
@@ -171,7 +135,7 @@ void IconService::run(const std::stop_token& stop) {
             job = std::move(queue_.back());
             queue_.pop_back();
         }
-        job.reply(produce(job.path, job.pixels));
+        job.reply(produce(job.path, job.sources, job.pixels));
     }
     if (initialized) CoUninitialize();
 }

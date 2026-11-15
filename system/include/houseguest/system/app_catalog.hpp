@@ -21,6 +21,14 @@ struct Evidence {
     std::string detail;
 };
 
+// Where a picture for the entry can be read from. The kind says how the owner of the information vouches for it,
+// the index selects a resource inside an executable or library, and nothing here is ever executed.
+struct IconSource {
+    std::string kind;
+    std::string path;
+    int index = 0;
+};
+
 struct ExecutableCandidate {
     std::string path;
     int score = 0;
@@ -46,6 +54,7 @@ struct InstalledApp {
     AppRole role = AppRole::Application;
     Resolution resolution = Resolution::Resolved;
     std::vector<ExecutableCandidate> candidates;
+    std::vector<IconSource> icons;
     std::vector<Evidence> evidence;
     std::int64_t modified = 0;
     std::int64_t size = 0;

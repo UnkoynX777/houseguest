@@ -1,5 +1,6 @@
 #include "catalog_support.hpp"
 
+#include <cwctype>
 #include <shobjidl.h>
 #include <tlhelp32.h>
 
@@ -60,8 +61,30 @@ fs::path expand(std::wstring text) {
     text.erase(std::remove(text.begin(), text.end(), L'"'), text.end());
     wchar_t expanded[MAX_PATH * 2] = {};
     const auto length = ExpandEnvironmentStringsW(text.c_str(), expanded, MAX_PATH * 2);
-    if (length == 0 || length > MAX_PATH * 2) return fs::path(text);
-    return expanded;
+    fs::path path = length == 0 || length > MAX_PATH * 2 ? fs::path(text) : fs::path(expanded);
+    return path.lexically_normal().make_preferred();
+}
+
+std::optional<IconLocation> parse_icon_location(std::wstring text) {
+    while (!text.empty() && (text.front() == L' ' || text.front() == L'"')) text.erase(text.begin());
+    int index = 0;
+    if (const auto comma = text.rfind(L','); comma != std::wstring::npos) {
+        const auto tail = text.substr(comma + 1);
+        const auto digits = tail.find_first_of(L"0123456789");
+        const bool numeric = !tail.empty() && tail.find_first_not_of(L" -0123456789\"") == std::wstring::npos &&
+                             digits != std::wstring::npos;
+        if (numeric) {
+            index = _wtoi(tail.c_str());
+            text.resize(comma);
+        } else if (tail.find_first_not_of(L" \"") == std::wstring::npos) {
+            text.resize(comma);
+        }
+    }
+    while (!text.empty() && (text.back() == L'"' || text.back() == L' ')) text.pop_back();
+    if (text.empty() || text.size() > 1024) return std::nullopt;
+    auto file = expand(text);
+    if (file.empty() || !file.is_absolute() || !is_local_disk_path(file)) return std::nullopt;
+    return IconLocation{std::move(file), index};
 }
 
 fs::path environment_path(const wchar_t* name) {
@@ -108,61 +131,109 @@ std::vector<std::wstring> subkeys(HKEY root, const std::wstring& key, REGSAM vie
     return names;
 }
 
-fs::path resolve_shortcut(const fs::path& link) {
+fs::path resolve_shortcut(const fs::path& link) { return read_shortcut(link).target; }
+
+ShortcutTarget read_shortcut(const fs::path& link) {
     IShellLinkW* shell_link = nullptr;
     if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW,
                                 reinterpret_cast<void**>(&shell_link))))
         return {};
-    fs::path target;
+    ShortcutTarget result;
+    fs::path& target = result.target;
     IPersistFile* file = nullptr;
     if (SUCCEEDED(shell_link->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&file)))) {
         if (SUCCEEDED(file->Load(link.c_str(), STGM_READ))) {
             wchar_t buffer[MAX_PATH * 2] = {};
             if (SUCCEEDED(shell_link->GetPath(buffer, MAX_PATH * 2, nullptr, SLGP_RAWPATH)))
                 target = expand(buffer);
+            wchar_t icon[MAX_PATH * 2] = {};
+            int index = 0;
+            if (SUCCEEDED(shell_link->GetIconLocation(icon, MAX_PATH * 2, &index)) && icon[0] != 0) {
+                if (auto location = parse_icon_location(icon)) {
+                    location->index = index;
+                    result.icon = std::move(location);
+                }
+            }
         }
         file->Release();
     }
     shell_link->Release();
-    return target;
+    return result;
 }
 
 VersionInfo read_version(const fs::path& file) {
     VersionInfo info;
     DWORD ignored = 0;
     const DWORD size = GetFileVersionInfoSizeW(file.c_str(), &ignored);
-    if (size == 0) return info;
+    if (size == 0 || size > (16u << 20)) return info;
     std::vector<std::uint8_t> block(size);
     if (!GetFileVersionInfoW(file.c_str(), 0, size, block.data())) return info;
+
+    // Programs declare their strings under one or more language and code page pairs, and some declare none in
+    // the translation table at all, so the common pairs are tried after the declared ones.
     struct Translation {
         WORD language;
         WORD code_page;
     };
-    Translation* translations = nullptr;
+    std::vector<Translation> translations;
+    Translation* declared = nullptr;
     UINT length = 0;
-    if (!VerQueryValueW(block.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&translations),
-                        &length) ||
-        length < sizeof(Translation))
-        return info;
+    if (VerQueryValueW(block.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&declared), &length) &&
+        declared != nullptr) {
+        for (UINT i = 0; i < std::min<UINT>(length / sizeof(Translation), 8); ++i) translations.push_back(declared[i]);
+    }
+    for (const Translation common : {Translation{0x0409, 0x04B0}, Translation{0x0409, 0x04E4}, Translation{0x0000, 0x04B0}})
+        translations.push_back(common);
+
     const auto field = [&](const wchar_t* name) -> std::string {
-        wchar_t query[96];
-        swprintf_s(query, L"\\StringFileInfo\\%04x%04x\\%s", translations[0].language,
-                   translations[0].code_page, name);
-        wchar_t* value = nullptr;
-        UINT size_out = 0;
-        if (!VerQueryValueW(block.data(), query, reinterpret_cast<void**>(&value), &size_out) ||
-            value == nullptr)
-            return {};
-        return to_utf8(value);
+        for (const auto& translation : translations) {
+            wchar_t query[96];
+            swprintf_s(query, L"\\StringFileInfo\\%04x%04x\\%s", translation.language, translation.code_page, name);
+            wchar_t* value = nullptr;
+            UINT size_out = 0;
+            if (!VerQueryValueW(block.data(), query, reinterpret_cast<void**>(&value), &size_out) || value == nullptr ||
+                size_out == 0)
+                continue;
+            std::wstring text(value, wcsnlen(value, 512));
+            while (!text.empty() && std::iswspace(text.back())) text.pop_back();
+            text.erase(0, std::ranges::find_if_not(text, [](wchar_t c) { return std::iswspace(c); }) - text.begin());
+            if (!text.empty()) return to_utf8(text);
+        }
+        return {};
     };
     info.company = field(L"CompanyName");
     info.product = field(L"ProductName");
     info.description = field(L"FileDescription");
     info.version = field(L"FileVersion");
+    info.product_version = field(L"ProductVersion");
+    info.copyright = field(L"LegalCopyright");
     info.original_name = field(L"OriginalFilename");
     info.internal_name = field(L"InternalName");
+    if (info.version.empty()) {
+        VS_FIXEDFILEINFO* fixed = nullptr;
+        UINT fixed_size = 0;
+        if (VerQueryValueW(block.data(), L"\\", reinterpret_cast<void**>(&fixed), &fixed_size) && fixed != nullptr &&
+            fixed_size >= sizeof(VS_FIXEDFILEINFO) && fixed->dwSignature == 0xFEEF04BD && fixed->dwFileVersionMS != 0) {
+            info.version = std::to_string(HIWORD(fixed->dwFileVersionMS)) + "." + std::to_string(LOWORD(fixed->dwFileVersionMS)) +
+                           "." + std::to_string(HIWORD(fixed->dwFileVersionLS)) + "." + std::to_string(LOWORD(fixed->dwFileVersionLS));
+        }
+    }
     return info;
 }
+
+}  // namespace houseguest::system::catalog
+
+namespace houseguest::system {
+
+FileMetadata read_file_metadata(const std::filesystem::path& file) {
+    const auto info = catalog::read_version(file);
+    return {info.company, info.product, info.description, info.version, info.product_version,
+            info.copyright, info.original_name, info.internal_name};
+}
+
+}  // namespace houseguest::system
+
+namespace houseguest::system::catalog {
 
 Subsystem pe_subsystem(const fs::path& file) {
     std::ifstream in(file, std::ios::binary);
