@@ -8,6 +8,7 @@
 #include <wrl.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cwctype>
 #include <filesystem>
@@ -145,7 +146,7 @@ std::optional<Picture> icon_pixels(HICON icon) {
     header.bmiHeader.biPlanes = 1;
     header.bmiHeader.biBitCount = 32;
     header.bmiHeader.biCompression = BI_RGB;
-    const HDC dc = CreateCompatibleDC(nullptr);
+    HDC dc = CreateCompatibleDC(nullptr);
     if (!dc) return std::nullopt;
     const bool read =
         GetDIBits(dc, info.hbmColor, 0, picture.height, picture.bgra.data(), &header, DIB_RGB_COLORS) != 0;
@@ -281,8 +282,8 @@ std::string encode_png(const std::vector<std::uint8_t>& bgra, int edge) {
 std::string fit_square(const Picture& picture, int edge) {
     const double scale =
         std::min(static_cast<double>(edge) / picture.width, static_cast<double>(edge) / picture.height);
-    const int width = std::clamp(static_cast<int>(picture.width * scale + 0.5), 1, edge);
-    const int height = std::clamp(static_cast<int>(picture.height * scale + 0.5), 1, edge);
+    const int width = std::clamp(static_cast<int>(std::lround(picture.width * scale)), 1, edge);
+    const int height = std::clamp(static_cast<int>(std::lround(picture.height * scale)), 1, edge);
     std::vector<std::uint8_t> canvas(static_cast<std::size_t>(edge) * edge * 4, 0);
     const auto factory = imaging();
     if (!factory) return {};

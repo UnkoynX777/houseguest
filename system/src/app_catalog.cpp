@@ -33,7 +33,7 @@ constexpr std::size_t kMaxDiscardLog = 300;
 constexpr std::size_t kMaxIconSources = 6;
 constexpr int kConfidentScore = 45;
 constexpr int kConfidentMargin = 12;
-constexpr std::int64_t kRescanAfterSeconds = 24 * 3600;
+constexpr std::int64_t kRescanAfterSeconds = std::int64_t{24} * 3600;
 
 struct Entry {
     InstalledApp app;
@@ -132,8 +132,8 @@ int kind_rank(AppKind kind) {
 
 struct Stats {
     std::map<std::string, SourceReport>* reports = nullptr;
-    void found(const std::string& source) { ++(*reports)[source].found; }
-    void merged(const std::string& source) { ++(*reports)[source].merged; }
+    void found(const std::string& source) const { ++(*reports)[source].found; }
+    void merged(const std::string& source) const { ++(*reports)[source].merged; }
 };
 
 class Builder {
@@ -359,11 +359,11 @@ void resolve_entry(Entry& entry, ResolveContext& ctx) {
         const auto subsystem = pe_subsystem(file.path);
         if (subsystem == Subsystem::Gui) {
             candidate.score += 30;
-            candidate.reasons.push_back("graphical program");
+            candidate.reasons.emplace_back("graphical program");
             ++graphical;
         } else if (subsystem == Subsystem::Console) {
             candidate.score -= 20;
-            candidate.reasons.push_back("console program");
+            candidate.reasons.emplace_back("console program");
         }
         const auto version = read_version(file.path);
         if (!version.product.empty() || !version.description.empty()) {
@@ -372,7 +372,7 @@ void resolve_entry(Entry& entry, ResolveContext& ctx) {
             const auto description = token_overlap(name_tokens, tokens(version.description));
             if (product > 0) {
                 candidate.score += static_cast<int>(std::lround(product * 25));
-                candidate.reasons.push_back("product name matches");
+                candidate.reasons.emplace_back("product name matches");
             }
             if (description > 0) candidate.score += static_cast<int>(std::lround(description * 10));
         }
@@ -381,14 +381,14 @@ void resolve_entry(Entry& entry, ResolveContext& ctx) {
             if (company.find(publisher) != std::string::npos ||
                 publisher.find(company) != std::string::npos) {
                 candidate.score += 10;
-                candidate.reasons.push_back("same publisher");
+                candidate.reasons.emplace_back("same publisher");
             }
         }
         if (const auto overlap = token_overlap(name_tokens, tokens(stem)); overlap > 0)
             candidate.score += static_cast<int>(std::lround(overlap * 10));
         if (std::ranges::binary_search(ctx.running, canonical_key(file.path))) {
             candidate.score += 40;
-            candidate.reasons.push_back("running now");
+            candidate.reasons.emplace_back("running now");
         }
         candidate.score +=
             std::min(10, static_cast<int>(std::log2(static_cast<double>(file.size) / 65536.0 + 1.0)));
@@ -817,7 +817,7 @@ Catalog discover_catalog(const CatalogRequest& request) {
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started)
                 .count();
         reports[provider.name] = std::move(report);
-        order.push_back(provider.name);
+        order.emplace_back(provider.name);
         for (auto& claim : context.claims) claims.push_back(std::move(claim));
         for (auto& entry : context.discarded) discarded.push_back(std::move(entry));
         if (request.progress && std::chrono::steady_clock::now() - last_progress >= kProgressInterval) {

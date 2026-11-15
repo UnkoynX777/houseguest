@@ -136,6 +136,7 @@ Controller::Controller(std::filesystem::path data_directory, bool enable_enforce
             [this] {
                 std::scoped_lock lock(mutex_);
                 std::vector<std::filesystem::path> roots;
+                roots.reserve(store_.state.portable_roots.size());
                 for (const auto& root : store_.state.portable_roots)
                     roots.push_back(system::path_from_utf8(root));
                 return roots;

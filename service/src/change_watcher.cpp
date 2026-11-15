@@ -108,7 +108,7 @@ public:
 
     void add_folder(const Place& place) {
         if (items_.size() >= kMaxHandles) return;
-        const HANDLE handle = FindFirstChangeNotificationW(place.folder.c_str(), place.subtree, place.filter);
+        HANDLE handle = FindFirstChangeNotificationW(place.folder.c_str(), place.subtree, place.filter);
         if (handle != INVALID_HANDLE_VALUE) items_.push_back({place.label, handle, nullptr, false});
     }
 
@@ -116,7 +116,7 @@ public:
         if (items_.size() >= kMaxHandles) return;
         HKEY key = nullptr;
         if (RegOpenKeyExW(root, path.c_str(), 0, KEY_NOTIFY | view, &key) != ERROR_SUCCESS) return;
-        const HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (event == nullptr ||
             RegNotifyChangeKeyValue(key, TRUE, REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, event,
                                     TRUE) != ERROR_SUCCESS) {
@@ -131,6 +131,7 @@ public:
 
     [[nodiscard]] std::vector<HANDLE> handles() const {
         std::vector<HANDLE> out;
+        out.reserve(items_.size());
         for (const auto& item : items_) out.push_back(item.handle);
         return out;
     }
@@ -218,7 +219,7 @@ void ChangeWatcher::run(const std::stop_token& stop) {
                 watches.add_registry(HKEY_LOCAL_MACHINE, uninstall, KEY_WOW64_64KEY, "registry");
                 watches.add_registry(HKEY_LOCAL_MACHINE, uninstall, KEY_WOW64_32KEY, "registry");
                 for (const auto& hive : hives)
-                    watches.add_registry(HKEY_USERS, hive + L"\\" + uninstall, 0, "registry");
+                    watches.add_registry(HKEY_USERS, (hive + L"\\").append(uninstall), 0, "registry");
                 for (const auto& place : list) watches.add_folder(place);
                 watching_ = watches.size();
                 if (changed_set && !first_signal) {

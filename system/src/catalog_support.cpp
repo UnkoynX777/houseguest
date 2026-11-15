@@ -333,8 +333,8 @@ WalkResult find_executables(const fs::path& root, const WalkBudget& budget,
         const auto directory = std::move(queue.front());
         queue.pop_front();
         WIN32_FIND_DATAW data;
-        const HANDLE handle = FindFirstFileExW(long_form(directory + L"\\*").c_str(), FindExInfoBasic, &data,
-                                               FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
+        HANDLE handle = FindFirstFileExW(long_form(directory + L"\\*").c_str(), FindExInfoBasic, &data,
+                                         FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
         if (handle == INVALID_HANDLE_VALUE) continue;
         do {
             const std::wstring name = data.cFileName;
@@ -345,14 +345,15 @@ WalkResult find_executables(const fs::path& root, const WalkBudget& budget,
                     ++result.skipped_links;
                     continue;
                 }
-                if (!skip_directory || !skip_directory(name)) queue.push_back(directory + L"\\" + name);
+                if (!skip_directory || !skip_directory(name))
+                    queue.push_back((directory + L"\\").append(name));
                 continue;
             }
             if (name.size() > 4 && _wcsicmp(name.c_str() + name.size() - 4, L".exe") == 0) {
                 ULARGE_INTEGER size;
                 size.LowPart = data.nFileSizeLow;
                 size.HighPart = data.nFileSizeHigh;
-                result.executables.push_back({fs::path(directory + L"\\" + name), size.QuadPart,
+                result.executables.push_back({fs::path((directory + L"\\").append(name)), size.QuadPart,
                                               file_time_epoch(data.ftLastWriteTime)});
             }
         } while (FindNextFileW(handle, &data));
@@ -363,11 +364,11 @@ WalkResult find_executables(const fs::path& root, const WalkBudget& budget,
 
 std::vector<std::string> running_images() {
     std::vector<std::string> images;
-    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return images;
     PROCESSENTRY32W entry{sizeof(entry)};
     for (BOOL more = Process32FirstW(snapshot, &entry); more; more = Process32NextW(snapshot, &entry)) {
-        const HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
+        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
         if (process == nullptr) continue;
         wchar_t path[MAX_PATH * 2] = {};
         DWORD size = MAX_PATH * 2;

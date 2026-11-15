@@ -158,7 +158,7 @@ struct ShortcutJob {
 
 void parse_shortcut(ShortcutJob& job) {
     if (lower(job.link.extension().string()) == ".url") {
-        std::istringstream lines(read_text(job.link, 64 * 1024));
+        std::istringstream lines(read_text(job.link, std::size_t{64} * 1024));
         for (std::string line; std::getline(lines, line);) {
             if (line.starts_with("URL=")) job.address = line.substr(4);
         }
@@ -328,7 +328,7 @@ void claim_uninstall(ProviderContext& ctx, const std::vector<InstallFolder>& fol
                      const std::wstring& parent, REGSAM view, const char* scope) {
     for (const auto& name : subkeys(root, parent, view)) {
         if (ctx.cancelled()) return;
-        const auto key = parent + L"\\" + name;
+        const auto key = (parent + L"\\").append(name);
         if (registry_number(root, key, L"SystemComponent", view) != 0 ||
             !registry_text(root, key, L"ParentKeyName", view).empty())
             continue;
@@ -390,7 +390,7 @@ void provide_registry(ProviderContext& ctx) {
     claim_uninstall(ctx, folders, HKEY_LOCAL_MACHINE, uninstall, KEY_WOW64_64KEY, "machine");
     claim_uninstall(ctx, folders, HKEY_LOCAL_MACHINE, uninstall, KEY_WOW64_32KEY, "machine");
     for (const auto& hive : loaded_user_hives()) {
-        claim_uninstall(ctx, folders, HKEY_USERS, hive + L"\\" + uninstall, 0, "user");
+        claim_uninstall(ctx, folders, HKEY_USERS, (hive + L"\\").append(uninstall), 0, "user");
         claim_uninstall(ctx, folders, HKEY_USERS,
                         hive + L"\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall", 0,
                         "user");
@@ -400,7 +400,7 @@ void provide_registry(ProviderContext& ctx) {
 void claim_app_paths(ProviderContext& ctx, HKEY root, const std::wstring& parent, REGSAM view,
                      const char* scope) {
     for (const auto& name : subkeys(root, parent, view)) {
-        const auto value = registry_text(root, parent + L"\\" + name, nullptr, view);
+        const auto value = registry_text(root, (parent + L"\\").append(name), nullptr, view);
         if (value.empty()) continue;
         const auto target = expand(value);
         if (!usable_executable(target)) {
@@ -414,7 +414,7 @@ void claim_app_paths(ProviderContext& ctx, HKEY root, const std::wstring& parent
         claim.scope = scope;
         claim.root = target.parent_path();
         claim.executables.emplace_back(target, 50);
-        claim.evidence.push_back({"registry.app_paths", to_utf8(parent + L"\\" + name)});
+        claim.evidence.push_back({"registry.app_paths", to_utf8((parent + L"\\").append(name))});
         ctx.claim(std::move(claim));
     }
 }
@@ -424,7 +424,7 @@ void provide_app_paths(ProviderContext& ctx) {
     claim_app_paths(ctx, HKEY_LOCAL_MACHINE, parent, KEY_WOW64_64KEY, "machine");
     claim_app_paths(ctx, HKEY_LOCAL_MACHINE, parent, KEY_WOW64_32KEY, "machine");
     for (const auto& hive : loaded_user_hives())
-        claim_app_paths(ctx, HKEY_USERS, hive + L"\\" + parent, 0, "user");
+        claim_app_paths(ctx, HKEY_USERS, (hive + L"\\").append(parent), 0, "user");
 }
 
 struct PackageFolder {
@@ -755,7 +755,7 @@ std::map<std::string, std::vector<std::string>> steam_launch_configuration(
         if (!in || count > 2'000'000) return launches;
         for (std::uint32_t i = 0; i < count && in; ++i) {
             std::string value;
-            for (char c; in.get(c) && c != '\0';) value += c;
+            for (char c = 0; in.get(c) && c != '\0';) value += c;
             strings.push_back(std::move(value));
         }
         in.clear();
@@ -832,7 +832,7 @@ void provide_steam(ProviderContext& ctx) {
              it != end && !ec; it.increment(ec)) {
             const auto file = path_to_utf8(it->path().filename());
             if (!file.starts_with("appmanifest_") || !file.ends_with(".acf")) continue;
-            const auto tokens = quoted_tokens(read_text(it->path(), 256 * 1024));
+            const auto tokens = quoted_tokens(read_text(it->path(), std::size_t{256} * 1024));
             const auto install_dir = vdf_value(tokens, "installdir");
             const auto name = vdf_value(tokens, "name");
             const auto root = library / L"steamapps" / L"common" / path_from_utf8(install_dir);
@@ -932,7 +932,7 @@ void provide_gog(ProviderContext& ctx) {
         return;
     }
     for (const auto& id : names) {
-        const auto key = parent + L"\\" + id;
+        const auto key = (parent + L"\\").append(id);
         const auto path = expand(registry_text(HKEY_LOCAL_MACHINE, key, L"path"));
         std::error_code ec;
         if (path.empty() || !fs::is_directory(path, ec)) {
@@ -964,7 +964,8 @@ void provide_ubisoft(ProviderContext& ctx) {
         return;
     }
     for (const auto& id : ids) {
-        const auto dir = expand(registry_text(HKEY_LOCAL_MACHINE, parent + L"\\" + id, L"InstallDir"));
+        const auto dir =
+            expand(registry_text(HKEY_LOCAL_MACHINE, (parent + L"\\").append(id), L"InstallDir"));
         std::error_code ec;
         if (dir.empty() || !fs::is_directory(dir, ec)) {
             ctx.discard(dir, "Ubisoft registration names a folder that does not exist");
@@ -986,7 +987,7 @@ void provide_ubisoft(ProviderContext& ctx) {
         claim.name_rank = 5;
         claim.scope = "machine";
         claim.root = dir;
-        claim.evidence.push_back({"ubisoft.registry", to_utf8(parent + L"\\" + id)});
+        claim.evidence.push_back({"ubisoft.registry", to_utf8((parent + L"\\").append(id))});
         ctx.claim(std::move(claim));
     }
 }

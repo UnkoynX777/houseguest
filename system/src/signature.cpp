@@ -80,7 +80,7 @@ CertificateName parse_distinguished_name(std::span<const std::uint8_t> encoded) 
     DWORD size = 0;
     if (encoded.empty() ||
         !CryptDecodeObjectEx(X509_ASN_ENCODING, X509_NAME, encoded.data(), static_cast<DWORD>(encoded.size()),
-                             CRYPT_DECODE_ALLOC_FLAG, nullptr, &info, &size) ||
+                             CRYPT_DECODE_ALLOC_FLAG, nullptr, static_cast<void*>(&info), &size) ||
         info == nullptr)
         return name;
     for (DWORD i = info->cRDN; i > 0 && name.fields.size() < kMaxFields; --i) {
