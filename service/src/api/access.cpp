@@ -7,7 +7,8 @@ namespace houseguest::service::api {
 namespace {
 
 std::string lower(std::string text) {
-    std::ranges::transform(text, text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::ranges::transform(text, text.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
@@ -36,8 +37,8 @@ AccessConfig AccessGate::config() const {
 
 bool AccessGate::is_remote(const Request& request) {
     for (const auto& [name, value] : request.headers) {
-        if (name.starts_with("cf-") || name.starts_with("x-forwarded-") || name == "forwarded" || name == "via" ||
-            name == "x-real-ip" || name == "true-client-ip")
+        if (name.starts_with("cf-") || name.starts_with("x-forwarded-") || name == "forwarded" ||
+            name == "via" || name == "x-real-ip" || name == "true-client-ip")
             return true;
     }
     return false;
@@ -70,9 +71,12 @@ std::optional<std::string> AccessGate::check(const Request& request) {
     if (keys_.empty() || now - fetched_ > kKeyLifetime) refresh(now);
     system::JwtPolicy policy{"https://" + config_.team_domain, config_.audience, now, 60};
     auto result = system::verify_jwt(token, keys_, policy);
-    if (!result.valid && result.reason == "unknown_key" && refresh(now)) result = system::verify_jwt(token, keys_, policy);
-    if (!result.valid) return result.reason == "unknown_key" ? "The identity key is not recognised." : result.reason;
-    if (!config_.emails.empty() && std::ranges::find(config_.emails, lower(result.email)) == config_.emails.end())
+    if (!result.valid && result.reason == "unknown_key" && refresh(now))
+        result = system::verify_jwt(token, keys_, policy);
+    if (!result.valid)
+        return result.reason == "unknown_key" ? "The identity key is not recognised." : result.reason;
+    if (!config_.emails.empty() &&
+        std::ranges::find(config_.emails, lower(result.email)) == config_.emails.end())
         return "This identity is not allowed.";
     return std::nullopt;
 }

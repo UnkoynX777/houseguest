@@ -28,8 +28,11 @@ public:
         if (what == "profiles") {
             Json rows = Json::array();
             for (const auto& p : c_.store_.state.profiles)
-                rows.push_back({{"id", p.id}, {"name", p.name}, {"default", action_name(p.default_action)},
-                                {"applications", p.apps.size()}, {"rules", p.rules.size()}});
+                rows.push_back({{"id", p.id},
+                                {"name", p.name},
+                                {"default", action_name(p.default_action)},
+                                {"applications", p.apps.size()},
+                                {"rules", p.rules.size()}});
             return rows;
         }
         if (what == "profile") {
@@ -45,7 +48,11 @@ public:
                 if (rules.size() >= 40) break;
                 rules.push_back(core::to_json(r));
             }
-            return Json{{"id", p.id}, {"name", p.name}, {"default", action_name(p.default_action)}, {"applications", apps}, {"rules", rules}};
+            return Json{{"id", p.id},
+                        {"name", p.name},
+                        {"default", action_name(p.default_action)},
+                        {"applications", apps},
+                        {"rules", rules}};
         }
         if (what == "blocks") return c_.blocks(static_cast<std::size_t>(args.value("limit", 20)));
         if (what == "history") {
@@ -56,7 +63,8 @@ public:
         }
         if (what == "diagnostics") return c_.run_internal("diagnostics", Json::object());
         if (what == "explain") {
-            return c_.run_internal("apps.explain", {{"profile_id", args.at("profile_id")}, {"path", args.at("path")}});
+            return c_.run_internal("apps.explain",
+                                   {{"profile_id", args.at("profile_id")}, {"path", args.at("path")}});
         }
         if (what == "simulate") {
             auto preview = c_.run_internal("policy.preview", {{"profile_id", args.at("profile_id")}});
@@ -65,8 +73,10 @@ public:
                 if (findings.size() >= 10) break;
                 findings.push_back(f);
             }
-            return Json{{"allowed", preview.value("allowed", 0)}, {"blocked", preview.value("denied", 0)},
-                        {"errors", preview.value("errors", false)}, {"warnings", preview.value("warnings", false)},
+            return Json{{"allowed", preview.value("allowed", 0)},
+                        {"blocked", preview.value("denied", 0)},
+                        {"errors", preview.value("errors", false)},
+                        {"warnings", preview.value("warnings", false)},
                         {"findings", findings}};
         }
         throw Failure("bad_request", "Unknown question.");
@@ -107,7 +117,9 @@ public:
         }
     }
 
-    void audit(const std::string& event, Json detail) override { c_.audit_->append("ai", event, std::move(detail)); }
+    void audit(const std::string& event, Json detail) override {
+        c_.audit_->append("ai", event, std::move(detail));
+    }
 
 private:
     struct Plan {
@@ -121,7 +133,8 @@ private:
         const auto it = std::ranges::find_if(view.apps, [&](const system::InstalledApp& a) {
             return a.role == system::AppRole::Application && a.path == path;
         });
-        if (it == view.apps.end()) throw Failure("not_found", "That program is not in the list of installed applications.");
+        if (it == view.apps.end())
+            throw Failure("not_found", "That program is not in the list of installed applications.");
         const auto identity = c_.resolver_.resolve(system::path_from_utf8(path), true, true);
         core::Component main;
         main.id = random_id("c-");
@@ -152,7 +165,8 @@ private:
             result.profile.id = random_id("p-");
             result.profile.name = op.at("name").get<std::string>();
             result.profile.default_action = core::Action::Deny;
-            if (std::ranges::any_of(c_.store_.state.profiles, [&](const core::Profile& p) { return p.name == result.profile.name; }))
+            if (std::ranges::any_of(c_.store_.state.profiles,
+                                    [&](const core::Profile& p) { return p.name == result.profile.name; }))
                 throw Failure("conflict", "A profile with that name already exists.");
             if (c_.store_.state.profiles.size() >= 40) throw Failure("limit", "There are too many profiles.");
             for (const auto& path : op.at("app_paths")) {
@@ -166,7 +180,9 @@ private:
             if (kind == "allow_app") {
                 auto app = build_app(op.at("app_path").get<std::string>());
                 if (std::ranges::any_of(result.profile.apps, [&](const core::Application& a) {
-                        return std::ranges::any_of(a.components, [&](const core::Component& comp) { return comp.path == app.components[0].path; });
+                        return std::ranges::any_of(a.components, [&](const core::Component& comp) {
+                            return comp.path == app.components[0].path;
+                        });
                     }))
                     throw Failure("conflict", "That program is already allowed in this profile.");
                 names.push_back(app.name);
@@ -174,7 +190,8 @@ private:
             } else if (kind == "remove_app") {
                 const auto id = op.at("app_id").get<std::string>();
                 const auto it = std::ranges::find(result.profile.apps, id, &core::Application::id);
-                if (it == result.profile.apps.end()) throw Failure("not_found", "That application is not in the profile.");
+                if (it == result.profile.apps.end())
+                    throw Failure("not_found", "That application is not in the profile.");
                 names.push_back(it->name);
                 result.profile.apps.erase(it);
             } else {
@@ -182,7 +199,9 @@ private:
             }
         }
         const auto compiled = c_.compile(result.profile, {}, {}, false);
-        if (compiled.has_errors) throw Failure("policy_invalid", "The resulting profile has errors.", {{"findings", compiled.findings}});
+        if (compiled.has_errors)
+            throw Failure("policy_invalid", "The resulting profile has errors.",
+                          {{"findings", compiled.findings}});
         std::string summary;
         if (kind == "create_profile")
             summary = "Create the profile \"" + result.profile.name + "\" that blocks everything except " +
@@ -217,9 +236,8 @@ ai::Assistant& Controller::assistant() {
         ai_host_ = std::make_shared<AiBridge>(*this);
         ai_ = std::make_unique<ai::Assistant>(
             *ai_host_, store_.directory(),
-            [](const system::HttpsRequest& request, const system::ChunkSink& sink, const std::atomic<bool>* cancel) {
-                return system::https_request(request, sink, cancel);
-            });
+            [](const system::HttpsRequest& request, const system::ChunkSink& sink,
+               const std::atomic<bool>* cancel) { return system::https_request(request, sink, cancel); });
     }
     return *ai_;
 }
@@ -233,62 +251,75 @@ void Controller::register_ai_commands() {
 
     add("ai.status", Access::Owner, [this](Who, Args) { return assistant().status(); }, true);
     add("ai.models", Access::Owner, [this](Who, Args) { return assistant().models(); }, true);
-    add("ai.key.set", Access::Owner,
+    add(
+        "ai.key.set", Access::Owner,
         [this, text](Who caller, Args args) {
             auto result = assistant().set_key(text(args, "api_key"));
             audit_->append(caller.sid, "ai.key_set", {});
             return result;
         },
         true);
-    add("ai.key.clear", Access::Owner,
+    add(
+        "ai.key.clear", Access::Owner,
         [this](Who caller, Args) {
             assistant().clear_key();
             audit_->append(caller.sid, "ai.key_cleared", {});
             return Json::object();
         },
         true);
-    add("ai.settings.set", Access::Owner,
+    add(
+        "ai.settings.set", Access::Owner,
         [this](Who caller, Args args) {
             auto result = assistant().set_settings(args);
             audit_->append(caller.sid, "ai.settings", result);
             return result;
         },
         true);
-    add("ai.chat.send", Access::Owner,
+    add(
+        "ai.chat.send", Access::Owner,
         [this, text](Who, Args args) {
-            const auto context = args.contains("context") && args["context"].is_object() ? args["context"] : Json::object();
+            const auto context =
+                args.contains("context") && args["context"].is_object() ? args["context"] : Json::object();
             return Json{{"job", assistant().send(text(args, "chat_id"), text(args, "text"), context)}};
         },
         true);
-    add("ai.job", Access::Owner,
+    add(
+        "ai.job", Access::Owner,
         [this, text](Who, Args args) {
             return assistant().job(text(args, "id"), static_cast<std::size_t>(args.value("since", 0)));
         },
         true);
-    add("ai.cancel", Access::Owner,
+    add(
+        "ai.cancel", Access::Owner,
         [this, text](Who, Args args) {
             assistant().cancel(text(args, "id"));
             return Json::object();
         },
         true);
     add("ai.chat.list", Access::Owner, [this](Who, Args) { return assistant().chats(); }, true);
-    add("ai.chat.get", Access::Owner, [this, text](Who, Args args) { return assistant().chat(text(args, "id")); }, true);
-    add("ai.chat.delete", Access::Owner,
+    add(
+        "ai.chat.get", Access::Owner,
+        [this, text](Who, Args args) { return assistant().chat(text(args, "id")); }, true);
+    add(
+        "ai.chat.delete", Access::Owner,
         [this, text](Who, Args args) {
             assistant().delete_chat(text(args, "id"));
             return Json::object();
         },
         true);
     add("ai.proposals", Access::Owner, [this](Who, Args) { return assistant().proposals(); }, true);
-    add("ai.proposal.apply", Access::Owner,
+    add(
+        "ai.proposal.apply", Access::Owner,
         [this, text](Who, Args args) { return assistant().apply_proposal(text(args, "id")); }, true);
-    add("ai.proposal.discard", Access::Owner,
+    add(
+        "ai.proposal.discard", Access::Owner,
         [this, text](Who, Args args) {
             assistant().discard_proposal(text(args, "id"));
             return Json::object();
         },
         true);
-    add("ai.proposal.rollback", Access::Owner,
+    add(
+        "ai.proposal.rollback", Access::Owner,
         [this, text](Who, Args args) { return assistant().rollback_proposal(text(args, "id")); }, true);
 }
 

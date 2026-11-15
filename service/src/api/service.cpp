@@ -15,38 +15,44 @@ using core::Json;
 constexpr auto kSaveInterval = std::chrono::minutes(5);
 
 std::string lower(std::string text) {
-    std::ranges::transform(text, text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::ranges::transform(text, text.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
 }  // namespace
 
-ApiService::ApiService(Host& host, std::filesystem::path directory)
+ApiService::ApiService(Host& host, const std::filesystem::path& directory)
     : host_(host),
-      file_(std::move(directory) / L"api-devices.json"),
-      gate_([](const std::string& url) -> std::optional<std::string> {
-                system::HttpsRequest request;
-                request.url = url;
-                request.max_response = 256 * 1024;
-                const auto response = system::https_request(request);
-                if (!response.ok()) return std::nullopt;
-                return response.body;
-            },
-            [] { return now_seconds(); }) {
+      file_(directory / L"api-devices.json"),
+      gate_(
+          [](const std::string& url) -> std::optional<std::string> {
+              system::HttpsRequest request;
+              request.url = url;
+              request.max_response = std::size_t{256} * 1024;
+              const auto response = system::https_request(request);
+              if (!response.ok()) return std::nullopt;
+              return response.body;
+          },
+          [] { return now_seconds(); }) {
     load();
 }
 
-ApiService::~ApiService() { stop(); }
+ApiService::~ApiService() {
+    stop();
+}
 
 void ApiService::load() {
     std::ifstream in(file_, std::ios::binary);
     if (!in) return;
     const Json wrapper = Json::parse(in, nullptr, false);
-    if (!wrapper.is_object() || !wrapper.contains("data") || !wrapper.contains("mac") || !wrapper["mac"].is_string())
+    if (!wrapper.is_object() || !wrapper.contains("data") || !wrapper.contains("mac") ||
+        !wrapper["mac"].is_string())
         return;
     const auto data = wrapper["data"].dump();
     const auto key = host_.key();
-    const auto expected = system::hmac_sha256(key, {reinterpret_cast<const std::uint8_t*>(data.data()), data.size()});
+    const auto expected =
+        system::hmac_sha256(key, {reinterpret_cast<const std::uint8_t*>(data.data()), data.size()});
     const auto given = system::from_hex(wrapper["mac"].get<std::string>());
     if (!given || !system::constant_time_equal(expected, *given)) return;  // tampered: start with no devices
     try {
@@ -60,7 +66,8 @@ void ApiService::save() {
     std::scoped_lock lock(save_mutex_);
     const auto data = devices_.to_json();
     const auto text = data.dump();
-    const auto mac = system::hmac_sha256(host_.key(), {reinterpret_cast<const std::uint8_t*>(text.data()), text.size()});
+    const auto mac =
+        system::hmac_sha256(host_.key(), {reinterpret_cast<const std::uint8_t*>(text.data()), text.size()});
     const Json wrapper{{"data", data}, {"mac", system::to_hex(mac)}};
     auto temp = file_;
     temp += L".tmp";
@@ -108,7 +115,8 @@ void ApiService::allow_hostname(const std::string& hostname) {
     {
         std::scoped_lock lock(hosts_mutex_);
         const auto name = lower(hostname);
-        if (!name.empty() && std::ranges::find(extra_hosts_, name) == extra_hosts_.end()) extra_hosts_.push_back(name);
+        if (!name.empty() && std::ranges::find(extra_hosts_, name) == extra_hosts_.end())
+            extra_hosts_.push_back(name);
     }
     RouterConfig config;
     const auto port = std::to_string(listener_->port());
@@ -162,8 +170,13 @@ void ApiService::revoke_all() {
 Json ApiService::devices_json() const {
     Json rows = Json::array();
     for (const auto& d : devices_.list())
-        rows.push_back({{"id", d.id}, {"name", d.name}, {"scope", scope_name(d.scope)}, {"created", d.created},
-                        {"expires", d.expires}, {"last_seen", d.last_seen}, {"revoked", d.revoked}});
+        rows.push_back({{"id", d.id},
+                        {"name", d.name},
+                        {"scope", scope_name(d.scope)},
+                        {"created", d.created},
+                        {"expires", d.expires},
+                        {"last_seen", d.last_seen},
+                        {"revoked", d.revoked}});
     return rows;
 }
 

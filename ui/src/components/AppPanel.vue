@@ -108,6 +108,13 @@ async function reload() {
   }
 }
 
+function askAssistant() {
+  app.context = { app_name: props.entry.name, app_path: props.entry.path, profile_id: props.profileId };
+  app.assistantDraft = t('Why is {name} allowed or blocked in this profile?', { name: props.entry.name });
+  emit('close');
+  app.route = 'assistant';
+}
+
 onMounted(reload);
 onUnmounted(() => {
   explainToken++;
@@ -261,6 +268,7 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
         <div class="muted truncate" :title="entry.company">{{ entry.company || t('Unknown publisher') }}<template v-if="entry.version"> · {{ entry.version }}</template></div>
       </div>
       <span v-if="explanation" class="badge" :class="allowed ? 'ok' : 'bad'"><span class="dot" />{{ allowed ? t('Allowed') : t('Blocked') }}</span>
+      <button class="btn icon ghost" :title="t('Ask the assistant')" :aria-label="t('Ask the assistant')" @click="askAssistant"><Icon name="assistant" /></button>
       <button class="btn icon ghost" :aria-label="t('Close')" @click="emit('close')"><Icon name="x" /></button>
     </div>
 

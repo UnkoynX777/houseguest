@@ -8,8 +8,8 @@
 
 using namespace houseguest::service::api;
 
-// The parser reads bytes that arrive from a network. Whatever they are, it must finish, never read outside the
-// buffer, and never accept a message whose framing is ambiguous.
+// The parser reads bytes that arrive from a network. Whatever they are, it must finish, never read outside
+// the buffer, and never accept a message whose framing is ambiguous.
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
     const std::string_view buffer(reinterpret_cast<const char*>(data), size);
     const auto result = parse_request(buffer);

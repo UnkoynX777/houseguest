@@ -15,7 +15,8 @@ namespace {
 using core::Json;
 
 std::string lower(std::string text) {
-    std::ranges::transform(text, text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::ranges::transform(text, text.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
@@ -31,8 +32,9 @@ bool valid_email(const std::string& email) {
     return email.size() <= 254 && std::regex_match(email, pattern);
 }
 
-RemoteAccess::RemoteAccess(api::ApiService& api, std::filesystem::path directory, cloudflare::Transport transport,
-                           cloudflare::Launcher launcher, std::vector<std::filesystem::path> program_folders)
+RemoteAccess::RemoteAccess(api::ApiService& api, const std::filesystem::path& directory,
+                           cloudflare::Transport transport, cloudflare::Launcher launcher,
+                           std::vector<std::filesystem::path> program_folders)
     : api_(api),
       file_(directory / L"remote.json"),
       transport_(std::move(transport)),
@@ -41,7 +43,9 @@ RemoteAccess::RemoteAccess(api::ApiService& api, std::filesystem::path directory
     load();
 }
 
-RemoteAccess::~RemoteAccess() { shutdown(); }
+RemoteAccess::~RemoteAccess() {
+    shutdown();
+}
 
 void RemoteAccess::load() {
     std::ifstream in(file_, std::ios::binary);
@@ -67,7 +71,8 @@ void RemoteAccess::load() {
             if (const auto secret = system::dpapi_unprotect(*protected_secret))
                 c.secret_base64.assign(secret->begin(), secret->end());
         }
-        if (c.configured && (!cloudflare::valid_hostname(c.hostname) || !plausible_id(c.tunnel_id) || c.secret_base64.empty()))
+        if (c.configured && (!cloudflare::valid_hostname(c.hostname) || !plausible_id(c.tunnel_id) ||
+                             c.secret_base64.empty()))
             c = {};  // damaged or tampered: forget it rather than run it
         config_ = std::move(c);
     } catch (const std::exception&) {
@@ -78,10 +83,17 @@ void RemoteAccess::load() {
 void RemoteAccess::save() {
     const auto& c = config_;
     const system::Bytes secret(c.secret_base64.begin(), c.secret_base64.end());
-    const Json doc{{"configured", c.configured}, {"enabled", c.enabled}, {"hostname", c.hostname},
-                   {"account_id", c.account_id}, {"zone_id", c.zone_id}, {"tunnel_id", c.tunnel_id},
-                   {"tunnel_name", c.tunnel_name}, {"access_app_id", c.access_app_id}, {"audience", c.audience},
-                   {"team_domain", c.team_domain}, {"emails", c.emails},
+    const Json doc{{"configured", c.configured},
+                   {"enabled", c.enabled},
+                   {"hostname", c.hostname},
+                   {"account_id", c.account_id},
+                   {"zone_id", c.zone_id},
+                   {"tunnel_id", c.tunnel_id},
+                   {"tunnel_name", c.tunnel_name},
+                   {"access_app_id", c.access_app_id},
+                   {"audience", c.audience},
+                   {"team_domain", c.team_domain},
+                   {"emails", c.emails},
                    {"secret", secret.empty() ? "" : system::to_hex(system::dpapi_protect_machine(secret))}};
     auto temp = file_;
     temp += L".tmp";
@@ -94,7 +106,8 @@ void RemoteAccess::save() {
 }
 
 void RemoteAccess::apply_access(bool enabled) {
-    api_.access().configure({enabled, config_.team_domain, config_.audience, config_.hostname, config_.emails});
+    api_.access().configure(
+        {enabled, config_.team_domain, config_.audience, config_.hostname, config_.emails});
 }
 
 Json RemoteAccess::discover(const std::string& api_token) {
@@ -106,7 +119,9 @@ Json RemoteAccess::discover(const std::string& api_token) {
             accounts.push_back({{"id", a.value("id", "")}, {"name", a.value("name", "")}});
         Json zones = Json::array();
         for (const auto& z : api.zones())
-            zones.push_back({{"id", z.value("id", "")}, {"name", z.value("name", "")}, {"account", z.contains("account") ? z["account"].value("id", "") : ""}});
+            zones.push_back({{"id", z.value("id", "")},
+                             {"name", z.value("name", "")},
+                             {"account", z.contains("account") ? z["account"].value("id", "") : ""}});
         return Json{{"accounts", accounts}, {"zones", zones}};
     } catch (const cloudflare::ApiError& e) {
         throw Failure("cloudflare", e.what());
@@ -182,7 +197,8 @@ Json RemoteAccess::enable() {
     std::scoped_lock lock(mutex_);
     if (!config_.configured) throw Failure("not_configured", "Set up remote access first.");
     if (config_.audience.empty() || config_.team_domain.empty() || config_.emails.empty())
-        throw Failure("no_policy", "Remote access needs a Cloudflare Access policy before it can be turned on.");
+        throw Failure("no_policy",
+                      "Remote access needs a Cloudflare Access policy before it can be turned on.");
     if (!api_.running()) throw Failure("unavailable", "The local API is not running.");
     const auto exe = cloudflare::locate_cloudflared(program_folders_);
     if (!exe) throw Failure("install_required", "The official cloudflared component is not installed.");
@@ -190,7 +206,8 @@ Json RemoteAccess::enable() {
     apply_access(true);
     api_.allow_hostname(config_.hostname);
     std::string error;
-    if (tunnel_.state() != cloudflare::TunnelState::Stopped && tunnel_.state() != cloudflare::TunnelState::Failed) {
+    if (tunnel_.state() != cloudflare::TunnelState::Stopped &&
+        tunnel_.state() != cloudflare::TunnelState::Failed) {
         tunnel_.stop();
     }
     if (!tunnel_.start(*exe, {config_.tunnel_id, config_.account_id, config_.secret_base64, config_.hostname},
@@ -236,7 +253,7 @@ Json RemoteAccess::reset(const std::string& api_token) {
 }
 
 void RemoteAccess::resume() {
-    bool wanted;
+    bool wanted = false;
     {
         std::scoped_lock lock(mutex_);
         wanted = config_.configured && config_.enabled;
@@ -284,17 +301,18 @@ Json RemoteAccess::test() {
     system::HttpsRequest request;
     request.url = "https://" + hostname + "/v1/health";
     request.timeout_ms = 10000;
-    request.max_response = 64 * 1024;
+    request.max_response = std::size_t{64} * 1024;
     const auto response = transport_(request);
     if (response.status == 0)
         return Json{{"reachable", false}, {"protected", false}, {"message", response.error}};
     const Json body = Json::parse(response.body, nullptr, false);
     const bool exposed = body.is_object() && body.value("ok", false) == true;
-    return Json{{"reachable", true},
-                {"protected", !exposed},
-                {"status", response.status},
-                {"message", exposed ? "The API answered without a Cloudflare Access sign-in. Turn remote access off."
-                                    : "Anonymous visitors are stopped before they reach Houseguest."}};
+    return Json{
+        {"reachable", true},
+        {"protected", !exposed},
+        {"status", response.status},
+        {"message", exposed ? "The API answered without a Cloudflare Access sign-in. Turn remote access off."
+                            : "Anonymous visitors are stopped before they reach Houseguest."}};
 }
 
 }  // namespace houseguest::service

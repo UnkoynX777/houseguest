@@ -136,7 +136,8 @@ Controller::Controller(std::filesystem::path data_directory, bool enable_enforce
             [this] {
                 std::scoped_lock lock(mutex_);
                 std::vector<std::filesystem::path> roots;
-                for (const auto& root : store_.state.portable_roots) roots.push_back(system::path_from_utf8(root));
+                for (const auto& root : store_.state.portable_roots)
+                    roots.push_back(system::path_from_utf8(root));
                 return roots;
             },
             [this](const std::string&) { catalog_.refresh(catalog_request()); });
@@ -716,7 +717,9 @@ Json Controller::status_json() const {
                 {"store_tampered", load_result_ == LoadResult::Tampered},
                 {"language", state.language},
                 {"generations",
-                 {{"policy", store_.revision()}, {"catalog", catalog_.generation()}, {"history", audit_->sequence()}}}};
+                 {{"policy", store_.revision()},
+                  {"catalog", catalog_.generation()},
+                  {"history", audit_->sequence()}}}};
     if (state.session) {
         status["ends_at"] = state.session->ends_at;
         status["ending"] = state.session->ending();
@@ -785,14 +788,15 @@ Json Controller::handle(const Caller& caller, const Json& request) {
     }
 }
 
-void Controller::note_reply(const Json& request, std::size_t bytes, std::chrono::steady_clock::duration encoding) {
+void Controller::note_reply(const Json& request, std::size_t bytes,
+                            std::chrono::steady_clock::duration encoding) {
     if (!request.is_object() || !request.contains("cmd") || !request["cmd"].is_string()) return;
     std::scoped_lock lock(stats_mutex_);
     const auto found = command_stats_.find(request["cmd"].get<std::string>());
     if (found == command_stats_.end()) return;
     auto& stat = found->second;
-    stat.encode_us += static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(encoding).count());
+    stat.encode_us +=
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(encoding).count());
     stat.bytes += bytes;
     stat.bytes_max = std::max<std::uint64_t>(stat.bytes_max, bytes);
 }
@@ -806,7 +810,8 @@ Json Controller::caches_json() {
     return Json{{"library",
                  {{"hits", hits},
                   {"misses", misses},
-                  {"hit_rate", hits + misses == 0 ? 0.0 : static_cast<double>(hits) / static_cast<double>(hits + misses)},
+                  {"hit_rate",
+                   hits + misses == 0 ? 0.0 : static_cast<double>(hits) / static_cast<double>(hits + misses)},
                   {"profiles", library_cache_.size()},
                   {"decisions", decisions},
                   {"revision", store_.revision()}}},

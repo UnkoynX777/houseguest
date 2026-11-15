@@ -14,8 +14,9 @@
 
 namespace houseguest::service::ai {
 
-// What the assistant may ask of the service. Reads are fixed, named questions; changes exist only as proposals the
-// owner confirms, and confirmation arrives through a different command that a model response cannot trigger.
+// What the assistant may ask of the service. Reads are fixed, named questions; changes exist only as
+// proposals the owner confirms, and confirmation arrives through a different command that a model response
+// cannot trigger.
 class AssistantHost {
 public:
     virtual ~AssistantHost() = default;
@@ -47,7 +48,7 @@ struct Proposal {
 
 class Assistant final : public ToolHost {
 public:
-    Assistant(AssistantHost& host, std::filesystem::path directory, StreamTransport transport);
+    Assistant(AssistantHost& host, const std::filesystem::path& directory, StreamTransport transport);
     ~Assistant();
 
     [[nodiscard]] core::Json status() const;

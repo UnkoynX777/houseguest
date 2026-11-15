@@ -11,17 +11,20 @@
 #include <unordered_map>
 
 #include "../ipc_limits.hpp"
-#include "devices.hpp"
 #include "assets.hpp"
+#include "devices.hpp"
 #include "http.hpp"
 
 namespace houseguest::service::api {
 
-// Runs one named service command on behalf of an authenticated device. It throws service Failure for refusals.
-using Gateway = std::function<core::Json(const std::string& command, const core::Json& args, const Device& device)>;
+// Runs one named service command on behalf of an authenticated device. It throws service Failure for
+// refusals.
+using Gateway =
+    std::function<core::Json(const std::string& command, const core::Json& args, const Device& device)>;
 // Checks the PIN for a step-up confirmation. Returns false when it does not match.
 using PinCheck = std::function<bool(const std::string& pin)>;
-// Extra gate run before authentication, for example the Cloudflare Access identity check. Returns a refusal reason.
+// Extra gate run before authentication, for example the Cloudflare Access identity check. Returns a refusal
+// reason.
 using Precheck = std::function<std::optional<std::string>(const Request&)>;
 using Clock = std::function<std::int64_t()>;
 using Audit = std::function<void(const std::string& actor, const std::string& event, core::Json detail)>;

@@ -20,17 +20,24 @@ std::string redact(std::string line) {
     return line;
 }
 
-bool contains(const std::string& text, const char* needle) { return text.find(needle) != std::string::npos; }
+bool contains(const std::string& text, const char* needle) {
+    return text.find(needle) != std::string::npos;
+}
 
 }  // namespace
 
 const char* state_name(TunnelState state) {
     switch (state) {
-        case TunnelState::Stopped: return "stopped";
-        case TunnelState::Starting: return "starting";
-        case TunnelState::Connected: return "connected";
-        case TunnelState::Reconnecting: return "reconnecting";
-        case TunnelState::Failed: return "failed";
+        case TunnelState::Stopped:
+            return "stopped";
+        case TunnelState::Starting:
+            return "starting";
+        case TunnelState::Connected:
+            return "connected";
+        case TunnelState::Reconnecting:
+            return "reconnecting";
+        case TunnelState::Failed:
+            return "failed";
     }
     return "stopped";
 }
@@ -38,7 +45,8 @@ const char* state_name(TunnelState state) {
 LogEvent classify_log_line(const std::string& raw) {
     LogEvent event;
     event.text = redact(raw);
-    if (contains(raw, "Registered tunnel connection")) event.kind = LogKind::Connected;
+    if (contains(raw, "Registered tunnel connection"))
+        event.kind = LogKind::Connected;
     else if (contains(raw, "Unregistered tunnel connection") || contains(raw, "Lost connection") ||
              contains(raw, "Retrying connection"))
         event.kind = LogKind::Disconnected;
@@ -67,7 +75,8 @@ void Backoff::reset() {
 }
 
 std::string render_credentials(const TunnelSettings& settings) {
-    return Json{{"AccountTag", settings.account_id}, {"TunnelSecret", settings.secret_base64},
+    return Json{{"AccountTag", settings.account_id},
+                {"TunnelSecret", settings.secret_base64},
                 {"TunnelID", settings.tunnel_id}}
         .dump();
 }
@@ -83,13 +92,16 @@ std::string render_config(const TunnelSettings& settings, std::uint16_t local_po
     return "tunnel: " + settings.tunnel_id + "\ncredentials-file: \"" + file +
            "\"\nno-autoupdate: true\ningress:\n  - hostname: " + settings.hostname +
            "\n    service: http://127.0.0.1:" + std::to_string(local_port) +
-           "\n    originRequest:\n      httpHostHeader: " + settings.hostname + "\n  - service: http_status:404\n";
+           "\n    originRequest:\n      httpHostHeader: " + settings.hostname +
+           "\n  - service: http_status:404\n";
 }
 
 TunnelManager::TunnelManager(Launcher launcher, std::filesystem::path work_directory)
     : launcher_(std::move(launcher)), directory_(std::move(work_directory)) {}
 
-TunnelManager::~TunnelManager() { stop(); }
+TunnelManager::~TunnelManager() {
+    stop();
+}
 
 TunnelState TunnelManager::state() const {
     std::scoped_lock lock(mutex_);
@@ -155,7 +167,7 @@ bool TunnelManager::start(const std::filesystem::path& executable, const TunnelS
         connected_since_ = 0;
         last_error_.clear();
     }
-    thread_ = std::jthread([this](std::stop_token token) { supervise(token); });
+    thread_ = std::jthread([this](const std::stop_token& token) { supervise(token); });
     return true;
 }
 
@@ -173,7 +185,7 @@ void TunnelManager::stop() {
     connections_ = 0;
 }
 
-void TunnelManager::supervise(std::stop_token stop) {
+void TunnelManager::supervise(const std::stop_token& stop) {
     Backoff backoff;
     while (!stop.stop_requested()) {
         const auto started = Backoff::Clock::now();
@@ -209,13 +221,15 @@ void TunnelManager::supervise(std::stop_token stop) {
         connections_ = 0;
         if (decision.give_up) {
             state_ = TunnelState::Failed;
-            last_error_ = "cloudflared kept stopping, so the tunnel was turned off. Check the log and start it again.";
+            last_error_ =
+                "cloudflared kept stopping, so the tunnel was turned off. Check the log and start it again.";
             logs_.push_back(last_error_);
             return;
         }
         state_ = TunnelState::Reconnecting;
         ++restarts_;
-        wake_.wait_for(lock, stop, std::chrono::milliseconds(decision.delay.count() * unit_.count()), [] { return false; });
+        wake_.wait_for(lock, stop, std::chrono::milliseconds(decision.delay.count() * unit_.count()),
+                       [] { return false; });
     }
 }
 

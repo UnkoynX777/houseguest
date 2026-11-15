@@ -43,11 +43,13 @@ bool valid_hostname(const std::string& hostname) {
     return hostname.size() <= 253 && std::regex_match(hostname, pattern);
 }
 
-Api::Api(Transport transport, std::string token) : transport_(std::move(transport)), token_(std::move(token)) {}
+Api::Api(Transport transport, std::string token)
+    : transport_(std::move(transport)), token_(std::move(token)) {}
 
 Json Api::call(const std::string& method, const std::string& path, const Json& body) {
     static const std::regex safe(R"(^/[A-Za-z0-9/_?=&.-]+$)");
-    if (!std::regex_match(path, safe) || path.find("..") != std::string::npos || path.find("//") != std::string::npos)
+    if (!std::regex_match(path, safe) || path.find("..") != std::string::npos ||
+        path.find("//") != std::string::npos)
         throw ApiError("An identifier contained characters that are not allowed.");
     system::HttpsRequest request;
     request.method = method;
@@ -66,9 +68,15 @@ Json Api::call(const std::string& method, const std::string& path, const Json& b
     return doc.contains("result") ? doc["result"] : Json::object();
 }
 
-Json Api::verify_token() { return call("GET", "/user/tokens/verify"); }
-Json Api::accounts() { return call("GET", "/accounts?per_page=20"); }
-Json Api::zones() { return call("GET", "/zones?per_page=50&status=active"); }
+Json Api::verify_token() {
+    return call("GET", "/user/tokens/verify");
+}
+Json Api::accounts() {
+    return call("GET", "/accounts?per_page=20");
+}
+Json Api::zones() {
+    return call("GET", "/zones?per_page=50&status=active");
+}
 
 std::string Api::access_domain(const std::string& account_id) {
     const auto org = call("GET", "/accounts/" + account_id + "/access/organizations");
@@ -81,7 +89,8 @@ TunnelCredentials Api::create_tunnel(const std::string& account_id, const std::s
     const auto secret = standard_base64(system::random_bytes(32));
     const auto result = call("POST", "/accounts/" + account_id + "/cfd_tunnel",
                              {{"name", name}, {"tunnel_secret", secret}, {"config_src", "local"}});
-    if (!result.contains("id") || !result["id"].is_string()) throw ApiError("Cloudflare did not return a tunnel.");
+    if (!result.contains("id") || !result["id"].is_string())
+        throw ApiError("Cloudflare did not return a tunnel.");
     return {account_id, result["id"].get<std::string>(), secret};
 }
 
@@ -90,7 +99,8 @@ void Api::delete_tunnel(const std::string& account_id, const std::string& tunnel
     call("DELETE", "/accounts/" + account_id + "/cfd_tunnel/" + tunnel_id);
 }
 
-void Api::create_dns_record(const std::string& zone_id, const std::string& hostname, const std::string& tunnel_id) {
+void Api::create_dns_record(const std::string& zone_id, const std::string& hostname,
+                            const std::string& tunnel_id) {
     if (!valid_hostname(hostname)) throw ApiError("The hostname is not valid.");
     call("POST", "/zones/" + zone_id + "/dns_records",
          {{"type", "CNAME"},
@@ -109,15 +119,16 @@ void Api::delete_dns_record(const std::string& zone_id, const std::string& hostn
             call("DELETE", "/zones/" + zone_id + "/dns_records/" + record["id"].get<std::string>());
 }
 
-AccessApp Api::create_access_app(const std::string& account_id, const std::string& name, const std::string& hostname,
-                                 const std::vector<std::string>& emails) {
+AccessApp Api::create_access_app(const std::string& account_id, const std::string& name,
+                                 const std::string& hostname, const std::vector<std::string>& emails) {
     if (!valid_hostname(hostname)) throw ApiError("The hostname is not valid.");
     if (emails.empty()) throw ApiError("At least one e-mail address must be allowed.");
     Json include = Json::array();
     for (const auto& email : emails) include.push_back({{"email", {{"email", email}}}});
     const auto policy = call("POST", "/accounts/" + account_id + "/access/policies",
                              {{"name", name + " owner"}, {"decision", "allow"}, {"include", include}});
-    if (!policy.contains("id") || !policy["id"].is_string()) throw ApiError("Cloudflare did not return a policy.");
+    if (!policy.contains("id") || !policy["id"].is_string())
+        throw ApiError("Cloudflare did not return a policy.");
     const auto app = call("POST", "/accounts/" + account_id + "/access/apps",
                           {{"name", name},
                            {"domain", hostname},

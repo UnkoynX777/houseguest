@@ -1,6 +1,7 @@
 #include "houseguest/system/https.hpp"
 
 #include <windows.h>
+
 #include <winhttp.h>
 
 #include <memory>
@@ -9,7 +10,9 @@ namespace houseguest::system {
 namespace {
 
 struct HandleCloser {
-    void operator()(void* h) const { if (h) WinHttpCloseHandle(h); }
+    void operator()(void* h) const {
+        if (h) WinHttpCloseHandle(h);
+    }
 };
 using Handle = std::unique_ptr<void, HandleCloser>;
 
@@ -29,12 +32,15 @@ HttpsResponse fail(std::string message) {
 
 }  // namespace
 
-HttpsResponse https_request(const HttpsRequest& request, const ChunkSink& sink, const std::atomic<bool>* cancel) {
+HttpsResponse https_request(const HttpsRequest& request, const ChunkSink& sink,
+                            const std::atomic<bool>* cancel) {
     const auto url = widen(request.url);
     URL_COMPONENTS parts{};
     parts.dwStructSize = sizeof(parts);
-    parts.dwSchemeLength = parts.dwHostNameLength = parts.dwUrlPathLength = parts.dwExtraInfoLength = static_cast<DWORD>(-1);
-    if (!WinHttpCrackUrl(url.c_str(), static_cast<DWORD>(url.size()), 0, &parts)) return fail("The address is not valid.");
+    parts.dwSchemeLength = parts.dwHostNameLength = parts.dwUrlPathLength = parts.dwExtraInfoLength =
+        static_cast<DWORD>(-1);
+    if (!WinHttpCrackUrl(url.c_str(), static_cast<DWORD>(url.size()), 0, &parts))
+        return fail("The address is not valid.");
     if (parts.nScheme != INTERNET_SCHEME_HTTPS) return fail("Only https addresses are allowed.");
     const std::wstring host(parts.lpszHostName, parts.dwHostNameLength);
     const std::wstring path = std::wstring(parts.lpszUrlPath, parts.dwUrlPathLength) +
@@ -48,7 +54,8 @@ HttpsResponse https_request(const HttpsRequest& request, const ChunkSink& sink, 
         protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
         WinHttpSetOption(session.get(), WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
     }
-    WinHttpSetTimeouts(session.get(), request.timeout_ms, request.timeout_ms, request.timeout_ms, request.timeout_ms);
+    WinHttpSetTimeouts(session.get(), request.timeout_ms, request.timeout_ms, request.timeout_ms,
+                       request.timeout_ms);
 
     Handle connection(WinHttpConnect(session.get(), host.c_str(), parts.nPort, 0));
     if (!connection) return fail("Could not reach the server.");

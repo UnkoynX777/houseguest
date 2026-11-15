@@ -7,8 +7,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "api/service.hpp"
 #include "houseguest/system/crypto.hpp"
+
+#include "api/service.hpp"
 
 using namespace houseguest::service;
 using namespace houseguest::service::api;
@@ -29,8 +30,8 @@ struct FakeHost final : Host {
     [[nodiscard]] std::vector<std::uint8_t> key() const override { return std::vector<std::uint8_t>(32, 7); }
 };
 
-std::string http(std::uint16_t port, const std::string& method, const std::string& path, const std::string& token,
-                 const std::string& host_header = {}) {
+std::string http(std::uint16_t port, const std::string& method, const std::string& path,
+                 const std::string& token, const std::string& host_header = {}) {
     WSADATA d{};
     WSAStartup(MAKEWORD(2, 2), &d);
     SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -48,7 +49,8 @@ std::string http(std::uint16_t port, const std::string& method, const std::strin
         request += "\r\n";
         send(s, request.data(), static_cast<int>(request.size()), 0);
         char buffer[4096];
-        for (int n; (n = recv(s, buffer, sizeof(buffer), 0)) > 0;) reply.append(buffer, static_cast<std::size_t>(n));
+        for (int n; (n = recv(s, buffer, sizeof(buffer), 0)) > 0;)
+            reply.append(buffer, static_cast<std::size_t>(n));
     }
     closesocket(s);
     WSACleanup();
@@ -79,7 +81,8 @@ TEST_CASE("the API answers over loopback with a paired device only", "[api][inte
     const auto ok = http(service.port(), "GET", "/v1/status", issued.token);
     CHECK(ok.find("200 OK") != std::string::npos);
     CHECK(ok.find("\"command\":\"status\"") != std::string::npos);
-    CHECK(http(service.port(), "GET", "/v1/status", issued.token, "attacker.example").find("403") != std::string::npos);
+    CHECK(http(service.port(), "GET", "/v1/status", issued.token, "attacker.example").find("403") !=
+          std::string::npos);
 
     service.revoke(issued.device.id);
     CHECK(http(service.port(), "GET", "/v1/status", issued.token).find("401") != std::string::npos);
@@ -87,7 +90,8 @@ TEST_CASE("the API answers over loopback with a paired device only", "[api][inte
     std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("paired devices survive a restart and a tampered file is discarded", "[api][integration][security]") {
+TEST_CASE("paired devices survive a restart and a tampered file is discarded",
+          "[api][integration][security]") {
     FakeHost host;
     const auto dir = scratch("persist");
     std::string token;
@@ -144,7 +148,8 @@ TEST_CASE("the port changes between starts and nothing listens after stop", "[ap
     std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("the remote panel is served with a strict content security policy", "[api][integration][security]") {
+TEST_CASE("the remote panel is served with a strict content security policy",
+          "[api][integration][security]") {
     FakeHost host;
     const auto dir = scratch("panel");
     ApiService service(host, dir);
@@ -164,7 +169,8 @@ TEST_CASE("the remote panel is served with a strict content security policy", "[
     std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("requests that arrive through the tunnel are refused while remote access is off", "[api][integration][security]") {
+TEST_CASE("requests that arrive through the tunnel are refused while remote access is off",
+          "[api][integration][security]") {
     FakeHost host;
     const auto dir = scratch("gate");
     ApiService service(host, dir);
@@ -179,12 +185,14 @@ TEST_CASE("requests that arrive through the tunnel are refused while remote acce
     a.sin_port = htons(service.port());
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     REQUIRE(connect(s, reinterpret_cast<sockaddr*>(&a), sizeof(a)) == 0);
-    const std::string request = "GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:" + std::to_string(service.port()) +
-                                "\r\nCf-Ray: abc\r\nAuthorization: Bearer " + issued.token + "\r\n\r\n";
+    const std::string request =
+        "GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:" + std::to_string(service.port()) +
+        "\r\nCf-Ray: abc\r\nAuthorization: Bearer " + issued.token + "\r\n\r\n";
     send(s, request.data(), static_cast<int>(request.size()), 0);
     std::string reply;
     char buffer[2048];
-    for (int n; (n = recv(s, buffer, sizeof(buffer), 0)) > 0;) reply.append(buffer, static_cast<std::size_t>(n));
+    for (int n; (n = recv(s, buffer, sizeof(buffer), 0)) > 0;)
+        reply.append(buffer, static_cast<std::size_t>(n));
     closesocket(s);
     WSACleanup();
     CHECK(reply.find("403") != std::string::npos);

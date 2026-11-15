@@ -28,19 +28,23 @@ struct Recorder {
     }
 };
 
-sys::HttpsResponse ok(const Json& result) { return {200, Json{{"success", true}, {"result", result}}.dump(), {}}; }
+sys::HttpsResponse ok(const Json& result) {
+    return {200, Json{{"success", true}, {"result", result}}.dump(), {}};
+}
 
 }  // namespace
 
 TEST_CASE("hostnames are validated before they reach DNS, YAML or URLs", "[cloudflare][security]") {
     CHECK(valid_hostname("hg.example.com"));
     CHECK(valid_hostname("a-b.c.example.co.uk"));
-    for (const char* bad : {"", "localhost", "-a.example.com", "a..example.com", "a.example.com\nservice: x",
-                            "a.example.com:8080", "UPPER.example.com", "a b.example.com", "a.example.com/x", "*.example.com"})
+    for (const char* bad :
+         {"", "localhost", "-a.example.com", "a..example.com", "a.example.com\nservice: x",
+          "a.example.com:8080", "UPPER.example.com", "a b.example.com", "a.example.com/x", "*.example.com"})
         CHECK_FALSE(valid_hostname(bad));
 }
 
-TEST_CASE("the tunnel is created with a local secret and the token is only sent as a bearer header", "[cloudflare]") {
+TEST_CASE("the tunnel is created with a local secret and the token is only sent as a bearer header",
+          "[cloudflare]") {
     Recorder rec;
     rec.replies = {ok({{"id", "11111111-2222-3333-4444-555555555555"}})};
     Api api(rec.transport(), "secret-api-token");
@@ -54,7 +58,8 @@ TEST_CASE("the tunnel is created with a local secret and the token is only sent 
     CHECK(Json::parse(rec.requests[0].body)["config_src"] == "local");
 }
 
-TEST_CASE("Access policy allows only the named e-mail addresses and returns the audience", "[cloudflare][security]") {
+TEST_CASE("Access policy allows only the named e-mail addresses and returns the audience",
+          "[cloudflare][security]") {
     Recorder rec;
     rec.replies = {ok({{"id", "policy1"}}), ok({{"id", "app1"}, {"aud", "audience-tag"}})};
     Api api(rec.transport(), "t");
@@ -79,9 +84,10 @@ TEST_CASE("an Access application cannot be created without an allowed identity",
 
 TEST_CASE("API failures carry Cloudflare's message but never the token", "[cloudflare][security]") {
     Recorder rec;
-    rec.replies = {{403, R"({"success":false,"errors":[{"code":10000,"message":"Authentication error"}]})", {}},
-                   {0, "", "The request could not be sent."},
-                   {401, "not json", {}}};
+    rec.replies = {
+        {403, R"({"success":false,"errors":[{"code":10000,"message":"Authentication error"}]})", {}},
+        {0, "", "The request could not be sent."},
+        {401, "not json", {}}};
     Api api(rec.transport(), "SECRET-TOKEN-VALUE");
     for (int i = 0; i < 3; ++i) {
         try {
@@ -93,7 +99,8 @@ TEST_CASE("API failures carry Cloudflare's message but never the token", "[cloud
     }
 }
 
-TEST_CASE("the generated configuration routes one hostname to the local API and nothing else", "[cloudflare]") {
+TEST_CASE("the generated configuration routes one hostname to the local API and nothing else",
+          "[cloudflare]") {
     TunnelSettings s{"11111111-2222-3333-4444-555555555555", "acct", "c2VjcmV0", "hg.example.com"};
     const auto yaml = render_config(s, 49152, "C:/ProgramData/Houseguest/remote/credentials.json");
     CHECK(yaml.find("service: http://127.0.0.1:49152") != std::string::npos);
@@ -145,7 +152,9 @@ struct FakeProcess final : RunningProcess {
     std::shared_ptr<std::atomic<bool>> running = std::make_shared<std::atomic<bool>>(true);
     bool alive() override { return *running; }
     void stop() override { *running = false; }
-    void wait(std::chrono::milliseconds limit) override { std::this_thread::sleep_for(std::min<std::chrono::milliseconds>(limit, 5ms)); }
+    void wait(std::chrono::milliseconds limit) override {
+        std::this_thread::sleep_for(std::min<std::chrono::milliseconds>(limit, 5ms));
+    }
 };
 
 bool wait_for(const std::function<bool()>& condition) {
@@ -158,17 +167,20 @@ bool wait_for(const std::function<bool()>& condition) {
 
 }  // namespace
 
-TEST_CASE("the manager connects, reports status, and removes its files on stop", "[cloudflare][integration]") {
+TEST_CASE("the manager connects, reports status, and removes its files on stop",
+          "[cloudflare][integration]") {
     const auto dir = std::filesystem::temp_directory_path() / "hg-tunnel-a";
     std::filesystem::remove_all(dir);
     std::vector<std::shared_ptr<std::atomic<bool>>> started;
     LineSink sink;
-    TunnelManager manager([&](const LaunchSpec&, LineSink s) {
-        auto process = std::make_unique<FakeProcess>();
-        started.push_back(process->running);
-        sink = std::move(s);
-        return process;
-    }, dir);
+    TunnelManager manager(
+        [&](const LaunchSpec&, LineSink s) {
+            auto process = std::make_unique<FakeProcess>();
+            started.push_back(process->running);
+            sink = std::move(s);
+            return process;
+        },
+        dir);
     TunnelSettings settings{"11111111-2222-3333-4444-555555555555", "acct", "c2VjcmV0", "hg.example.com"};
     std::string error;
     REQUIRE(manager.start("cloudflared.exe", settings, 5555, error));
@@ -186,16 +198,19 @@ TEST_CASE("the manager connects, reports status, and removes its files on stop",
     std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("a crashing process is restarted with backoff, then the manager gives up", "[cloudflare][integration]") {
+TEST_CASE("a crashing process is restarted with backoff, then the manager gives up",
+          "[cloudflare][integration]") {
     const auto dir = std::filesystem::temp_directory_path() / "hg-tunnel-b";
     std::filesystem::remove_all(dir);
     std::atomic<int> launches = 0;
-    TunnelManager manager([&](const LaunchSpec&, LineSink) {
-        ++launches;
-        auto process = std::make_unique<FakeProcess>();
-        *process->running = false;  // exits at once
-        return process;
-    }, dir);
+    TunnelManager manager(
+        [&](const LaunchSpec&, LineSink) {
+            ++launches;
+            auto process = std::make_unique<FakeProcess>();
+            *process->running = false;  // exits at once
+            return process;
+        },
+        dir);
     manager.set_delay_unit(1ms);
     TunnelSettings settings{"11111111-2222-3333-4444-555555555555", "acct", "c2VjcmV0", "hg.example.com"};
     std::string error;
@@ -211,10 +226,12 @@ TEST_CASE("a launcher that throws is reported and does not spin", "[cloudflare][
     const auto dir = std::filesystem::temp_directory_path() / "hg-tunnel-c";
     std::filesystem::remove_all(dir);
     std::atomic<int> launches = 0;
-    TunnelManager manager([&](const LaunchSpec&, LineSink) -> std::unique_ptr<RunningProcess> {
-        ++launches;
-        throw std::runtime_error("missing");
-    }, dir);
+    TunnelManager manager(
+        [&](const LaunchSpec&, LineSink) -> std::unique_ptr<RunningProcess> {
+            ++launches;
+            throw std::runtime_error("missing");
+        },
+        dir);
     manager.set_delay_unit(1ms);
     TunnelSettings settings{"11111111-2222-3333-4444-555555555555", "acct", "c2VjcmV0", "hg.example.com"};
     std::string error;

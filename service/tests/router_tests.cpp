@@ -121,8 +121,8 @@ TEST_CASE("a read-only device cannot change anything", "[api][security]") {
 TEST_CASE("operations that are not routed do not exist", "[api][security]") {
     Harness h;
     const auto device = h.devices.issue("tablet", Scope::Write, h.now);
-    for (const char* path : {"/v1/pin.change", "/v1/settings", "/v1/backup/restore", "/v1/recover", "/v1/unlock",
-                              "/v1/accounts", "/v1/exec", "/v1/files", "/"}) {
+    for (const char* path : {"/v1/pin.change", "/v1/settings", "/v1/backup/restore", "/v1/recover",
+                             "/v1/unlock", "/v1/accounts", "/v1/exec", "/v1/files", "/"}) {
         CHECK(h.router->handle(h.make("POST", path, device.token, "{}")).status == 404);
         CHECK(h.router->handle(h.make("GET", path, device.token)).status == 404);
     }
@@ -170,7 +170,8 @@ TEST_CASE("repeated wrong PINs lock the step-up even for the right PIN", "[api][
     Harness h;
     const auto device = h.devices.issue("tablet", Scope::Write, h.now);
     for (int i = 0; i < 5; ++i)
-        CHECK(h.router->handle(h.make("POST", "/v1/stepup", device.token, R"({"pin":"1111"})")).status == 401);
+        CHECK(h.router->handle(h.make("POST", "/v1/stepup", device.token, R"({"pin":"1111"})")).status ==
+              401);
     CHECK(h.router->handle(h.make("POST", "/v1/stepup", device.token, R"({"pin":"2468"})")).status == 429);
     h.now += 120;
     CHECK(h.router->handle(h.make("POST", "/v1/stepup", device.token, R"({"pin":"2468"})")).status == 200);
@@ -220,7 +221,9 @@ TEST_CASE("the identity precheck can refuse before authentication", "[api][secur
     config.devices = &h.devices;
     config.clock = [&] { return h.now; };
     config.gateway = [](const std::string&, const Json&, const Device&) { return Json::object(); };
-    config.precheck = [](const Request&) { return std::optional<std::string>("Cloudflare Access identity required."); };
+    config.precheck = [](const Request&) {
+        return std::optional<std::string>("Cloudflare Access identity required.");
+    };
     Router router(std::move(config));
     const auto device = h.devices.issue("phone", Scope::Read, h.now);
     CHECK(router.handle(h.make("GET", "/v1/status", device.token)).status == 403);
@@ -231,7 +234,8 @@ TEST_CASE("bad bodies are rejected before reaching the gateway", "[api][security
     const auto device = h.devices.issue("tablet", Scope::Write, h.now);
     CHECK(h.router->handle(h.make("POST", "/v1/session/stop", device.token, "[1]")).status == 400);
     CHECK(h.router->handle(h.make("POST", "/v1/session/stop", device.token, "{nope")).status == 400);
-    CHECK(h.router->handle(h.make("POST", "/v1/session/stop", device.token, std::string(100, '['))).status == 400);
+    CHECK(h.router->handle(h.make("POST", "/v1/session/stop", device.token, std::string(100, '['))).status ==
+          400);
     auto wrong_type = h.make("POST", "/v1/session/stop", device.token, "{}");
     wrong_type.headers["content-type"] = "text/plain";
     CHECK(h.router->handle(wrong_type).status == 415);

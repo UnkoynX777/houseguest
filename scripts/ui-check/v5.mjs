@@ -93,6 +93,17 @@ await b.sleep(900);
 text = await b.run(`document.querySelector('.main').innerText`);
 check('with no key the setup is shown and there is no chat box', text.includes('Gemini') && text.includes('Nothing is sent') && !(await b.run(`!!document.querySelector('.composer')`)));
 
+// The assistant can be asked about the program whose panel is open, and only shares it when allowed
+await b.run(`window.__ai = undefined`);
+await b.run(`document.querySelector('.nav[aria-label="Applications"]').click()`);
+await b.sleep(900);
+await b.run(`document.querySelector('.app-card, .app-row')?.click()`);
+await b.sleep(900);
+await b.click('', '.drawer button[aria-label="Ask the assistant"]');
+await b.sleep(1000);
+check('"Ask the assistant" opens the assistant with a question about that program', (await b.run(`document.querySelector('.composer textarea')?.value ?? ''`)).includes('allowed or blocked in this profile') && await b.run(`document.querySelector('.nav[aria-current="page"]').getAttribute('aria-label') === 'Assistant'`));
+check('no panel is left open behind it', await b.run(`!document.querySelector('.drawer-layer')`));
+
 // Every page still draws inside the compact window
 for (const name of ['Dashboard', 'Sessions', 'Applications', 'Profiles', 'Rules', 'History', 'Security', 'Diagnostics', 'Settings', 'About']) {
   await b.run(`document.querySelector('.nav[aria-label="${name}"]').click()`);

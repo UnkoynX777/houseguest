@@ -1,6 +1,7 @@
 #include "houseguest/system/jwt.hpp"
 
 #include <windows.h>
+
 #include <bcrypt.h>
 
 #include <algorithm>
@@ -28,7 +29,8 @@ std::optional<std::string_view> part(std::string_view text, std::size_t index) {
 bool audience_matches(const Json& aud, const std::string& expected) {
     if (aud.is_string()) return aud.get<std::string>() == expected;
     if (aud.is_array())
-        return std::ranges::any_of(aud, [&](const Json& v) { return v.is_string() && v.get<std::string>() == expected; });
+        return std::ranges::any_of(
+            aud, [&](const Json& v) { return v.is_string() && v.get<std::string>() == expected; });
     return false;
 }
 
@@ -39,13 +41,19 @@ std::optional<Bytes> base64url_decode(std::string_view text) {
     std::uint32_t buffer = 0;
     int bits = 0;
     for (const char c : text) {
-        int value;
-        if (c >= 'A' && c <= 'Z') value = c - 'A';
-        else if (c >= 'a' && c <= 'z') value = c - 'a' + 26;
-        else if (c >= '0' && c <= '9') value = c - '0' + 52;
-        else if (c == '-') value = 62;
-        else if (c == '_') value = 63;
-        else return std::nullopt;
+        int value = 0;
+        if (c >= 'A' && c <= 'Z')
+            value = c - 'A';
+        else if (c >= 'a' && c <= 'z')
+            value = c - 'a' + 26;
+        else if (c >= '0' && c <= '9')
+            value = c - '0' + 52;
+        else if (c == '-')
+            value = 62;
+        else if (c == '_')
+            value = 63;
+        else
+            return std::nullopt;
         buffer = (buffer << 6) | static_cast<std::uint32_t>(value);
         bits += 6;
         if (bits >= 8) {
@@ -82,8 +90,8 @@ std::vector<JwtKey> parse_jwks(std::string_view jwks) {
         if (!item.is_object() || item.value("kty", "") != "RSA") continue;
         if (item.contains("alg") && item["alg"] != "RS256") continue;
         if (item.contains("use") && item["use"] != "sig") continue;
-        if (!item.contains("kid") || !item["kid"].is_string() || !item.contains("n") || !item["n"].is_string() ||
-            !item.contains("e") || !item["e"].is_string())
+        if (!item.contains("kid") || !item["kid"].is_string() || !item.contains("n") ||
+            !item["n"].is_string() || !item.contains("e") || !item["e"].is_string())
             continue;
         auto n = base64url_decode(item["n"].get<std::string>());
         auto e = base64url_decode(item["e"].get<std::string>());
@@ -104,7 +112,8 @@ bool rsa_verify_pkcs1_sha256(const JwtKey& key, ByteView message, ByteView signa
     header->cbPrime1 = 0;
     header->cbPrime2 = 0;
     std::copy(key.exponent.begin(), key.exponent.end(), blob.begin() + sizeof(BCRYPT_RSAKEY_BLOB));
-    std::copy(key.modulus.begin(), key.modulus.end(), blob.begin() + sizeof(BCRYPT_RSAKEY_BLOB) + key.exponent.size());
+    std::copy(key.modulus.begin(), key.modulus.end(),
+              blob.begin() + static_cast<std::ptrdiff_t>(sizeof(BCRYPT_RSAKEY_BLOB) + key.exponent.size()));
 
     BCRYPT_ALG_HANDLE algorithm = nullptr;
     if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_RSA_ALGORITHM, nullptr, 0) < 0) return false;
@@ -142,23 +151,28 @@ JwtResult verify_impl(std::string_view token, const std::vector<JwtKey>& keys, c
     if (!header_bytes || !payload_bytes || !signature) return refuse("The token is malformed.");
 
     const Json header = Json::parse(header_bytes->begin(), header_bytes->end(), nullptr, false);
-    if (!header.is_object() || header.value("alg", "") != "RS256") return refuse("Only RS256 tokens are accepted.");
+    if (!header.is_object() || header.value("alg", "") != "RS256")
+        return refuse("Only RS256 tokens are accepted.");
     if (!header.contains("kid") || !header["kid"].is_string()) return refuse("The token names no key.");
     const auto kid = header["kid"].get<std::string>();
     const auto key = std::ranges::find(keys, kid, &JwtKey::kid);
     if (key == keys.end()) return refuse("unknown_key");
 
     const auto signed_part = token.substr(0, header_part.size() + 1 + payload_part.size());
-    if (!rsa_verify_pkcs1_sha256(*key, {reinterpret_cast<const std::uint8_t*>(signed_part.data()), signed_part.size()},
-                                 *signature))
+    if (!rsa_verify_pkcs1_sha256(
+            *key, {reinterpret_cast<const std::uint8_t*>(signed_part.data()), signed_part.size()},
+            *signature))
         return refuse("The signature is not valid.");
 
     const Json claims = Json::parse(payload_bytes->begin(), payload_bytes->end(), nullptr, false);
     if (!claims.is_object()) return refuse("The claims are malformed.");
-    if (claims.value("iss", "") != policy.issuer || policy.issuer.empty()) return refuse("Unexpected issuer.");
-    if (policy.audience.empty() || !claims.contains("aud") || !audience_matches(claims["aud"], policy.audience))
+    if (claims.value("iss", "") != policy.issuer || policy.issuer.empty())
+        return refuse("Unexpected issuer.");
+    if (policy.audience.empty() || !claims.contains("aud") ||
+        !audience_matches(claims["aud"], policy.audience))
         return refuse("Unexpected audience.");
-    if (!claims.contains("exp") || !claims["exp"].is_number_integer()) return refuse("The token has no expiry.");
+    if (!claims.contains("exp") || !claims["exp"].is_number_integer())
+        return refuse("The token has no expiry.");
     const auto expires = claims["exp"].get<std::int64_t>();
     if (expires + policy.skew < policy.now) return refuse("The token has expired.");
     if (claims.contains("nbf") && claims["nbf"].is_number_integer() &&

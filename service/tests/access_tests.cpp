@@ -1,4 +1,5 @@
 #include <windows.h>
+
 #include <bcrypt.h>
 
 #include <string>
@@ -28,8 +29,14 @@ struct Signer {
         const auto* h = reinterpret_cast<const BCRYPT_RSAKEY_BLOB*>(blob.data());
         const auto* base = blob.data() + sizeof(BCRYPT_RSAKEY_BLOB);
         Bytes e(base, base + h->cbPublicExp), n(base + h->cbPublicExp, base + h->cbPublicExp + h->cbModulus);
-        jwks = Json{{"keys", {{{"kty", "RSA"}, {"kid", "k1"}, {"alg", "RS256"}, {"use", "sig"},
-                               {"n", base64url_encode(n)}, {"e", base64url_encode(e)}}}}}.dump();
+        jwks = Json{{"keys",
+                     {{{"kty", "RSA"},
+                       {"kid", "k1"},
+                       {"alg", "RS256"},
+                       {"use", "sig"},
+                       {"n", base64url_encode(n)},
+                       {"e", base64url_encode(e)}}}}}
+                   .dump();
     }
     ~Signer() {
         BCryptDestroyKey(key);
@@ -37,15 +44,23 @@ struct Signer {
     }
     std::string token(std::int64_t exp, const std::string& email = "owner@example.com",
                       const std::string& aud = "aud-tag") const {
-        auto enc = [](const std::string& t) { return base64url_encode({reinterpret_cast<const std::uint8_t*>(t.data()), t.size()}); };
-        const auto payload = Json{{"iss", "https://team.cloudflareaccess.com"}, {"aud", {aud}}, {"exp", exp}, {"email", email}}.dump();
+        auto enc = [](const std::string& t) {
+            return base64url_encode({reinterpret_cast<const std::uint8_t*>(t.data()), t.size()});
+        };
+        const auto payload = Json{
+            {"iss", "https://team.cloudflareaccess.com"},
+            {"aud", {aud}},
+            {"exp", exp},
+            {"email", email}}.dump();
         const auto signing = enc(R"({"alg":"RS256","kid":"k1"})") + "." + enc(payload);
         const auto digest = sha256({reinterpret_cast<const std::uint8_t*>(signing.data()), signing.size()});
         BCRYPT_PKCS1_PADDING_INFO padding{BCRYPT_SHA256_ALGORITHM};
         ULONG length = 0;
-        BCryptSignHash(key, &padding, const_cast<PUCHAR>(digest.data()), static_cast<ULONG>(digest.size()), nullptr, 0, &length, BCRYPT_PAD_PKCS1);
+        BCryptSignHash(key, &padding, const_cast<PUCHAR>(digest.data()), static_cast<ULONG>(digest.size()),
+                       nullptr, 0, &length, BCRYPT_PAD_PKCS1);
         Bytes signature(length);
-        BCryptSignHash(key, &padding, const_cast<PUCHAR>(digest.data()), static_cast<ULONG>(digest.size()), signature.data(), length, &length, BCRYPT_PAD_PKCS1);
+        BCryptSignHash(key, &padding, const_cast<PUCHAR>(digest.data()), static_cast<ULONG>(digest.size()),
+                       signature.data(), length, &length, BCRYPT_PAD_PKCS1);
         return signing + "." + base64url_encode(signature);
     }
 };
@@ -66,13 +81,12 @@ struct Fixture {
     int fetches = 0;
     AccessGate gate{[this](const std::string& url) -> std::optional<std::string> {
                         ++fetches;
-                        if (url != "https://team.cloudflareaccess.com/cdn-cgi/access/certs") return std::nullopt;
+                        if (url != "https://team.cloudflareaccess.com/cdn-cgi/access/certs")
+                            return std::nullopt;
                         return signer.jwks;
                     },
                     [this] { return now; }};
-    Fixture() {
-        gate.configure({true, "Team.CloudflareAccess.com", "aud-tag", "hg.example.com", {}});
-    }
+    Fixture() { gate.configure({true, "Team.CloudflareAccess.com", "aud-tag", "hg.example.com", {}}); }
 };
 
 }  // namespace
@@ -86,7 +100,8 @@ TEST_CASE("local requests are left to device authentication", "[access]") {
 }
 
 TEST_CASE("any proxy header marks a request as remote", "[access][security]") {
-    for (const char* name : {"cf-connecting-ip", "x-forwarded-for", "forwarded", "via", "x-real-ip", "cf-ray"}) {
+    for (const char* name :
+         {"cf-connecting-ip", "x-forwarded-for", "forwarded", "via", "x-real-ip", "cf-ray"}) {
         Request r;
         r.headers[name] = "1";
         CHECK(AccessGate::is_remote(r));
@@ -131,7 +146,8 @@ TEST_CASE("keys are cached and refreshed at a bounded rate", "[access]") {
 
 TEST_CASE("an unreachable key endpoint fails closed", "[access][security]") {
     Signer signer;
-    AccessGate gate([](const std::string&) { return std::nullopt; }, [] { return std::int64_t{1'800'000'000}; });
+    AccessGate gate([](const std::string&) { return std::nullopt; },
+                    [] { return std::int64_t{1'800'000'000}; });
     gate.configure({true, "team.cloudflareaccess.com", "aud-tag", "hg.example.com", {}});
     CHECK(gate.check(remote(signer.token(1'800'000'300))));
 }

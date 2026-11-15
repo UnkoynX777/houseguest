@@ -1,4 +1,5 @@
 #include <windows.h>
+
 #include <bcrypt.h>
 
 #include <string>
@@ -42,8 +43,8 @@ struct Pair {
         const auto digest = sha256({reinterpret_cast<const std::uint8_t*>(signing.data()), signing.size()});
         BCRYPT_PKCS1_PADDING_INFO padding{BCRYPT_SHA256_ALGORITHM};
         ULONG length = 0;
-        BCryptSignHash(key, &padding, const_cast<PUCHAR>(digest.data()), static_cast<ULONG>(digest.size()), nullptr, 0,
-                       &length, BCRYPT_PAD_PKCS1);
+        BCryptSignHash(key, &padding, const_cast<PUCHAR>(digest.data()), static_cast<ULONG>(digest.size()),
+                       nullptr, 0, &length, BCRYPT_PAD_PKCS1);
         Bytes signature(length);
         BCryptSignHash(key, &padding, const_cast<PUCHAR>(digest.data()), static_cast<ULONG>(digest.size()),
                        signature.data(), length, &length, BCRYPT_PAD_PKCS1);
@@ -52,12 +53,14 @@ struct Pair {
 };
 
 const std::int64_t kNow = 1'800'000'000;
-JwtPolicy policy() { return {"https://team.cloudflareaccess.com", "aud-tag", kNow, 60}; }
+JwtPolicy policy() {
+    return {"https://team.cloudflareaccess.com", "aud-tag", kNow, 60};
+}
 
 std::string claims(std::int64_t exp = kNow + 600, const std::string& aud = "\"aud-tag\"",
                    const std::string& iss = "https://team.cloudflareaccess.com") {
-    return R"({"iss":")" + iss + R"(","aud":[)" + aud + R"(],"exp":)" + std::to_string(exp) +
-           R"(,"iat":)" + std::to_string(kNow - 5) + R"(,"email":"owner@example.com","sub":"u1"})";
+    return R"({"iss":")" + iss + R"(","aud":[)" + aud + R"(],"exp":)" + std::to_string(exp) + R"(,"iat":)" +
+           std::to_string(kNow - 5) + R"(,"email":"owner@example.com","sub":"u1"})";
 }
 
 const std::string kHeader = R"({"alg":"RS256","kid":"k1","typ":"JWT"})";
@@ -87,9 +90,11 @@ TEST_CASE("tampering, wrong keys and unknown kids are refused", "[jwt][security]
     auto forged = good.sign(kHeader, claims(kNow + 600, "\"aud-tag\""));
     const auto dots = forged.find('.');
     const auto second = forged.find('.', dots + 1);
-    const std::string evil = R"({"iss":"https://team.cloudflareaccess.com","aud":["aud-tag"],"exp":9999999999})";
+    const std::string evil =
+        R"({"iss":"https://team.cloudflareaccess.com","aud":["aud-tag"],"exp":9999999999})";
     const auto payload = base64url_encode({reinterpret_cast<const std::uint8_t*>(evil.data()), evil.size()});
-    CHECK_FALSE(verify_jwt(forged.substr(0, dots + 1) + payload + forged.substr(second), {good.pub}, policy()).valid);
+    CHECK_FALSE(
+        verify_jwt(forged.substr(0, dots + 1) + payload + forged.substr(second), {good.pub}, policy()).valid);
 }
 
 TEST_CASE("algorithm confusion is refused", "[jwt][security]") {
@@ -104,7 +109,10 @@ TEST_CASE("algorithm confusion is refused", "[jwt][security]") {
 TEST_CASE("issuer, audience and time claims are enforced", "[jwt][security]") {
     Pair pair("k1");
     CHECK_FALSE(verify_jwt(pair.sign(kHeader, claims(kNow + 600, "\"other\"")), {pair.pub}, policy()).valid);
-    CHECK_FALSE(verify_jwt(pair.sign(kHeader, claims(kNow + 600, "\"aud-tag\"", "https://evil.cloudflareaccess.com")), {pair.pub}, policy()).valid);
+    CHECK_FALSE(
+        verify_jwt(pair.sign(kHeader, claims(kNow + 600, "\"aud-tag\"", "https://evil.cloudflareaccess.com")),
+                   {pair.pub}, policy())
+            .valid);
     CHECK_FALSE(verify_jwt(pair.sign(kHeader, claims(kNow - 600)), {pair.pub}, policy()).valid);
     CHECK(verify_jwt(pair.sign(kHeader, claims(kNow - 30)), {pair.pub}, policy()).valid);  // within skew
     auto empty = policy();
@@ -116,8 +124,12 @@ TEST_CASE("issuer, audience and time claims are enforced", "[jwt][security]") {
 TEST_CASE("a JWKS document yields only usable RSA signing keys", "[jwt]") {
     Pair pair("k1");
     const Json jwks{{"keys",
-                     {{{"kty", "RSA"}, {"kid", "k1"}, {"alg", "RS256"}, {"use", "sig"},
-                       {"n", base64url_encode(pair.pub.modulus)}, {"e", base64url_encode(pair.pub.exponent)}},
+                     {{{"kty", "RSA"},
+                       {"kid", "k1"},
+                       {"alg", "RS256"},
+                       {"use", "sig"},
+                       {"n", base64url_encode(pair.pub.modulus)},
+                       {"e", base64url_encode(pair.pub.exponent)}},
                       {{"kty", "EC"}, {"kid", "k2"}},
                       {{"kty", "RSA"}, {"kid", "short"}, {"n", "AQAB"}, {"e", "AQAB"}}}}};
     const auto keys = parse_jwks(jwks.dump());

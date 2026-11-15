@@ -30,7 +30,9 @@ Response error_response(int status, const std::string& message) {
 
 Listener::Listener(Handler handler, ListenerLimits limits) : handler_(std::move(handler)), limits_(limits) {}
 
-Listener::~Listener() { stop(); }
+Listener::~Listener() {
+    stop();
+}
 
 bool Listener::start(std::string& error) {
     if (running()) return true;
@@ -52,7 +54,8 @@ bool Listener::start(std::string& error) {
         return false;
     };
     const BOOL exclusive = TRUE;
-    if (setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&exclusive), sizeof(exclusive)) != 0)
+    if (setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&exclusive),
+                   sizeof(exclusive)) != 0)
         return abandon("SO_EXCLUSIVEADDRUSE");
     sockaddr_in address{};
     address.sin_family = AF_INET;
@@ -128,7 +131,8 @@ void Listener::serve(std::uintptr_t handle) {
     Response response;
     try {
         std::string buffer;
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(limits_.request_budget_ms);
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(limits_.request_budget_ms);
         ParseResult parsed;
         for (;;) {
             parsed = parse_request(buffer);

@@ -33,7 +33,8 @@ constexpr Route kRoutes[] = {
 };
 
 std::string lower(std::string text) {
-    std::ranges::transform(text, text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::ranges::transform(text, text.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
@@ -42,7 +43,8 @@ std::string decode(std::string_view in) {
     for (std::size_t i = 0; i < in.size(); ++i) {
         if (in[i] == '+') {
             out += ' ';
-        } else if (in[i] == '%' && i + 2 < in.size() && std::isxdigit(static_cast<unsigned char>(in[i + 1])) &&
+        } else if (in[i] == '%' && i + 2 < in.size() &&
+                   std::isxdigit(static_cast<unsigned char>(in[i + 1])) &&
                    std::isxdigit(static_cast<unsigned char>(in[i + 2]))) {
             out += static_cast<char>(std::stoi(std::string(in.substr(i + 1, 2)), nullptr, 16));
             i += 2;
@@ -89,8 +91,9 @@ int status_for(const std::string& code) {
 }
 
 bool nonce_shape(const std::string& nonce) {
-    return nonce.size() >= 16 && nonce.size() <= 64 &&
-           std::ranges::all_of(nonce, [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_'; });
+    return nonce.size() >= 16 && nonce.size() <= 64 && std::ranges::all_of(nonce, [](unsigned char c) {
+               return std::isalnum(c) || c == '-' || c == '_';
+           });
 }
 
 }  // namespace
@@ -115,7 +118,8 @@ void Router::cors(Response& response, const Request& request) const {
     if (!origin.empty() && config_.origins.contains(origin)) {
         response.headers["Access-Control-Allow-Origin"] = origin;
         response.headers["Vary"] = "Origin";
-        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-HG-Nonce, X-HG-Timestamp";
+        response.headers["Access-Control-Allow-Headers"] =
+            "Authorization, Content-Type, X-HG-Nonce, X-HG-Timestamp";
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
         response.headers["Access-Control-Max-Age"] = "600";
     }
@@ -123,7 +127,8 @@ void Router::cors(Response& response, const Request& request) const {
 
 bool Router::fresh_nonce(const std::string& nonce, std::int64_t now) {
     std::scoped_lock lock(mutex_);
-    while (!nonce_order_.empty() && (nonce_order_.front().first < now - 2 * kSkewSeconds || nonce_order_.size() > 4096)) {
+    while (!nonce_order_.empty() &&
+           (nonce_order_.front().first < now - 2 * kSkewSeconds || nonce_order_.size() > 4096)) {
         nonces_.erase(nonce_order_.front().second);
         nonce_order_.pop_front();
     }
@@ -150,8 +155,8 @@ Response Router::handle(const Request& request) {
         return failure(403, "host_not_allowed", "Unexpected Host header.", request);
 
     const auto origin = std::string(request.header("origin"));
-    // Browsers add Origin to same-origin POSTs too. The page's own address is fine, because the Host header was
-    // checked above; any other site is refused.
+    // Browsers add Origin to same-origin POSTs too. The page's own address is fine, because the Host header
+    // was checked above; any other site is refused.
     const auto host = lower(std::string(request.header("host")));
     const bool same_origin = origin == "http://" + host || origin == "https://" + host;
     if (!origin.empty() && !same_origin && !config_.origins.contains(origin))
@@ -167,13 +172,15 @@ Response Router::handle(const Request& request) {
 
     if (config_.precheck) {
         if (const auto refusal = config_.precheck(request)) {
-            if (config_.audit) config_.audit("api", "api.denied", {{"reason", *refusal}, {"path", request.target}});
+            if (config_.audit)
+                config_.audit("api", "api.denied", {{"reason", *refusal}, {"path", request.target}});
             return failure(403, "identity_required", *refusal, request);
         }
     }
 
     if (request.method == "GET" && request.target == "/v1/health")
-        return reply(200, Json{{"ok", true}, {"data", config_.health ? config_.health() : Json::object()}}, request);
+        return reply(200, Json{{"ok", true}, {"data", config_.health ? config_.health() : Json::object()}},
+                     request);
 
     if (request.method == "GET") {
         for (const auto& asset : config_.assets) {
@@ -182,7 +189,8 @@ Response Router::handle(const Request& request) {
             page.content_type = std::string(asset.content_type) + "; charset=utf-8";
             page.body = std::string(asset.body);
             page.headers["Content-Security-Policy"] =
-                "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; "
+                "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' "
+                "data:; "
                 "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
             page.headers["X-Frame-Options"] = "DENY";
             page.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
@@ -192,7 +200,8 @@ Response Router::handle(const Request& request) {
 
     const auto header = std::string(request.header("authorization"));
     std::optional<Device> device;
-    if (header.starts_with("Bearer ") && config_.devices) device = config_.devices->authenticate(header.substr(7), now);
+    if (header.starts_with("Bearer ") && config_.devices)
+        device = config_.devices->authenticate(header.substr(7), now);
     if (!device) {
         if (!take_failure_slot()) return failure(429, "rate_limited", "Too many failed attempts.", request);
         return failure(401, "unauthorized", "A valid device token is required.", request);
@@ -218,7 +227,8 @@ Response Router::handle(const Request& request) {
     const bool mutating = request.method != "GET";
     Json body = Json::object();
     if (mutating) {
-        if (!request.body.empty() && !lower(std::string(request.header("content-type"))).starts_with("application/json"))
+        if (!request.body.empty() &&
+            !lower(std::string(request.header("content-type"))).starts_with("application/json"))
             return failure(415, "unsupported_media_type", "Send application/json.", request);
         const auto timestamp = std::string(request.header("x-hg-timestamp"));
         const auto nonce = std::string(request.header("x-hg-nonce"));
@@ -226,28 +236,36 @@ Response Router::handle(const Request& request) {
         const auto [ptr, ec] = std::from_chars(timestamp.data(), timestamp.data() + timestamp.size(), sent);
         if (timestamp.empty() || ec != std::errc{} || ptr != timestamp.data() + timestamp.size() ||
             std::abs(now - sent) > kSkewSeconds || !nonce_shape(nonce))
-            return failure(400, "replay_protection", "A fresh X-HG-Timestamp and X-HG-Nonce are required.", request);
+            return failure(400, "replay_protection", "A fresh X-HG-Timestamp and X-HG-Nonce are required.",
+                           request);
         if (!fresh_nonce(device->id + ":" + nonce, now))
             return failure(409, "replayed", "This request was already used.", request);
         if (!request.body.empty()) {
             if (!nesting_within(request.body, kMaxJsonDepth))
                 return failure(400, "bad_request", "The body is nested too deeply.", request);
             body = Json::parse(request.body, nullptr, false);
-            if (!body.is_object()) return failure(400, "bad_request", "The body must be a JSON object.", request);
+            if (!body.is_object())
+                return failure(400, "bad_request", "The body must be a JSON object.", request);
         }
     }
 
     if (is_devices) {
         Json rows = Json::array();
         for (const auto& d : config_.devices->list())
-            rows.push_back({{"id", d.id}, {"name", d.name}, {"scope", scope_name(d.scope)}, {"created", d.created},
-                            {"expires", d.expires}, {"last_seen", d.last_seen}, {"revoked", d.revoked},
+            rows.push_back({{"id", d.id},
+                            {"name", d.name},
+                            {"scope", scope_name(d.scope)},
+                            {"created", d.created},
+                            {"expires", d.expires},
+                            {"last_seen", d.last_seen},
+                            {"revoked", d.revoked},
                             {"current", d.id == device->id}});
         return reply(200, Json{{"ok", true}, {"data", rows}}, request);
     }
     if (is_logout) {
         config_.devices->revoke(device->id);
-        if (config_.audit) config_.audit("device:" + device->id, "api.device.signed_out", {{"name", device->name}});
+        if (config_.audit)
+            config_.audit("device:" + device->id, "api.device.signed_out", {{"name", device->name}});
         return reply(200, Json{{"ok", true}, {"data", Json::object()}}, request);
     }
     if (is_stepup) {
@@ -266,9 +284,10 @@ Response Router::handle(const Request& request) {
         auto& [until, count] = pin_failures_[device->id];
         if (!ok) {
             if (++count >= 5) {
-                until = now + 60 * std::min(count - 4, 30);
+                until = now + std::int64_t{60} * std::min(count - 4, 30);
             }
-            if (config_.audit) config_.audit("device:" + device->id, "api.stepup.denied", {{"name", device->name}});
+            if (config_.audit)
+                config_.audit("device:" + device->id, "api.stepup.denied", {{"name", device->name}});
             return failure(401, "unauthorized", "The PIN is not correct.", request);
         }
         count = 0;
@@ -291,7 +310,8 @@ Response Router::handle(const Request& request) {
     try {
         auto data = config_.gateway(route->command, args, *device);
         if (route->risk != Risk::Read && config_.audit)
-            config_.audit("device:" + device->id, std::string("api.") + route->command, {{"name", device->name}});
+            config_.audit("device:" + device->id, std::string("api.") + route->command,
+                          {{"name", device->name}});
         return reply(200, Json{{"ok", true}, {"data", std::move(data)}}, request);
     } catch (const Failure& e) {
         return failure(status_for(e.code), e.code, e.what(), request);

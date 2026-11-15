@@ -21,7 +21,9 @@ struct FakeHost final : api::Host {
     [[nodiscard]] std::vector<std::uint8_t> key() const override { return std::vector<std::uint8_t>(32, 3); }
 };
 
-sys::HttpsResponse ok(const Json& result) { return {200, Json{{"success", true}, {"result", result}}.dump(), {}}; }
+sys::HttpsResponse ok(const Json& result) {
+    return {200, Json{{"success", true}, {"result", result}}.dump(), {}};
+}
 
 struct Fixture {
     FakeHost host;
@@ -38,15 +40,16 @@ struct Fixture {
         remote = std::make_unique<RemoteAccess>(
             *api, dir,
             [this](const sys::HttpsRequest& r) {
-                calls.push_back(r.method + " " + r.url.substr(r.url.find("/v4") == std::string::npos ? 0 : r.url.find("/v4") + 3));
+                calls.push_back(
+                    r.method + " " +
+                    r.url.substr(r.url.find("/v4") == std::string::npos ? 0 : r.url.find("/v4") + 3));
                 if (script.empty()) return ok(Json::object());
                 auto reply = script.front();
                 script.erase(script.begin());
                 return reply;
             },
-            [](const cloudflare::LaunchSpec&, cloudflare::LineSink) -> std::unique_ptr<cloudflare::RunningProcess> {
-                throw std::runtime_error("not expected");
-            },
+            [](const cloudflare::LaunchSpec&, cloudflare::LineSink)
+                -> std::unique_ptr<cloudflare::RunningProcess> { throw std::runtime_error("not expected"); },
             std::vector<std::filesystem::path>{dir / "bin"});
     }
     ~Fixture() {
@@ -55,12 +58,18 @@ struct Fixture {
         std::filesystem::remove_all(dir);
     }
     RemoteAccess::SetupRequest request() {
-        return {std::string(40, 'x'), "0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210",
-                "hg.example.com", {"owner@example.com"}};
+        return {std::string(40, 'x'),
+                "0123456789abcdef0123456789abcdef",
+                "fedcba9876543210fedcba9876543210",
+                "hg.example.com",
+                {"owner@example.com"}};
     }
     void happy_script() {
-        script = {ok(Json::object()), ok({{"auth_domain", "team.cloudflareaccess.com"}}),
-                  ok({{"id", "11111111-2222-3333-4444-555555555555"}}), ok(Json::object()), ok({{"id", "pol"}}),
+        script = {ok(Json::object()),
+                  ok({{"auth_domain", "team.cloudflareaccess.com"}}),
+                  ok({{"id", "11111111-2222-3333-4444-555555555555"}}),
+                  ok(Json::object()),
+                  ok({{"id", "pol"}}),
                   ok({{"id", "app"}, {"aud", "aud-tag"}})};
     }
 };
@@ -87,12 +96,16 @@ TEST_CASE("setup creates the tunnel, DNS record and Access policy in order", "[r
 
 TEST_CASE("a failed setup removes what it created", "[remote][integration]") {
     Fixture f;
-    f.script = {ok(Json::object()), ok({{"auth_domain", "team.cloudflareaccess.com"}}),
-                ok({{"id", "11111111-2222-3333-4444-555555555555"}}), ok(Json::object()), ok({{"id", "pol"}}),
+    f.script = {ok(Json::object()),
+                ok({{"auth_domain", "team.cloudflareaccess.com"}}),
+                ok({{"id", "11111111-2222-3333-4444-555555555555"}}),
+                ok(Json::object()),
+                ok({{"id", "pol"}}),
                 {403, R"({"success":false,"errors":[{"message":"Access is not enabled"}]})", {}}};
     CHECK_THROWS_AS(f.remote->setup(f.request()), Failure);
     CHECK(f.remote->status()["configured"] == false);
-    const auto undone = std::count_if(f.calls.begin(), f.calls.end(), [](const std::string& c) { return c.starts_with("DELETE"); });
+    const auto undone = std::count_if(f.calls.begin(), f.calls.end(),
+                                      [](const std::string& c) { return c.starts_with("DELETE"); });
     CHECK(undone >= 2);  // the DNS record and the tunnel
 }
 
@@ -148,9 +161,11 @@ TEST_CASE("the secret is stored protected and the configuration survives a resta
     CHECK(json["secret"].get<std::string>().size() > 100);  // DPAPI blob, not the 44-character base64 secret
     CHECK(json["secret"].get<std::string>().find('=') == std::string::npos);
 
-    RemoteAccess again(*f.api, f.dir, [](const sys::HttpsRequest&) { return sys::HttpsResponse{}; },
-                       [](const cloudflare::LaunchSpec&, cloudflare::LineSink) -> std::unique_ptr<cloudflare::RunningProcess> { return nullptr; },
-                       {f.dir / "bin"});
+    RemoteAccess again(
+        *f.api, f.dir, [](const sys::HttpsRequest&) { return sys::HttpsResponse{}; },
+        [](const cloudflare::LaunchSpec&,
+           cloudflare::LineSink) -> std::unique_ptr<cloudflare::RunningProcess> { return nullptr; },
+        {f.dir / "bin"});
     CHECK(again.status()["configured"] == true);
 }
 
@@ -160,9 +175,11 @@ TEST_CASE("a damaged configuration is forgotten, not run", "[remote][security]")
         std::ofstream out(f.dir / "remote.json", std::ios::binary | std::ios::trunc);
         out << R"({"configured":true,"enabled":true,"hostname":"evil host","tunnel_id":"x","secret":"00"})";
     }
-    RemoteAccess again(*f.api, f.dir, [](const sys::HttpsRequest&) { return sys::HttpsResponse{}; },
-                       [](const cloudflare::LaunchSpec&, cloudflare::LineSink) -> std::unique_ptr<cloudflare::RunningProcess> { return nullptr; },
-                       {f.dir / "bin"});
+    RemoteAccess again(
+        *f.api, f.dir, [](const sys::HttpsRequest&) { return sys::HttpsResponse{}; },
+        [](const cloudflare::LaunchSpec&,
+           cloudflare::LineSink) -> std::unique_ptr<cloudflare::RunningProcess> { return nullptr; },
+        {f.dir / "bin"});
     CHECK(again.status()["configured"] == false);
 }
 

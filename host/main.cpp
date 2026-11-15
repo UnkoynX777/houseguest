@@ -199,12 +199,12 @@ void open_recovery() {
 Json reveal_in_explorer(const std::string& utf8) {
     const auto target = houseguest::system::path_from_utf8(utf8);
     std::error_code ec;
-    if (utf8.empty() || utf8.size() > 1024 || !target.is_absolute() || !houseguest::system::is_local_disk_path(target) ||
-        !std::filesystem::exists(target, ec))
+    if (utf8.empty() || utf8.size() > 1024 || !target.is_absolute() ||
+        !houseguest::system::is_local_disk_path(target) || !std::filesystem::exists(target, ec))
         return {{"opened", false}};
     if (std::filesystem::is_directory(target, ec))
-        return {{"opened", reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", target.c_str(), nullptr, nullptr,
-                                                                    SW_SHOWNORMAL)) > 32}};
+        return {{"opened", reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", target.c_str(), nullptr,
+                                                                   nullptr, SW_SHOWNORMAL)) > 32}};
     PIDLIST_ABSOLUTE pidl = ILCreateFromPathW(target.c_str());
     if (!pidl) return {{"opened", false}};
     const bool opened = SUCCEEDED(SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0));
@@ -221,7 +221,8 @@ void handle_host_command(const Json& id, const std::string& command, const Json&
         if (const auto it = args.find("sources"); it != args.end() && it->is_array()) {
             for (const auto& item : *it) {
                 if (sources.size() >= 6 || !item.is_object()) break;
-                sources.push_back({item.value("kind", std::string()), item.value("path", std::string()), item.value("index", 0)});
+                sources.push_back({item.value("kind", std::string()), item.value("path", std::string()),
+                                   item.value("index", 0)});
             }
         }
         if (!g.icons || path.empty() || path.size() > 1024) {
@@ -253,13 +254,16 @@ void handle_host_command(const Json& id, const std::string& command, const Json&
         data = reveal_in_explorer(args.value("path", std::string()));
     } else if (command == "host.window") {
         const auto action = args.value("action", std::string());
-        if (action == "minimize") PostMessageW(g.window, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-        else if (action == "close") PostMessageW(g.window, WM_CLOSE, 0, 0);
+        if (action == "minimize")
+            PostMessageW(g.window, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+        else if (action == "close")
+            PostMessageW(g.window, WM_CLOSE, 0, 0);
         else if (action == "menu") {
             RECT r{};
             GetWindowRect(g.window, &r);
-            const HMENU menu = GetSystemMenu(g.window, FALSE);
-            const int chosen = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN, r.left + 8, r.top + 40, 0, g.window, nullptr);
+            HMENU menu = GetSystemMenu(g.window, FALSE);
+            const int chosen = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN, r.left + 8, r.top + 40, 0,
+                                              g.window, nullptr);
             if (chosen != 0) PostMessageW(g.window, WM_SYSCOMMAND, static_cast<WPARAM>(chosen), 0);
         }
         data = {{"ok", true}};
@@ -642,8 +646,9 @@ HWND create_main_window(HINSTANCE instance, bool& maximized) {
 
     const auto initial = host::initial_window(g.settings.placement);
     const RECT& r = initial.bounds;
-    HWND window = CreateWindowExW(0, kWindowClass, L"Houseguest", WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, r.left, r.top,
-                                  r.right - r.left, r.bottom - r.top, nullptr, nullptr, instance, nullptr);
+    HWND window =
+        CreateWindowExW(0, kWindowClass, L"Houseguest", WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, r.left,
+                        r.top, r.right - r.left, r.bottom - r.top, nullptr, nullptr, instance, nullptr);
     maximized = initial.maximized;
     const MARGINS frame{1, 1, 1, 1};
     DwmExtendFrameIntoClientArea(window, &frame);

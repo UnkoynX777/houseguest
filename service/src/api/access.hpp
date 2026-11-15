@@ -15,9 +15,9 @@ namespace houseguest::service::api {
 
 struct AccessConfig {
     bool enabled = false;
-    std::string team_domain;  // team.cloudflareaccess.com
-    std::string audience;     // Access application AUD tag
-    std::string hostname;     // public hostname served by the tunnel
+    std::string team_domain;          // team.cloudflareaccess.com
+    std::string audience;             // Access application AUD tag
+    std::string hostname;             // public hostname served by the tunnel
     std::vector<std::string> emails;  // optional extra allowlist on top of the Access policy
 };
 

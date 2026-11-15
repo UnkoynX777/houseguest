@@ -35,6 +35,7 @@ export const app = reactive({
   prefs: { minimize_to_tray: true, start_with_windows: false } as HostPrefs,
   // What the owner is looking at, offered to the assistant only if they allowed sharing it.
   context: {} as Record<string, string>,
+  assistantDraft: '',
 });
 
 const statusInterval = 5000;

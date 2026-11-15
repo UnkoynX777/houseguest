@@ -15,7 +15,7 @@ struct HttpsRequest {
     std::vector<std::pair<std::string, std::string>> headers;
     std::string body;
     int timeout_ms = 15000;
-    std::size_t max_response = 4 * 1024 * 1024;
+    std::size_t max_response = std::size_t{4} * 1024 * 1024;
 };
 
 struct HttpsResponse {
@@ -28,8 +28,8 @@ struct HttpsResponse {
 // Called with each piece of the response as it arrives; returning false abandons the request.
 using ChunkSink = std::function<bool(std::string_view)>;
 
-// HTTPS through WinHTTP with the system trust store. Certificate errors are never ignored, plain http is refused,
-// TLS 1.2 is the floor (1.3 where Windows offers it) and redirects never leave https.
+// HTTPS through WinHTTP with the system trust store. Certificate errors are never ignored, plain http is
+// refused, TLS 1.2 is the floor (1.3 where Windows offers it) and redirects never leave https.
 HttpsResponse https_request(const HttpsRequest& request, const ChunkSink& sink = nullptr,
                             const std::atomic<bool>* cancel = nullptr);
 

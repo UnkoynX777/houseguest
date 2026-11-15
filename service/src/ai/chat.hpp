@@ -13,7 +13,8 @@ public:
     virtual ~ToolHost() = default;
     // Function declarations in the shape Gemini expects.
     [[nodiscard]] virtual core::Json declarations() const = 0;
-    // Runs one tool. It validates its own arguments and throws or returns {"error": ...} for anything it refuses.
+    // Runs one tool. It validates its own arguments and throws or returns {"error": ...} for anything it
+    // refuses.
     virtual core::Json call(const std::string& name, const core::Json& args) = 0;
 };
 
@@ -36,8 +37,8 @@ inline constexpr std::size_t kMaxToolResult = 16 * 1024;
 
 [[nodiscard]] std::string system_instruction();
 
-// Drives the conversation: sends the history, runs the tools the model asks for, feeds the results back and stops
-// when the model answers in text. Tool output is wrapped as untrusted data on every round.
+// Drives the conversation: sends the history, runs the tools the model asks for, feeds the results back and
+// stops when the model answers in text. Tool output is wrapped as untrusted data on every round.
 class ChatRunner {
 public:
     ChatRunner(Gemini& gemini, ToolHost& tools) : gemini_(gemini), tools_(tools) {}

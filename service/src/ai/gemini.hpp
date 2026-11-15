@@ -10,8 +10,8 @@
 
 namespace houseguest::service::ai {
 
-using StreamTransport = std::function<system::HttpsResponse(const system::HttpsRequest&, const system::ChunkSink&,
-                                                            const std::atomic<bool>*)>;
+using StreamTransport = std::function<system::HttpsResponse(
+    const system::HttpsRequest&, const system::ChunkSink&, const std::atomic<bool>*)>;
 
 struct FunctionCall {
     std::string name;
@@ -38,8 +38,8 @@ private:
     std::string buffer_;
 };
 
-// Google Gemini REST client. The API key travels only in the x-goog-api-key header and never in an address, a log
-// or an error message.
+// Google Gemini REST client. The API key travels only in the x-goog-api-key header and never in an address, a
+// log or an error message.
 class Gemini {
 public:
     Gemini(StreamTransport transport, std::string api_key, std::string model);
@@ -52,7 +52,8 @@ public:
     };
     [[nodiscard]] ModelList list_models();
 
-    [[nodiscard]] Turn generate(const core::Json& contents, const core::Json& tools, const std::string& system_instruction,
+    [[nodiscard]] Turn generate(const core::Json& contents, const core::Json& tools,
+                                const std::string& system_instruction,
                                 const std::function<void(const std::string&)>& on_text,
                                 const std::atomic<bool>* cancel);
 

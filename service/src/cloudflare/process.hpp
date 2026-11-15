@@ -17,10 +17,11 @@ namespace houseguest::service::cloudflare {
 // True when the file carries a valid Authenticode signature issued to Cloudflare.
 [[nodiscard]] bool is_official_cloudflared(const std::filesystem::path& file, std::string* detail = nullptr);
 
-[[nodiscard]] std::optional<std::filesystem::path> locate_cloudflared(const std::vector<std::filesystem::path>& folders);
+[[nodiscard]] std::optional<std::filesystem::path> locate_cloudflared(
+    const std::vector<std::filesystem::path>& folders);
 
-// Downloads the official Windows build over HTTPS, checks its signature and installs it atomically. The file is
-// discarded unless the signature is valid and names Cloudflare.
+// Downloads the official Windows build over HTTPS, checks its signature and installs it atomically. The file
+// is discarded unless the signature is valid and names Cloudflare.
 bool install_cloudflared(const Transport& transport, const std::filesystem::path& folder, std::string& error);
 
 // Gives a folder a DACL that admits only SYSTEM and administrators.

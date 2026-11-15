@@ -27,8 +27,8 @@ struct LogEvent {
 // Reads one line of cloudflared output. Anything that looks like a credential is removed from the text.
 [[nodiscard]] LogEvent classify_log_line(const std::string& line);
 
-// Restart delays grow 1, 2, 4 ... seconds up to five minutes, restart after a stable run begins again from one
-// second, and more than six restarts in ten minutes stops the supervisor instead of spinning.
+// Restart delays grow 1, 2, 4 ... seconds up to five minutes, restart after a stable run begins again from
+// one second, and more than six restarts in ten minutes stops the supervisor instead of spinning.
 class Backoff {
 public:
     using Clock = std::chrono::steady_clock;
@@ -76,15 +76,16 @@ struct TunnelSettings {
                                         const std::filesystem::path& credentials);
 [[nodiscard]] std::string render_credentials(const TunnelSettings& settings);
 
-// Runs one cloudflared process at a time and keeps it connected. The configuration and the credentials file exist
-// only while the tunnel runs and are removed when it stops. Nothing else in the service depends on this class.
+// Runs one cloudflared process at a time and keeps it connected. The configuration and the credentials file
+// exist only while the tunnel runs and are removed when it stops. Nothing else in the service depends on this
+// class.
 class TunnelManager {
 public:
     TunnelManager(Launcher launcher, std::filesystem::path work_directory);
     ~TunnelManager();
 
-    bool start(const std::filesystem::path& executable, const TunnelSettings& settings, std::uint16_t local_port,
-               std::string& error);
+    bool start(const std::filesystem::path& executable, const TunnelSettings& settings,
+               std::uint16_t local_port, std::string& error);
     void stop();
 
     [[nodiscard]] TunnelState state() const;
@@ -95,7 +96,7 @@ public:
     void set_delay_unit(std::chrono::milliseconds unit) { unit_ = unit; }
 
 private:
-    void supervise(std::stop_token stop);
+    void supervise(const std::stop_token& stop);
     void note(LogKind kind, const std::string& text);
     void remove_files();
 

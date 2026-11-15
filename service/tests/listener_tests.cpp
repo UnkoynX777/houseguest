@@ -16,7 +16,10 @@ using namespace houseguest::service::api;
 namespace {
 
 struct Winsock {
-    Winsock() { WSADATA d{}; WSAStartup(MAKEWORD(2, 2), &d); }
+    Winsock() {
+        WSADATA d{};
+        WSAStartup(MAKEWORD(2, 2), &d);
+    }
     ~Winsock() { WSACleanup(); }
 };
 
@@ -41,7 +44,8 @@ std::string exchange(std::uint16_t port, const std::string& request) {
     send(s, request.data(), static_cast<int>(request.size()), 0);
     std::string reply;
     char buffer[2048];
-    for (int n; (n = recv(s, buffer, sizeof(buffer), 0)) > 0;) reply.append(buffer, static_cast<std::size_t>(n));
+    for (int n; (n = recv(s, buffer, sizeof(buffer), 0)) > 0;)
+        reply.append(buffer, static_cast<std::size_t>(n));
     closesocket(s);
     return reply;
 }
@@ -61,7 +65,8 @@ TEST_CASE("the listener takes a free port from Windows and serves on it", "[list
     std::string error;
     REQUIRE(listener.start(error));
     CHECK(listener.port() != 0);
-    const auto reply = exchange(listener.port(), "POST /v1/x HTTP/1.1\r\nHost: a\r\nContent-Length: 2\r\n\r\nhi");
+    const auto reply =
+        exchange(listener.port(), "POST /v1/x HTTP/1.1\r\nHost: a\r\nContent-Length: 2\r\n\r\nhi");
     CHECK(reply.starts_with("HTTP/1.1 200 OK"));
     CHECK(reply.ends_with("POST /v1/x hi"));
     listener.stop();
@@ -127,17 +132,22 @@ TEST_CASE("a listener can be restarted and gets a fresh socket", "[listener]") {
     REQUIRE(listener.start(error));
     listener.stop();
     REQUIRE(listener.start(error));
-    CHECK(exchange(listener.port(), "GET /a HTTP/1.1\r\nHost: a\r\n\r\n").find("GET /a") != std::string::npos);
+    CHECK(exchange(listener.port(), "GET /a HTTP/1.1\r\nHost: a\r\n\r\n").find("GET /a") !=
+          std::string::npos);
 }
 
 TEST_CASE("malformed and oversized requests get an error, not a handler call", "[listener][security]") {
     Winsock winsock;
     std::atomic<int> calls = 0;
-    Listener listener([&](const Request&) { ++calls; return Response{}; });
+    Listener listener([&](const Request&) {
+        ++calls;
+        return Response{};
+    });
     std::string error;
     REQUIRE(listener.start(error));
     CHECK(exchange(listener.port(), "GARBAGE\r\n\r\n").starts_with("HTTP/1.1 400"));
-    CHECK(exchange(listener.port(), "POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 99999999\r\n\r\n").starts_with("HTTP/1.1 413"));
+    CHECK(exchange(listener.port(), "POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 99999999\r\n\r\n")
+              .starts_with("HTTP/1.1 413"));
     CHECK(calls == 0);
 }
 
@@ -171,7 +181,8 @@ TEST_CASE("concurrent clients are served and the connection cap refuses the exce
     std::vector<std::thread> clients;
     for (int i = 0; i < 12; ++i)
         clients.emplace_back([&] {
-            if (exchange(listener.port(), "GET /c HTTP/1.1\r\nHost: a\r\n\r\n").starts_with("HTTP/1.1 200")) ++ok;
+            if (exchange(listener.port(), "GET /c HTTP/1.1\r\nHost: a\r\n\r\n").starts_with("HTTP/1.1 200"))
+                ++ok;
         });
     for (auto& t : clients) t.join();
     CHECK(ok == 12);

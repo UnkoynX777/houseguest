@@ -1,6 +1,7 @@
 #include "process.hpp"
 
 #include <windows.h>
+
 #include <sddl.h>
 
 #include <algorithm>
@@ -59,10 +60,10 @@ private:
         char buffer[2048];
         for (;;) {
             DWORD n = 0;
-            const HANDLE h = read_.get();
+            HANDLE h = read_.get();
             if (!h || !ReadFile(h, buffer, sizeof(buffer), &n, nullptr) || n == 0) break;
             pending.append(buffer, n);
-            std::size_t newline;
+            std::size_t newline = 0;
             while ((newline = pending.find('\n')) != std::string::npos) {
                 auto line = pending.substr(0, newline);
                 if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -97,9 +98,11 @@ Launcher windows_launcher() {
 
         std::wstring command = quote(spec.executable.wstring());
         for (const auto& argument : spec.arguments) {
-            const int n = MultiByteToWideChar(CP_UTF8, 0, argument.data(), static_cast<int>(argument.size()), nullptr, 0);
+            const int n = MultiByteToWideChar(CP_UTF8, 0, argument.data(), static_cast<int>(argument.size()),
+                                              nullptr, 0);
             std::wstring wide(static_cast<std::size_t>(n), L'\0');
-            MultiByteToWideChar(CP_UTF8, 0, argument.data(), static_cast<int>(argument.size()), wide.data(), n);
+            MultiByteToWideChar(CP_UTF8, 0, argument.data(), static_cast<int>(argument.size()), wide.data(),
+                                n);
             command += L" " + quote(wide);
         }
 
@@ -114,7 +117,8 @@ Launcher windows_launcher() {
         if (!CreateProcessW(spec.executable.c_str(), command.data(), nullptr, nullptr, TRUE,
                             CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_NEW_PROCESS_GROUP, nullptr,
                             spec.directory.empty() ? nullptr : spec.directory.c_str(), &startup, &info))
-            throw std::runtime_error("Windows could not start cloudflared (" + std::to_string(GetLastError()) + ").");
+            throw std::runtime_error("Windows could not start cloudflared (" +
+                                     std::to_string(GetLastError()) + ").");
         Handle process(info.hProcess), thread(info.hThread);
         if (!AssignProcessToJobObject(job.get(), process.get())) {
             TerminateProcess(process.get(), 1);
@@ -122,7 +126,8 @@ Launcher windows_launcher() {
         }
         ResumeThread(thread.get());
         write_end.reset();
-        return std::make_unique<WindowsProcess>(std::move(process), std::move(job), std::move(read_end), std::move(sink));
+        return std::make_unique<WindowsProcess>(std::move(process), std::move(job), std::move(read_end),
+                                                std::move(sink));
     };
 }
 
@@ -132,40 +137,45 @@ bool is_official_cloudflared(const std::filesystem::path& file, std::string* det
         if (detail) *detail = std::move(text);
         return false;
     };
-    if (report.state != system::SignatureState::Valid) return say(std::string("Signature: ") + system::state_name(report.state));
+    if (report.state != system::SignatureState::Valid)
+        return say(std::string("Signature: ") + system::state_name(report.state));
     std::string organization = report.subject.organization + " " + report.subject.common_name;
-    std::ranges::transform(organization, organization.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (organization.find("cloudflare") == std::string::npos) return say("The file is not signed by Cloudflare.");
+    std::ranges::transform(organization, organization.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (organization.find("cloudflare") == std::string::npos)
+        return say("The file is not signed by Cloudflare.");
     if (detail) *detail = report.subject.organization;
     return true;
 }
 
 std::optional<std::filesystem::path> locate_cloudflared(const std::vector<std::filesystem::path>& folders) {
     for (const auto& folder : folders) {
-        const auto candidate = folder / L"cloudflared.exe";
+        auto candidate = folder / L"cloudflared.exe";
         std::error_code ec;
-        if (std::filesystem::is_regular_file(candidate, ec) && is_official_cloudflared(candidate)) return candidate;
+        if (std::filesystem::is_regular_file(candidate, ec) && is_official_cloudflared(candidate))
+            return candidate;
     }
     return std::nullopt;
 }
 
 bool restrict_to_administrators(const std::filesystem::path& folder) {
     PSECURITY_DESCRIPTOR descriptor = nullptr;
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", SDDL_REVISION_1,
-                                                              &descriptor, nullptr))
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
+                                                              SDDL_REVISION_1, &descriptor, nullptr))
         return false;
     std::unique_ptr<void, decltype(&LocalFree)> guard(descriptor, &LocalFree);
     return SetFileSecurityW(folder.c_str(), DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
                             descriptor) != 0;
 }
 
-bool install_cloudflared(const Transport& transport, const std::filesystem::path& folder, std::string& error) {
+bool install_cloudflared(const Transport& transport, const std::filesystem::path& folder,
+                         std::string& error) {
     system::HttpsRequest request;
     request.url = kDownload;
     request.timeout_ms = 60000;
-    request.max_response = 128u * 1024 * 1024;
+    request.max_response = std::size_t{128} * 1024 * 1024;
     const auto response = transport(request);
-    if (!response.ok() || response.body.size() < 1024 * 1024) {
+    if (!response.ok() || response.body.size() < std::size_t{1024} * 1024) {
         error = response.error.empty() ? "The download did not complete." : response.error;
         return false;
     }
@@ -181,7 +191,8 @@ bool install_cloudflared(const Transport& transport, const std::filesystem::path
             return false;
         }
     }
-    // The signature check needs the .exe extension to be meaningful for some Windows versions; verify the staged copy.
+    // The signature check needs the .exe extension to be meaningful for some Windows versions; verify the
+    // staged copy.
     const auto verified = folder / L"cloudflared.verify.exe";
     std::filesystem::rename(staged, verified, ec);
     std::string detail;

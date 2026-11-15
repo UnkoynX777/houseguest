@@ -36,15 +36,17 @@ struct Fixture {
 
 TEST_CASE("assistant and remote commands need the owner's unlocked session", "[controller][security]") {
     Fixture f;
-    for (const char* cmd : {"ai.status", "ai.key.set", "ai.settings.set", "ai.chat.send", "ai.proposal.apply", "api.info",
-                            "api.devices.create", "remote.status", "remote.enable", "remote.setup"}) {
+    for (const char* cmd :
+         {"ai.status", "ai.key.set", "ai.settings.set", "ai.chat.send", "ai.proposal.apply", "api.info",
+          "api.devices.create", "remote.status", "remote.enable", "remote.setup"}) {
         const auto reply = f.call(cmd, Json::object(), false);
         CHECK(reply["ok"] == false);
         CHECK(reply["error"]["code"] == "unauthorized");
     }
 }
 
-TEST_CASE("the assistant is off by default and cannot be used before it is configured", "[controller][assistant]") {
+TEST_CASE("the assistant is off by default and cannot be used before it is configured",
+          "[controller][assistant]") {
     Fixture f;
     const auto status = f.call("ai.status");
     REQUIRE(status["ok"] == true);
@@ -67,8 +69,9 @@ TEST_CASE("remote access is unavailable and inert without the local API", "[cont
 
 TEST_CASE("the unlocked local session cannot reach assistant commands remotely", "[controller][security]") {
     Fixture f;
-    for (const char* cmd : {"ai.chat.send", "ai.proposal.apply", "ai.key.set", "remote.enable", "api.devices.create",
-                            "settings.set", "pin.change", "backup.restore", "recover", "unlock"}) {
+    for (const char* cmd :
+         {"ai.chat.send", "ai.proposal.apply", "ai.key.set", "remote.enable", "api.devices.create",
+          "settings.set", "pin.change", "backup.restore", "recover", "unlock"}) {
         try {
             (void)f.controller->run_api(cmd, Json::object(), "test");
             FAIL(std::string(cmd) + " should not be reachable from the API");
@@ -81,7 +84,8 @@ TEST_CASE("the unlocked local session cannot reach assistant commands remotely",
 
 TEST_CASE("a remote session cannot be started in audit mode or past warnings", "[controller][security]") {
     Fixture f;
-    const auto args = Controller::sanitize_api_args("session.start", {{"audit_only", true}, {"confirm_warnings", true}});
+    const auto args =
+        Controller::sanitize_api_args("session.start", {{"audit_only", true}, {"confirm_warnings", true}});
     CHECK(args["audit_only"] == false);
     CHECK(args["confirm_warnings"] == false);
 }

@@ -30,8 +30,8 @@ struct AccessApp {
     std::string audience;
 };
 
-// Cloudflare REST client for the one-time setup of a tunnel, its DNS record and its Access policy. The API token
-// is held only for the duration of the setup and never appears in an error message.
+// Cloudflare REST client for the one-time setup of a tunnel, its DNS record and its Access policy. The API
+// token is held only for the duration of the setup and never appears in an error message.
 class Api {
 public:
     Api(Transport transport, std::string token);
@@ -42,10 +42,12 @@ public:
     [[nodiscard]] std::string access_domain(const std::string& account_id);
     [[nodiscard]] TunnelCredentials create_tunnel(const std::string& account_id, const std::string& name);
     void delete_tunnel(const std::string& account_id, const std::string& tunnel_id);
-    void create_dns_record(const std::string& zone_id, const std::string& hostname, const std::string& tunnel_id);
+    void create_dns_record(const std::string& zone_id, const std::string& hostname,
+                           const std::string& tunnel_id);
     void delete_dns_record(const std::string& zone_id, const std::string& hostname);
     [[nodiscard]] AccessApp create_access_app(const std::string& account_id, const std::string& name,
-                                              const std::string& hostname, const std::vector<std::string>& emails);
+                                              const std::string& hostname,
+                                              const std::vector<std::string>& emails);
     void delete_access_app(const std::string& account_id, const std::string& app_id);
     [[nodiscard]] core::Json tunnel_status(const std::string& account_id, const std::string& tunnel_id);
 

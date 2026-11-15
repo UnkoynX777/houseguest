@@ -20,10 +20,10 @@
 #include "catalog.hpp"
 #include "change_watcher.hpp"
 #include "continuity.hpp"
-#include "remote.hpp"
 #include "discovery.hpp"
 #include "file_details.hpp"
 #include "lineage.hpp"
+#include "remote.hpp"
 #include "store.hpp"
 #include "supervisor.hpp"
 
@@ -42,11 +42,13 @@ public:
     core::Json handle(const Caller& caller, const core::Json& request);
     void shutdown();
     void set_ipc_stats(std::function<core::Json()> provider);
-    // Entry points of the local API; they apply the API allowlist and never reach owner-only commands outside it.
+    // Entry points of the local API; they apply the API allowlist and never reach owner-only commands outside
+    // it.
     core::Json run_api(const std::string& command, const core::Json& args, const std::string& device_id);
     bool api_check_pin(const std::string& pin);
     static core::Json sanitize_api_args(const std::string& command, const core::Json& args);
-    void note_reply(const core::Json& request, std::size_t bytes, std::chrono::steady_clock::duration encoding);
+    void note_reply(const core::Json& request, std::size_t bytes,
+                    std::chrono::steady_clock::duration encoding);
 
 private:
     enum class Access { Anyone, Elevated, Owner };
@@ -170,9 +172,10 @@ private:
     std::mutex stats_mutex_;
     std::map<std::string, CommandStat> command_stats_;
 
-    // Presentation cache for the library: the compiled profile and the decision for each listed program, valid
-    // for one revision of the stored policy and for the file's size and write time. It never feeds enforcement;
-    // the supervisor evaluates against the policy it was handed and re-evaluates when that policy is replaced.
+    // Presentation cache for the library: the compiled profile and the decision for each listed program,
+    // valid for one revision of the stored policy and for the file's size and write time. It never feeds
+    // enforcement; the supervisor evaluates against the policy it was handed and re-evaluates when that
+    // policy is replaced.
     struct CachedDecision {
         std::int64_t size = 0;
         std::int64_t modified = 0;

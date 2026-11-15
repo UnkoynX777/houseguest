@@ -19,18 +19,20 @@ namespace houseguest::service::api {
 class Host {
 public:
     virtual ~Host() = default;
-    virtual core::Json run(const std::string& command, const core::Json& args, const std::string& device_id) = 0;
+    virtual core::Json run(const std::string& command, const core::Json& args,
+                           const std::string& device_id) = 0;
     virtual bool check_pin(const std::string& pin) = 0;
     virtual void audit(const std::string& actor, const std::string& event, core::Json detail) = 0;
     virtual core::Json health() = 0;
     [[nodiscard]] virtual std::vector<std::uint8_t> key() const = 0;
 };
 
-// Owns the loopback listener, the router and the paired devices. Devices are kept in a file protected by an HMAC
-// under a key derived from the service state key; a file that fails the check is discarded, never trusted.
+// Owns the loopback listener, the router and the paired devices. Devices are kept in a file protected by an
+// HMAC under a key derived from the service state key; a file that fails the check is discarded, never
+// trusted.
 class ApiService {
 public:
-    ApiService(Host& host, std::filesystem::path directory);
+    ApiService(Host& host, const std::filesystem::path& directory);
     ~ApiService();
 
     bool start(std::string& error);
@@ -44,7 +46,8 @@ public:
     bool revoke(const std::string& id);
     void revoke_all();
     [[nodiscard]] core::Json devices_json() const;
-    // Lets the Cloudflare layer register the public hostname and its allowed origin once a tunnel is configured.
+    // Lets the Cloudflare layer register the public hostname and its allowed origin once a tunnel is
+    // configured.
     void allow_hostname(const std::string& hostname);
     [[nodiscard]] AccessGate& access() { return gate_; }
 

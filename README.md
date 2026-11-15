@@ -81,7 +81,7 @@ Allowing a program does not allow everything it starts. A program is an applicat
 
 ## Documentation
 
-[Remote access](docs/remote-access.md) · [Assistant](docs/assistant.md) · [FAQ](docs/faq.md) · [Compatibility](docs/compatibility.md) · [Troubleshooting](docs/troubleshooting.md) · [Use cases](docs/use-cases.md) · [Architecture](docs/architecture.md) · [Threat model](docs/threat-model.md) · [Privacy](docs/privacy.md) · [Performance](docs/performance.md) · [Roadmap](docs/roadmap.md) · [Website](https://unkoynx777.github.io/houseguest/)
+[Remote access](docs/remote-access.md) · [Assistant](docs/assistant.md) · [Upgrading](docs/upgrading.md) · [FAQ](docs/faq.md) · [Compatibility](docs/compatibility.md) · [Troubleshooting](docs/troubleshooting.md) · [Use cases](docs/use-cases.md) · [Architecture](docs/architecture.md) · [Threat model](docs/threat-model.md) · [Privacy](docs/privacy.md) · [Performance](docs/performance.md) · [Roadmap](docs/roadmap.md) · [Website](https://unkoynx777.github.io/houseguest/)
 
 ## Build from source
 

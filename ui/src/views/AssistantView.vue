@@ -57,6 +57,10 @@ const suggestions = computed(() => [
 ]);
 
 async function load() {
+  if (app.assistantDraft) {
+    draft.value = app.assistantDraft;
+    app.assistantDraft = '';
+  }
   settings.value = await call<Settings>('ai.status').catch(() => null);
   if (!settings.value) return;
   showSettings.value = !(settings.value.enabled && settings.value.has_key);
@@ -121,6 +125,7 @@ async function send(text = draft.value) {
   const answer: Message = { role: 'assistant', text: '', live: true, tools: [], proposals: [] };
   messages.value.push(answer);
   const context = settings.value?.share_context ? { view: app.route, ...app.context } : {};
+  app.context = {};
   try {
     const started = await call<{ job: string }>('ai.chat.send', { chat_id: chatId.value, text, context });
     job.value = started.job;

@@ -14,7 +14,8 @@ bool token_char(char c) {
 
 std::string lower(std::string_view text) {
     std::string out(text);
-    std::ranges::transform(out, out.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::ranges::transform(out, out.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return out;
 }
 
@@ -26,7 +27,9 @@ ParseResult fail(int status, std::string reason, ParseStatus kind = ParseStatus:
     return result;
 }
 
-ParseResult too_large_headers() { return fail(431, "Header section is too large.", ParseStatus::TooLarge); }
+ParseResult too_large_headers() {
+    return fail(431, "Header section is too large.", ParseStatus::TooLarge);
+}
 
 }  // namespace
 
@@ -45,9 +48,11 @@ ParseResult parse_request(std::string_view buffer) {
     const auto head = buffer.substr(0, end);
     for (std::size_t i = 0; i < head.size(); ++i) {
         const auto c = static_cast<unsigned char>(head[i]);
-        if (c == '\r' && (i + 1 >= head.size() || head[i + 1] != '\n')) return fail(400, "Bare carriage return.");
+        if (c == '\r' && (i + 1 >= head.size() || head[i + 1] != '\n'))
+            return fail(400, "Bare carriage return.");
         if (c == '\n' && (i == 0 || head[i - 1] != '\r')) return fail(400, "Bare line feed.");
-        if (c != '\r' && c != '\n' && c != '\t' && (c < 0x20 || c == 0x7f)) return fail(400, "Control characters.");
+        if (c != '\r' && c != '\n' && c != '\t' && (c < 0x20 || c == 0x7f))
+            return fail(400, "Control characters.");
     }
 
     ParseResult result;
@@ -67,10 +72,12 @@ ParseResult parse_request(std::string_view buffer) {
             request.method = std::string(line.substr(0, a));
             auto target = line.substr(a + 1, b - a - 1);
             const auto version = line.substr(b + 1);
-            if (version != "HTTP/1.1") return fail(version.starts_with("HTTP/") ? 505 : 400, "Unsupported version.");
+            if (version != "HTTP/1.1")
+                return fail(version.starts_with("HTTP/") ? 505 : 400, "Unsupported version.");
             if (request.method.empty() || !std::ranges::all_of(request.method, token_char))
                 return fail(400, "Malformed method.");
-            if (target.empty() || target[0] != '/' || target.starts_with("//")) return fail(400, "Malformed target.");
+            if (target.empty() || target[0] != '/' || target.starts_with("//"))
+                return fail(400, "Malformed target.");
             if (const auto q = target.find('?'); q != std::string_view::npos) {
                 request.query = std::string(target.substr(q + 1));
                 target = target.substr(0, q);
@@ -98,7 +105,8 @@ ParseResult parse_request(std::string_view buffer) {
         position = stop + 2;
     }
 
-    if (request.headers.contains("transfer-encoding")) return fail(501, "Transfer-Encoding is not supported.");
+    if (request.headers.contains("transfer-encoding"))
+        return fail(501, "Transfer-Encoding is not supported.");
     if (request.headers.contains("expect")) return fail(417, "Expect is not supported.");
     std::size_t length = 0;
     if (const auto it = request.headers.find("content-length"); it != request.headers.end()) {
@@ -119,25 +127,44 @@ ParseResult parse_request(std::string_view buffer) {
 
 std::string_view reason_phrase(int status) {
     switch (status) {
-        case 200: return "OK";
-        case 204: return "No Content";
-        case 400: return "Bad Request";
-        case 401: return "Unauthorized";
-        case 403: return "Forbidden";
-        case 404: return "Not Found";
-        case 405: return "Method Not Allowed";
-        case 408: return "Request Timeout";
-        case 409: return "Conflict";
-        case 413: return "Payload Too Large";
-        case 415: return "Unsupported Media Type";
-        case 417: return "Expectation Failed";
-        case 429: return "Too Many Requests";
-        case 431: return "Request Header Fields Too Large";
-        case 500: return "Internal Server Error";
-        case 501: return "Not Implemented";
-        case 503: return "Service Unavailable";
-        case 505: return "HTTP Version Not Supported";
-        default: return "Error";
+        case 200:
+            return "OK";
+        case 204:
+            return "No Content";
+        case 400:
+            return "Bad Request";
+        case 401:
+            return "Unauthorized";
+        case 403:
+            return "Forbidden";
+        case 404:
+            return "Not Found";
+        case 405:
+            return "Method Not Allowed";
+        case 408:
+            return "Request Timeout";
+        case 409:
+            return "Conflict";
+        case 413:
+            return "Payload Too Large";
+        case 415:
+            return "Unsupported Media Type";
+        case 417:
+            return "Expectation Failed";
+        case 429:
+            return "Too Many Requests";
+        case 431:
+            return "Request Header Fields Too Large";
+        case 500:
+            return "Internal Server Error";
+        case 501:
+            return "Not Implemented";
+        case 503:
+            return "Service Unavailable";
+        case 505:
+            return "HTTP Version Not Supported";
+        default:
+            return "Error";
     }
 }
 
@@ -151,7 +178,12 @@ std::string serialize(const Response& response) {
     out += "X-Content-Type-Options: nosniff\r\n";
     out += "Referrer-Policy: no-referrer\r\n";
     out += "Cross-Origin-Resource-Policy: same-origin\r\n";
-    for (const auto& [name, value] : response.headers) out += name + ": " + value + "\r\n";
+    for (const auto& [name, value] : response.headers) {
+        out += name;
+        out += ": ";
+        out += value;
+        out += "\r\n";
+    }
     out += "\r\n";
     out += response.body;
     return out;

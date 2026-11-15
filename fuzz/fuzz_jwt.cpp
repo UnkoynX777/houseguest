@@ -12,7 +12,8 @@ using namespace houseguest::system;
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
     static const std::vector<JwtKey> none;
     const std::string_view text(reinterpret_cast<const char*>(data), size);
-    const auto result = verify_jwt(text, none, {"https://team.cloudflareaccess.com", "aud", 1'800'000'000, 60});
+    const auto result =
+        verify_jwt(text, none, {"https://team.cloudflareaccess.com", "aud", 1'800'000'000, 60});
     if (result.valid) __debugbreak();
     (void)parse_jwks(text);
     (void)base64url_decode(text);

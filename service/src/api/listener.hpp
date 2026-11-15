@@ -14,7 +14,7 @@ namespace houseguest::service::api {
 
 struct ListenerLimits {
     int max_connections = 16;
-    int read_timeout_ms = 5000;   // between reads
+    int read_timeout_ms = 5000;     // between reads
     int request_budget_ms = 10000;  // whole request
 };
 

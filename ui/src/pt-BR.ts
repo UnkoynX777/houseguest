@@ -918,4 +918,6 @@ export const pt: Record<string, string> = {
   'Protection': 'Proteção',
   'Session': 'Sessão',
   'Remote access and the assistant send data to Cloudflare and Google only when you turn them on. Cloudflare can technically read requests it forwards.': 'O acesso remoto e o assistente só enviam dados à Cloudflare e ao Google quando você os liga. A Cloudflare consegue, tecnicamente, ler as requisições que encaminha.',
+  'Ask the assistant': 'Perguntar ao assistente',
+  'Why is {name} allowed or blocked in this profile?': 'Por que {name} está permitido ou bloqueado neste perfil?',
 };

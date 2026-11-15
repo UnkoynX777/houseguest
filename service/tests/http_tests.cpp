@@ -7,11 +7,14 @@
 using namespace houseguest::service::api;
 
 namespace {
-ParseResult parse(const std::string& text) { return parse_request(text); }
+ParseResult parse(const std::string& text) {
+    return parse_request(text);
+}
 }  // namespace
 
 TEST_CASE("a plain request parses with headers and query", "[http]") {
-    const auto r = parse("GET /v1/status?x=1 HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer abc\r\n\r\n");
+    const auto r =
+        parse("GET /v1/status?x=1 HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer abc\r\n\r\n");
     REQUIRE(r.status == ParseStatus::Complete);
     CHECK(r.request.method == "GET");
     CHECK(r.request.target == "/v1/status");
@@ -61,7 +64,8 @@ TEST_CASE("versions other than HTTP/1.1 are refused", "[http]") {
 
 TEST_CASE("size limits are enforced before allocation", "[http][security]") {
     CHECK(parse("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 999999999\r\n\r\n").http_status == 413);
-    CHECK(parse("GET / HTTP/1.1\r\n" + std::string(kMaxHeaderBytes + 1, 'a')).status == ParseStatus::TooLarge);
+    CHECK(parse("GET / HTTP/1.1\r\n" + std::string(kMaxHeaderBytes + 1, 'a')).status ==
+          ParseStatus::TooLarge);
     std::string many = "GET / HTTP/1.1\r\n";
     for (std::size_t i = 0; i <= kMaxHeaders; ++i) many += "X-" + std::to_string(i) + ": v\r\n";
     CHECK(parse(many + "\r\n").http_status == 431);

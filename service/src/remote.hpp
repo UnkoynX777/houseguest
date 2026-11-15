@@ -29,8 +29,9 @@ struct RemoteConfig {
 // Nothing here is needed for enforcement, and nothing starts while remote access is off.
 class RemoteAccess {
 public:
-    RemoteAccess(api::ApiService& api, std::filesystem::path directory, cloudflare::Transport transport,
-                 cloudflare::Launcher launcher, std::vector<std::filesystem::path> program_folders);
+    RemoteAccess(api::ApiService& api, const std::filesystem::path& directory,
+                 cloudflare::Transport transport, cloudflare::Launcher launcher,
+                 std::vector<std::filesystem::path> program_folders);
     ~RemoteAccess();
 
     struct SetupRequest {

@@ -27,8 +27,9 @@ void classify(const system::HttpsResponse& response, std::string& code, std::str
         code = "rate_limited";
         message = "The Gemini usage limit was reached. Wait a moment or choose another model.";
         retry = 30;
-    } else if (response.status == 400 && (api_message.find("API key") != std::string::npos ||
-                                          (api_status == "INVALID_ARGUMENT" && api_message.find("key") != std::string::npos))) {
+    } else if (response.status == 400 &&
+               (api_message.find("API key") != std::string::npos ||
+                (api_status == "INVALID_ARGUMENT" && api_message.find("key") != std::string::npos))) {
         code = "invalid_key";
         message = "Gemini does not accept this API key.";
     } else if (response.status == 401 || response.status == 403) {
@@ -52,8 +53,8 @@ bool valid_model_id(const std::string& id) {
 
 void SseParser::feed(std::string_view chunk, const std::function<void(const Json&)>& on_event) {
     buffer_.append(chunk);
-    if (buffer_.size() > 4 * 1024 * 1024) buffer_.clear();
-    std::size_t newline;
+    if (buffer_.size() > std::size_t{4} * 1024 * 1024) buffer_.clear();
+    std::size_t newline = 0;
     while ((newline = buffer_.find('\n')) != std::string::npos) {
         auto line = buffer_.substr(0, newline);
         buffer_.erase(0, newline + 1);
@@ -73,7 +74,7 @@ Gemini::ModelList Gemini::list_models() {
     system::HttpsRequest request;
     request.url = std::string(kBase) + "/models?pageSize=200";
     request.headers = {{"x-goog-api-key", key_}};
-    request.max_response = 2 * 1024 * 1024;
+    request.max_response = std::size_t{2} * 1024 * 1024;
     const auto response = transport_(request, nullptr, nullptr);
     ModelList list;
     if (!response.ok()) {
@@ -86,7 +87,8 @@ Gemini::ModelList Gemini::list_models() {
         for (const auto& model : doc["models"]) {
             if (!model.is_object() || !model.contains("name") || !model["name"].is_string()) continue;
             bool generates = false;
-            if (model.contains("supportedGenerationMethods") && model["supportedGenerationMethods"].is_array())
+            if (model.contains("supportedGenerationMethods") &&
+                model["supportedGenerationMethods"].is_array())
                 for (const auto& method : model["supportedGenerationMethods"])
                     if (method == "generateContent") generates = true;
             auto name = model["name"].get<std::string>();
@@ -102,7 +104,8 @@ Gemini::ModelList Gemini::list_models() {
 }
 
 Turn Gemini::generate(const Json& contents, const Json& tools, const std::string& system_instruction,
-                      const std::function<void(const std::string&)>& on_text, const std::atomic<bool>* cancel) {
+                      const std::function<void(const std::string&)>& on_text,
+                      const std::atomic<bool>* cancel) {
     Turn turn;
     if (!valid_model_id(model_)) {
         turn.error = "The model name is not valid.";
@@ -134,10 +137,13 @@ Turn Gemini::generate(const Json& contents, const Json& tools, const std::string
             parser.feed(chunk, [&](const Json& event) {
                 if (event.contains("promptFeedback") && event["promptFeedback"].is_object())
                     block_reason = event["promptFeedback"].value("blockReason", block_reason);
-                if (!event.contains("candidates") || !event["candidates"].is_array() || event["candidates"].empty()) return;
+                if (!event.contains("candidates") || !event["candidates"].is_array() ||
+                    event["candidates"].empty())
+                    return;
                 const auto& candidate = event["candidates"][0];
-                if (!candidate.is_object() || !candidate.contains("content") || !candidate["content"].is_object() ||
-                    !candidate["content"].contains("parts") || !candidate["content"]["parts"].is_array())
+                if (!candidate.is_object() || !candidate.contains("content") ||
+                    !candidate["content"].is_object() || !candidate["content"].contains("parts") ||
+                    !candidate["content"]["parts"].is_array())
                     return;
                 for (const auto& part : candidate["content"]["parts"]) {
                     if (!part.is_object()) continue;
@@ -150,17 +156,19 @@ Turn Gemini::generate(const Json& contents, const Json& tools, const std::string
                             turn.calls.push_back(std::move(fc));
                         }
                         parts.push_back(part);
-                    } else if (part.contains("text") && part["text"].is_string() && part.value("thought", false) != true) {
+                    } else if (part.contains("text") && part["text"].is_string() &&
+                               part.value("thought", false) != true) {
                         const auto text = part["text"].get<std::string>();
                         turn.text += text;
                         if (on_text) on_text(text);
-                        if (!parts.empty() && parts.back().contains("text") && !parts.back().contains("thoughtSignature") &&
-                            !part.contains("thoughtSignature"))
+                        if (!parts.empty() && parts.back().contains("text") &&
+                            !parts.back().contains("thoughtSignature") && !part.contains("thoughtSignature"))
                             parts.back()["text"] = parts.back()["text"].get<std::string>() + text;
                         else
                             parts.push_back(part);
                     } else {
-                        parts.push_back(part);  // thought signatures and other parts must be returned unchanged
+                        parts.push_back(
+                            part);  // thought signatures and other parts must be returned unchanged
                     }
                 }
             });

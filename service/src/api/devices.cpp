@@ -19,17 +19,22 @@ std::string hash_token(const std::string& token) {
 
 }  // namespace
 
-const char* scope_name(Scope scope) { return scope == Scope::Write ? "write" : "read"; }
+const char* scope_name(Scope scope) {
+    return scope == Scope::Write ? "write" : "read";
+}
 
 Issued DeviceRegistry::issue(const std::string& name, Scope scope, std::int64_t now) {
-    if (name.empty() || name.size() > 64) throw std::invalid_argument("Device name must be 1 to 64 characters.");
+    if (name.empty() || name.size() > 64)
+        throw std::invalid_argument("Device name must be 1 to 64 characters.");
     std::scoped_lock lock(mutex_);
-    const auto active = std::ranges::count_if(devices_, [&](const Device& d) { return !d.revoked && d.expires > now; });
+    const auto active =
+        std::ranges::count_if(devices_, [&](const Device& d) { return !d.revoked && d.expires > now; });
     if (static_cast<std::size_t>(active) >= kMaxDevices)
         throw Failure("limit", "Revoke a device before pairing another one.");
     Issued issued;
     issued.token = "hgd_" + system::to_hex(system::random_bytes(32));
-    issued.device = {random_id("dev"), name, scope, hash_token(issued.token), now, now + kDeviceLifetime, now, false};
+    issued.device = {random_id("dev"),      name, scope, hash_token(issued.token), now,
+                     now + kDeviceLifetime, now,  false};
     devices_.push_back(issued.device);
     ++revision_;
     return issued;
@@ -48,7 +53,8 @@ std::optional<Device> DeviceRegistry::authenticate(const std::string& token, std
             system::constant_time_equal({a, device.token_hash.size()}, {b, hash.size()}))
             match = &device;
     }
-    if (!match || match->revoked || match->expires <= now || now - match->last_seen > kDeviceIdle) return std::nullopt;
+    if (!match || match->revoked || match->expires <= now || now - match->last_seen > kDeviceIdle)
+        return std::nullopt;
     match->last_seen = now;
     return *match;
 }
@@ -85,8 +91,13 @@ Json DeviceRegistry::to_json() const {
     std::scoped_lock lock(mutex_);
     Json rows = Json::array();
     for (const auto& d : devices_)
-        rows.push_back({{"id", d.id}, {"name", d.name}, {"scope", scope_name(d.scope)}, {"token_hash", d.token_hash},
-                        {"created", d.created}, {"expires", d.expires}, {"last_seen", d.last_seen},
+        rows.push_back({{"id", d.id},
+                        {"name", d.name},
+                        {"scope", scope_name(d.scope)},
+                        {"token_hash", d.token_hash},
+                        {"created", d.created},
+                        {"expires", d.expires},
+                        {"last_seen", d.last_seen},
                         {"revoked", d.revoked}});
     return rows;
 }
