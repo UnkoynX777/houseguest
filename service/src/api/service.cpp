@@ -121,6 +121,7 @@ void ApiService::allow_hostname(const std::string& hostname) {
         }
     }
     config.devices = &devices_;
+    config.assets = panel_assets();
     config.precheck = [this](const Request& request) { return gate_.check(request); };
     config.gateway = [this](const std::string& command, const Json& args, const Device& device) {
         return host_.run(command, args, device.id);

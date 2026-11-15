@@ -143,3 +143,52 @@ TEST_CASE("the port changes between starts and nothing listens after stop", "[ap
     service.stop();
     std::filesystem::remove_all(dir);
 }
+
+TEST_CASE("the remote panel is served with a strict content security policy", "[api][integration][security]") {
+    FakeHost host;
+    const auto dir = scratch("panel");
+    ApiService service(host, dir);
+    std::string error;
+    REQUIRE(service.start(error));
+    const auto page = http(service.port(), "GET", "/", "");
+    CHECK(page.find("200 OK") != std::string::npos);
+    CHECK(page.find("Houseguest Remote") != std::string::npos);
+    CHECK(page.find("Content-Security-Policy: default-src 'none'") != std::string::npos);
+    CHECK(page.find("X-Frame-Options: DENY") != std::string::npos);
+    const auto script = http(service.port(), "GET", "/panel.js", "");
+    CHECK(script.find("text/javascript") != std::string::npos);
+    CHECK(script.find("textContent") != std::string::npos);
+    CHECK(script.find("innerHTML") == std::string::npos);
+    CHECK(http(service.port(), "GET", "/panel.js", "", "attacker.example").find("403") != std::string::npos);
+    service.stop();
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("requests that arrive through the tunnel are refused while remote access is off", "[api][integration][security]") {
+    FakeHost host;
+    const auto dir = scratch("gate");
+    ApiService service(host, dir);
+    std::string error;
+    REQUIRE(service.start(error));
+    const auto issued = service.pair("phone", Scope::Read);
+    WSADATA d{};
+    WSAStartup(MAKEWORD(2, 2), &d);
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_port = htons(service.port());
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    REQUIRE(connect(s, reinterpret_cast<sockaddr*>(&a), sizeof(a)) == 0);
+    const std::string request = "GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1:" + std::to_string(service.port()) +
+                                "\r\nCf-Ray: abc\r\nAuthorization: Bearer " + issued.token + "\r\n\r\n";
+    send(s, request.data(), static_cast<int>(request.size()), 0);
+    std::string reply;
+    char buffer[2048];
+    for (int n; (n = recv(s, buffer, sizeof(buffer), 0)) > 0;) reply.append(buffer, static_cast<std::size_t>(n));
+    closesocket(s);
+    WSACleanup();
+    CHECK(reply.find("403") != std::string::npos);
+    CHECK(reply.find("identity_required") != std::string::npos);
+    service.stop();
+    std::filesystem::remove_all(dir);
+}

@@ -12,6 +12,7 @@
 
 #include "../ipc_limits.hpp"
 #include "devices.hpp"
+#include "assets.hpp"
 #include "http.hpp"
 
 namespace houseguest::service::api {
@@ -35,6 +36,7 @@ struct RouterConfig {
     Clock clock;
     DeviceRegistry* devices = nullptr;
     std::function<core::Json()> health;
+    std::span<const Asset> assets;
 };
 
 enum class Risk { Read, Change, Sensitive };

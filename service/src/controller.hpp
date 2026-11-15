@@ -74,6 +74,7 @@ private:
     void start_api();
     core::Json run_api(const std::string& command, const core::Json& args, const std::string& device_id);
     bool api_check_pin(const std::string& pin);
+    core::Json wait_for_events(const core::Json& args);
     system::CatalogRequest catalog_request();
     system::CatalogRequest catalog_request_locked() const;
     void add(const char* name, Access access, std::function<core::Json(const Caller&, const core::Json&)> run,
@@ -192,6 +193,7 @@ private:
     std::jthread timer_;
     std::int64_t remote_locked_until_ = 0;
     int remote_failures_ = 0;
+    std::atomic<bool> api_stopping_ = false;
     std::shared_ptr<api::Host> api_host_;
     std::unique_ptr<api::ApiService> api_;
     std::unique_ptr<RemoteAccess> remote_;

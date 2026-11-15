@@ -176,6 +176,7 @@ Controller::~Controller() {
 }
 
 void Controller::shutdown() {
+    api_stopping_ = true;
     if (remote_) remote_->shutdown();
     if (api_) api_->stop();
     if (watcher_) watcher_->stop();

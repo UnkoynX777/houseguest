@@ -15,8 +15,10 @@ using core::Json;
 // restores state or reaches outside the policy store is absent on purpose.
 constexpr Route kRoutes[] = {
     {"GET", "/v1/status", "status", Risk::Read},
+    {"GET", "/v1/events", "events.wait", Risk::Read},
     {"GET", "/v1/dashboard", "dashboard", Risk::Read},
     {"GET", "/v1/profiles", "profiles.list", Risk::Read},
+    {"GET", "/v1/users", "users.list", Risk::Read},
     {"GET", "/v1/apps", "library.list", Risk::Read},
     {"GET", "/v1/blocks", "blocks.list", Risk::Read},
     {"GET", "/v1/history", "audit.list", Risk::Read},
@@ -168,6 +170,21 @@ Response Router::handle(const Request& request) {
 
     if (request.method == "GET" && request.target == "/v1/health")
         return reply(200, Json{{"ok", true}, {"data", config_.health ? config_.health() : Json::object()}}, request);
+
+    if (request.method == "GET") {
+        for (const auto& asset : config_.assets) {
+            if (request.target != asset.route) continue;
+            Response page;
+            page.content_type = std::string(asset.content_type) + "; charset=utf-8";
+            page.body = std::string(asset.body);
+            page.headers["Content-Security-Policy"] =
+                "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; "
+                "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+            page.headers["X-Frame-Options"] = "DENY";
+            page.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+            return page;
+        }
+    }
 
     const auto header = std::string(request.header("authorization"));
     std::optional<Device> device;

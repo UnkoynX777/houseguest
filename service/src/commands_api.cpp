@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <atomic>
+#include <thread>
 #include <set>
 
 #include "houseguest/system/https.hpp"
@@ -18,7 +20,7 @@ namespace {
 const std::set<std::string, std::less<>> kApiCommands = {
     "status",         "dashboard",       "profiles.list", "library.list",    "blocks.list",
     "audit.list",     "diagnostics",     "reviews.list",  "reviews.approve", "reviews.dismiss",
-    "profiles.save",  "session.start",   "session.stop",  "session.extend"};
+    "profiles.save",  "session.start",   "session.stop",  "session.extend", "events.wait", "users.list"};
 
 }  // namespace
 
@@ -61,6 +63,7 @@ void Controller::start_api() {
 
 Json Controller::run_api(const std::string& command, const Json& args, const std::string& device_id) {
     if (!kApiCommands.contains(command)) throw Failure("forbidden", "This operation is not available remotely.");
+    if (command == "events.wait") return wait_for_events(args);
     const auto found = commands_.find(command);
     if (found == commands_.end()) throw Failure("not_found", "Unknown operation.");
     std::string owner;
@@ -72,11 +75,55 @@ Json Controller::run_api(const std::string& command, const Json& args, const std
     const Caller caller{owner, false};
     const auto& entry = found->second;
     if (entry.access == Access::Elevated) throw Failure("forbidden", "This operation is not available remotely.");
-    const Json scoped = args.is_object() ? args : Json::object();
+    Json scoped = args.is_object() ? args : Json::object();
+    if (command == "audit.list" && !scoped.contains("limit")) scoped["limit"] = 50;
+    if (command == "blocks.list" && !scoped.contains("limit")) scoped["limit"] = 50;
+    if (command == "session.start") {
+        // A remote request can start protection but cannot weaken it: no audit-only sessions and no skipped warnings.
+        scoped["audit_only"] = false;
+        scoped["confirm_warnings"] = false;
+    }
     (void)device_id;
     if (entry.unlocked) return entry.run(caller, scoped);
     std::scoped_lock lock(mutex_);
     return entry.run(caller, scoped);
+}
+
+Json Controller::wait_for_events(const Json& args) {
+    static std::atomic<int> waiting{0};
+    struct Slot {
+        Slot() { ++waiting; }
+        ~Slot() { --waiting; }
+    };
+    if (waiting >= 8) throw Failure("limit", "Too many clients are waiting for events.");
+    Slot slot;
+    auto number = [&](const char* key) -> std::int64_t {
+        return args.contains(key) && args[key].is_number_integer() ? args[key].get<std::int64_t>() : -1;
+    };
+    const auto policy = number("policy"), history = number("history"), catalog = number("catalog");
+    const auto limit = std::chrono::seconds(std::clamp<std::int64_t>(number("wait") < 0 ? 20 : number("wait"), 0, 25));
+    const auto deadline = std::chrono::steady_clock::now() + limit;
+    for (;;) {
+        std::uint64_t now_policy, now_catalog, now_history;
+        {
+            std::scoped_lock lock(mutex_);
+            now_policy = store_.revision();
+            now_catalog = catalog_.generation();
+            now_history = audit_->sequence();
+        }
+        const bool changed = (policy >= 0 && static_cast<std::int64_t>(now_policy) != policy) ||
+                             (history >= 0 && static_cast<std::int64_t>(now_history) != history) ||
+                             (catalog >= 0 && static_cast<std::int64_t>(now_catalog) != catalog) ||
+                             (policy < 0 && history < 0 && catalog < 0);
+        if (changed || api_stopping_ || std::chrono::steady_clock::now() >= deadline) {
+            Json result{{"changed", changed},
+                        {"generations", {{"policy", now_policy}, {"catalog", now_catalog}, {"history", now_history}}}};
+            if (changed && history >= 0 && static_cast<std::int64_t>(now_history) != history)
+                result["recent"] = audit_->tail(5);
+            return result;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
 }
 
 bool Controller::api_check_pin(const std::string& pin) {
