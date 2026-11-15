@@ -20,9 +20,11 @@ add_library(houseguest_service_lib STATIC
   src/commands_catalog.cpp
   src/catalog.cpp
   src/ipc_limits.cpp
+  src/api/http.cpp
+  src/api/listener.cpp
   src/pipe_server.cpp)
 target_include_directories(houseguest_service_lib PUBLIC src ${CMAKE_BINARY_DIR}/generated)
-target_link_libraries(houseguest_service_lib PUBLIC houseguest::system PRIVATE houseguest_warnings advapi32 wtsapi32)
+target_link_libraries(houseguest_service_lib PUBLIC houseguest::system PRIVATE houseguest_warnings advapi32 wtsapi32 ws2_32)
 
 add_executable(houseguest-service src/main.cpp)
 target_link_libraries(houseguest-service PRIVATE houseguest_service_lib houseguest_warnings)
@@ -31,7 +33,7 @@ add_executable(houseguest-cli ../cli/main.cpp)
 target_link_libraries(houseguest-cli PRIVATE houseguest::system houseguest_warnings)
 
 if(HOUSEGUEST_BUILD_TESTS)
-  add_executable(houseguest_service_tests tests/store_tests.cpp tests/audit_tests.cpp tests/ipc_limits_tests.cpp tests/continuity_tests.cpp tests/protection_tests.cpp)
+  add_executable(houseguest_service_tests tests/store_tests.cpp tests/audit_tests.cpp tests/ipc_limits_tests.cpp tests/continuity_tests.cpp tests/protection_tests.cpp tests/http_tests.cpp tests/listener_tests.cpp)
   target_link_libraries(houseguest_service_tests PRIVATE houseguest_service_lib houseguest_warnings Catch2::Catch2WithMain)
   add_test(NAME houseguest_service_tests COMMAND houseguest_service_tests)
 endif()
