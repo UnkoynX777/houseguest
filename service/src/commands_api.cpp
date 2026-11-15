@@ -61,6 +61,18 @@ void Controller::start_api() {
     remote_->resume();
 }
 
+Json Controller::sanitize_api_args(const std::string& command, const Json& args) {
+    Json scoped = args.is_object() ? args : Json::object();
+    if (command == "audit.list" && !scoped.contains("limit")) scoped["limit"] = 50;
+    if (command == "blocks.list" && !scoped.contains("limit")) scoped["limit"] = 50;
+    if (command == "session.start") {
+        // A remote request can start protection but cannot weaken it: no audit-only sessions and no skipped warnings.
+        scoped["audit_only"] = false;
+        scoped["confirm_warnings"] = false;
+    }
+    return scoped;
+}
+
 Json Controller::run_api(const std::string& command, const Json& args, const std::string& device_id) {
     if (!kApiCommands.contains(command)) throw Failure("forbidden", "This operation is not available remotely.");
     if (command == "events.wait") return wait_for_events(args);
@@ -75,14 +87,7 @@ Json Controller::run_api(const std::string& command, const Json& args, const std
     const Caller caller{owner, false};
     const auto& entry = found->second;
     if (entry.access == Access::Elevated) throw Failure("forbidden", "This operation is not available remotely.");
-    Json scoped = args.is_object() ? args : Json::object();
-    if (command == "audit.list" && !scoped.contains("limit")) scoped["limit"] = 50;
-    if (command == "blocks.list" && !scoped.contains("limit")) scoped["limit"] = 50;
-    if (command == "session.start") {
-        // A remote request can start protection but cannot weaken it: no audit-only sessions and no skipped warnings.
-        scoped["audit_only"] = false;
-        scoped["confirm_warnings"] = false;
-    }
+    const Json scoped = sanitize_api_args(command, args);
     (void)device_id;
     if (entry.unlocked) return entry.run(caller, scoped);
     std::scoped_lock lock(mutex_);

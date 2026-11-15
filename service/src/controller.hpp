@@ -13,6 +13,7 @@
 
 #include "houseguest/system/capabilities.hpp"
 
+#include "ai/assistant.hpp"
 #include "api/service.hpp"
 #include "assessor.hpp"
 #include "audit.hpp"
@@ -41,6 +42,10 @@ public:
     core::Json handle(const Caller& caller, const core::Json& request);
     void shutdown();
     void set_ipc_stats(std::function<core::Json()> provider);
+    // Entry points of the local API; they apply the API allowlist and never reach owner-only commands outside it.
+    core::Json run_api(const std::string& command, const core::Json& args, const std::string& device_id);
+    bool api_check_pin(const std::string& pin);
+    static core::Json sanitize_api_args(const std::string& command, const core::Json& args);
     void note_reply(const core::Json& request, std::size_t bytes, std::chrono::steady_clock::duration encoding);
 
 private:
@@ -70,10 +75,12 @@ private:
     void register_catalog_commands();
     void register_api_commands();
     void register_remote_commands();
+    void register_ai_commands();
+    class AiBridge;
+    ai::Assistant& assistant();
+    core::Json run_internal(const std::string& command, const core::Json& args);
     class ApiBridge;
     void start_api();
-    core::Json run_api(const std::string& command, const core::Json& args, const std::string& device_id);
-    bool api_check_pin(const std::string& pin);
     core::Json wait_for_events(const core::Json& args);
     system::CatalogRequest catalog_request();
     system::CatalogRequest catalog_request_locked() const;
@@ -197,6 +204,9 @@ private:
     std::shared_ptr<api::Host> api_host_;
     std::unique_ptr<api::ApiService> api_;
     std::unique_ptr<RemoteAccess> remote_;
+    std::mutex ai_mutex_;
+    std::shared_ptr<ai::AssistantHost> ai_host_;
+    std::unique_ptr<ai::Assistant> ai_;
 };
 
 }  // namespace houseguest::service

@@ -177,6 +177,7 @@ Controller::~Controller() {
 
 void Controller::shutdown() {
     api_stopping_ = true;
+    if (ai_) ai_->shutdown();
     if (remote_) remote_->shutdown();
     if (api_) api_->stop();
     if (watcher_) watcher_->stop();
@@ -844,6 +845,7 @@ void Controller::register_commands() {
     register_catalog_commands();
     register_api_commands();
     register_remote_commands();
+    register_ai_commands();
 }
 
 }  // namespace houseguest::service
