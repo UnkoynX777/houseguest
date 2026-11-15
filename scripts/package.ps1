@@ -1,6 +1,6 @@
 # Builds the Release tree and produces the MSI, a portable zip and SHA-256 checksums in dist\.
 param(
-    [string] $Version = '0.4.6',
+    [string] $Version = '5.0.0',
     [string[]] $ExtraFiles = @()
 )
 $ErrorActionPreference = 'Stop'

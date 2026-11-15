@@ -4,6 +4,25 @@ All notable changes are documented here. The project follows [Semantic Versionin
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-11-15
+
+### Added
+- Local API in the service: strict HTTP/1.1 parser, loopback-only listener on a port assigned by Windows and held exclusively, versioned `/v1` routes, device keys (hash only, expiry, idle expiry, revocation), read-only and can-change rights, PIN step-up for sensitive changes, replay protection, Host and Origin checks, rate limits, long-poll events.
+- Remote access: Cloudflare setup from the interface (tunnel, DNS record, Access application), supervised `cloudflared` with backoff and a restart cap, official-binary check by Authenticode signature, Cloudflare Access token verification (RS256, issuer, audience, expiry), exposure self-test.
+- Remote panel for phones, served by the API, with live updates, device list and sign-out.
+- Assistant: Gemini client with streaming and function calling, read tools, confirmed proposals (create profile, allow app, remove app) with simulation and undo, chat history, DPAPI-protected key, rate limits.
+- Interface: Remote access and Assistant pages, compact icon rail, in-page title bar, denser layout.
+- Window: one fixed 1000 x 700 logical size that shrinks to fit the work area.
+
+### Changed
+- The remote PIN confirmation has its own failure counter, so remote attempts can no longer lock the local PIN.
+- Extending a session from a phone needs the owner PIN.
+
+### Known limits
+- The Cloudflare setup and the Gemini assistant have not run against live accounts; they are tested with simulated responses.
+- shadcn-vue was evaluated and not adopted (see docs/interface-layers.md).
+- The in-page title bar and fixed window were not observed in a real WebView2 window before this release.
+
 ## [0.4.6] - 2026-11-15
 
 ### Fixed

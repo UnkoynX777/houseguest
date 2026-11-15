@@ -36,6 +36,9 @@ houseguest-cli.exe                          ------ named pipe \\.\pipe\housegues
 | `core` | Types, glob and signer matching, the protection table, evaluation, analysis (conflicts, shadowing, protected overlap, application and component checks), simulation, JSON serialization, built-in profiles |
 | `system` | SHA-256, HMAC, PBKDF2, DPAPI, signature and catalog verification, app discovery, process references (one handle per inspection), session helpers, capability probe, pipe client |
 | `service` | Signed store, audit chain, identity resolver (cached hashes and publishers), ETW session, assessor (facts for one process), lineage table, continuity guard, observation, supervisor (workers, de-duplication, ordered retries, polling fallback, statistics), controller (commands split by domain, tokens, sessions), pipe server, SCM entry point |
+| `service/src/api` | Local HTTP API: strict HTTP/1.1 parser, exclusive loopback listener on a Windows-assigned port, device registry, router (Host, Origin, replay, rate limit, step-up), remote panel served from memory, Cloudflare Access gate |
+| `service/src/cloudflare` | Cloudflare REST client, `cloudflared` locator and installer, supervised tunnel manager |
+| `service/src/ai` | Gemini client, tool-calling loop, assistant with confirmed proposals |
 | `cli` | Status, setup, recovery, scripted calls |
 | `host` | WebView2 window and bridge, window geometry and DPI, notification-area icon, service status monitor, interface preferences, native dialogs, recovery console, icon extraction |
 | `fuzz` | libFuzzer targets for policies, globs, the state parser and the command handler |

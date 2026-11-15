@@ -15,6 +15,8 @@ Houseguest documents which attacker it defends against in [docs/threat-model.md]
 - Claiming ownership, unlocking or sending privileged commands without the required authorization.
 - Memory-safety or parsing flaws in the service, the pipe protocol or the store.
 - Flaws in the audit chain, state integrity check or PIN handling.
+- Remote access: reaching the local API without a valid device key, or from outside without a valid Cloudflare Access identity; bypassing the read-only/changes split, the PIN confirmation, the replay checks or the Host and Origin checks; reaching a command that is not in the API allow-list; leaking device keys, the tunnel secret or the Gemini key.
+- Assistant: any way for model output, or text from application names, paths or logs, to change a profile or setting without the owner's confirmation, or to call anything other than the documented tools.
 
 Out of scope, by design: local administrators, kernel-level malware, physical access, and the documented reactive window of process supervision.
 

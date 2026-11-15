@@ -28,3 +28,13 @@ The history the service returns mixes events written by different versions and o
 ## Checks
 
 `scripts/ui-check/panel.mjs` (part of `scripts/ui-check/run.ps1`) covers opening, every tab, rapid switching, scroll, a failing section, closing by button, Escape and backdrop, repeated opening, stacked layers, menus, resizing, loading and failing loads, and leftover overlays, with the browser's own engine against the mock service. It does not run the WebView2 window.
+
+## Component library: shadcn-vue and Reka UI were evaluated
+
+The v5 brief asked to investigate shadcn-vue and Reka UI. They were not adopted, for these reasons:
+
+- shadcn-vue is copied source built on Tailwind CSS and Reka UI. Adopting it means adding a Tailwind pipeline and a second styling system next to the existing token-based stylesheet, and restyling every page to match.
+- The overlay behaviour (one layer stack, focus return, inert background, Escape order, error isolation per section) was rebuilt and verified in 0.4.6 with 40 browser checks. Replacing Drawer, Modal and Menu with another library's primitives would reopen exactly the area that regressed before.
+- The interface is small (about 350 KB of script) and loads from disk inside WebView2; added runtime weight has a direct cost on every start.
+
+What was done instead: the existing token system was kept and tightened (compact density, a 52 px icon rail, a title bar drawn in the page, consistent badges, segmented controls and cards), and the two new pages reuse the same Modal, Toggle, CopyText and layer primitives. If a later release needs a component the current set lacks (a combobox or a data table), Reka UI primitives can be added for that component alone, behind the same layer rules.

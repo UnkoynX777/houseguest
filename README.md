@@ -34,7 +34,10 @@ Windows has parental controls and policy features, but nothing simple for the co
 - **Temporary exceptions** straight from the history.
 - **Cannot lock you out.** Essential Windows processes and Houseguest itself are always allowed, and an administrator can always recover or uninstall.
 - **Lives in the notification area**, starts with Windows if you want, follows the Windows light or dark theme, and shows the session timer.
-- **Private by design.** Nothing leaves your computer. The update check contacts GitHub only when you press the button.
+- **Compact window.** One fixed 1000 × 700 (logical) size with a title bar drawn inside the page, a narrow icon rail and a denser layout. It shrinks to fit small screens and high display scaling instead of being cut off.
+- **Remote access from your phone (optional, off by default).** A local API on a Windows-assigned loopback port, a Cloudflare Tunnel set up from the interface, Cloudflare Access sign-in verified again by Houseguest, per-phone keys and PIN confirmation for changes. See [remote access](docs/remote-access.md).
+- **Assistant (optional, off by default).** Ask in plain words about apps, profiles and blocks with your own Gemini API key; it can propose profile changes that only happen after you confirm them. See [the assistant](docs/assistant.md).
+- **Private by default.** With the optional features off, nothing leaves your computer. The update check contacts GitHub only when you press the button. Remote access and the assistant send data to Cloudflare and Google only after you configure them, and the documents above say exactly what.
 - English and Portuguese.
 
 <p align="center">
@@ -44,7 +47,7 @@ Windows has parental controls and policy features, but nothing simple for the co
 
 ## Quick start
 
-Requires Windows 10 or 11 (x64). The interface needs the Microsoft Edge WebView2 Runtime (included in Windows 11 and current Windows 10; Houseguest offers the official download if it is missing). **Verified so far only on Windows 10 Pro 22H2.** See [compatibility](docs/compatibility.md) for what was and was not tested.
+Requires Windows 10 or 11 (x64). The interface needs the Microsoft Edge WebView2 Runtime (included in Windows 11 and current Windows 10; Houseguest offers the official download if it is missing). **Verified so far only on Windows 10 Pro 22H2.** See [compatibility](docs/compatibility.md) for what was and was not tested. **Not yet verified against live services:** the Cloudflare setup and the Gemini assistant are tested with simulated responses and a real local API, but have not run with real credentials; the compact window and in-page title bar are built and unit-tested but were not observed in a real WebView2 window before this release.
 
 1. Download `Houseguest-<version>-x64.msi` and `SHA256SUMS.txt` from the [latest release](https://github.com/UnkoynX777/houseguest/releases/latest).
 2. Verify it: `sha256sum -c SHA256SUMS.txt`, or compare `(Get-FileHash .\Houseguest-*.msi).Hash` with the file. Releases also carry a provenance attestation: `gh attestation verify <file> --repo UnkoynX777/houseguest`.
@@ -70,7 +73,7 @@ Allowing a program does not allow everything it starts. A program is an applicat
 
 ## Documentation
 
-[FAQ](docs/faq.md) · [Compatibility](docs/compatibility.md) · [Troubleshooting](docs/troubleshooting.md) · [Use cases](docs/use-cases.md) · [Architecture](docs/architecture.md) · [Threat model](docs/threat-model.md) · [Privacy](docs/privacy.md) · [Performance](docs/performance.md) · [Roadmap](docs/roadmap.md) · [Website](https://unkoynx777.github.io/houseguest/)
+[Remote access](docs/remote-access.md) · [Assistant](docs/assistant.md) · [FAQ](docs/faq.md) · [Compatibility](docs/compatibility.md) · [Troubleshooting](docs/troubleshooting.md) · [Use cases](docs/use-cases.md) · [Architecture](docs/architecture.md) · [Threat model](docs/threat-model.md) · [Privacy](docs/privacy.md) · [Performance](docs/performance.md) · [Roadmap](docs/roadmap.md) · [Website](https://unkoynx777.github.io/houseguest/)
 
 ## Build from source
 

@@ -75,3 +75,20 @@ Behaviour on Windows 11 and non-Pro editions, behaviour on modified or reduced W
 - Related mode on an unsigned application trusts the install folder. If guests can write there, pin the components instead.
 - The WebView2 check does not read command lines. A process that may open the Houseguest host as its parent could start a Microsoft-signed WebView2 runtime executable and have it recognized; it is a browser engine without a host window.
 - Protected directory grants (driver packages and system apps) trust the signature and the administrator-only location of those folders.
+
+## Remote access and the assistant (v5)
+
+New actors appear only when those optional features are configured.
+
+| Actor | Can do | Houseguest guarantees | Houseguest does not guarantee |
+| --- | --- | --- | --- |
+| Anyone on the internet | Request the public address | Requests are refused before the API unless they carry a Cloudflare Access token that verifies (RS256 signature, issuer, audience, expiry), and they still need a device key. With remote access off, every request that looks proxied is refused. The setup refuses to create an Access application without an allowed e-mail, and **Check that it is protected** reports a failure if the API answers anonymously. | Protection if the Cloudflare account itself is compromised, or if the Access policy is later widened in the Cloudflare dashboard. |
+| Someone on the local network | Connect to the computer | The API listens on `127.0.0.1` only, and the port is held exclusively. | Nothing beyond that. |
+| Another local program | Connect to the loopback port, guess keys | Every route needs a 256-bit device key (only its hash is stored); failed attempts are rate limited; Host and Origin must match; mutating requests need a fresh timestamp and a unique nonce. | A program running as the owner or an administrator can read what the owner can read. |
+| Holder of a stolen read key | Read state until it is removed | Cannot change anything. Keys expire after 30 days or 12 hours of disuse and can be removed at once. | Confidentiality of what that key could read. |
+| Holder of a stolen write key | Request changes | Sensitive changes also need the owner PIN. Wrong PINs lock remote confirmation with growing delays, on a counter separate from the local PIN. The API cannot reach settings, PIN, accounts, backups, recovery, remote setup or the assistant. A remote session start cannot be audit-only. | Protection against someone who also knows the PIN. |
+| Cloudflare | Terminate TLS, see requests | Traffic is encrypted in transit on both legs. | Confidentiality from Cloudflare. No end-to-end layer is added: it would not remove the need to trust the tunnel keys, and a paired-key design would be a separate project. |
+| Text from the computer (names, paths, logs) | Contain instructions aimed at the assistant | Treated as data; control characters removed; the model has read tools and three proposal tools only; proposals are validated, simulated and applied only after the owner presses Apply; no tool disables protection, edits settings or writes rules. | That a model never follows injected text. The design limits what following it can achieve. |
+| Google | Receive the content of questions | Nothing is sent while the assistant is off; the key is DPAPI-protected; the key travels only in a header. | Privacy on the free tier, where Google may use the content. |
+
+Residual risks specific to v5: an administrator can read the device registry and the DPAPI-protected secrets of the machine; the Cloudflare API token is held in memory for the duration of the setup; `cloudflared` is trusted after an Authenticode check that names Cloudflare and is not pinned to a version; remote PIN attempts are limited per computer, so an attacker with a write key can lock **remote** confirmation (never the local PIN) for a while.
