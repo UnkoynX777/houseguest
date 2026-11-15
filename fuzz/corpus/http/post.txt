@@ -1,0 +1,6 @@
+POST /v1/stepup HTTP/1.1
+Host: a
+Content-Length: 12
+Content-Type: application/json
+
+{"pin":"12"}

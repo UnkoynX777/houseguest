@@ -1,0 +1,4 @@
+GET /v1/status HTTP/1.1
+Host: 127.0.0.1:5000
+Authorization: Bearer hgd_00
+

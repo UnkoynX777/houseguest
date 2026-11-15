@@ -10,7 +10,7 @@ $runtime = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC') -Directory | Sort-Objec
 $env:PATH = (Join-Path $runtime.FullName 'bin\Hostx64\x64') + ';' + $env:PATH
 
 $failed = @()
-foreach ($target in 'policy', 'glob', 'state', 'ipc', 'audit') {
+foreach ($target in 'policy', 'glob', 'state', 'ipc', 'audit', 'http', 'jwt') {
     $exe = Join-Path $Build "fuzz\fuzz_$target.exe"
     $work = Join-Path $env:TEMP "houseguest-fuzz-$target"
     $artifacts = Join-Path $env:TEMP "houseguest-fuzz-$target-crashes"
