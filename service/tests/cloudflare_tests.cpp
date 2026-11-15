@@ -142,9 +142,9 @@ TEST_CASE("restarts back off, reset after a stable run and give up when they loo
 namespace {
 
 struct FakeProcess final : RunningProcess {
-    std::atomic<bool> running = true;
-    bool alive() override { return running; }
-    void stop() override { running = false; }
+    std::shared_ptr<std::atomic<bool>> running = std::make_shared<std::atomic<bool>>(true);
+    bool alive() override { return *running; }
+    void stop() override { *running = false; }
     void wait(std::chrono::milliseconds limit) override { std::this_thread::sleep_for(std::min<std::chrono::milliseconds>(limit, 5ms)); }
 };
 
@@ -161,11 +161,11 @@ bool wait_for(const std::function<bool()>& condition) {
 TEST_CASE("the manager connects, reports status, and removes its files on stop", "[cloudflare][integration]") {
     const auto dir = std::filesystem::temp_directory_path() / "hg-tunnel-a";
     std::filesystem::remove_all(dir);
-    std::vector<FakeProcess*> started;
+    std::vector<std::shared_ptr<std::atomic<bool>>> started;
     LineSink sink;
     TunnelManager manager([&](const LaunchSpec&, LineSink s) {
         auto process = std::make_unique<FakeProcess>();
-        started.push_back(process.get());
+        started.push_back(process->running);
         sink = std::move(s);
         return process;
     }, dir);
@@ -182,7 +182,7 @@ TEST_CASE("the manager connects, reports status, and removes its files on stop",
     manager.stop();
     CHECK(manager.state() == TunnelState::Stopped);
     CHECK_FALSE(std::filesystem::exists(dir / "credentials.json"));
-    CHECK_FALSE(started[0]->running);
+    CHECK_FALSE(*started[0]);
     std::filesystem::remove_all(dir);
 }
 
@@ -193,7 +193,7 @@ TEST_CASE("a crashing process is restarted with backoff, then the manager gives 
     TunnelManager manager([&](const LaunchSpec&, LineSink) {
         ++launches;
         auto process = std::make_unique<FakeProcess>();
-        process->running = false;  // exits at once
+        *process->running = false;  // exits at once
         return process;
     }, dir);
     manager.set_delay_unit(1ms);
