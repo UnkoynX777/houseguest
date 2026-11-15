@@ -11,7 +11,7 @@ import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 import PageHeader from '../components/PageHeader.vue';
 import Skeleton from '../components/Skeleton.vue';
-import { describeBlock, describeDecision } from '../explain';
+import { blockEntry, describeBlock, describeDecision } from '../explain';
 import { t } from '../i18n';
 import { attempt, describe, formatTime, notify } from '../store';
 import type { AuditEntry, BlockEntry } from '../types';
@@ -123,7 +123,7 @@ const reason = (entry: AuditEntry) => {
   if (isApp(entry)) return describeBlock(asBlock(entry));
   return '';
 };
-const asBlock = (entry: AuditEntry): BlockEntry => ({ ...(entry.detail as unknown as BlockEntry), event: entry.event, ts: entry.ts });
+const asBlock = (entry: AuditEntry): BlockEntry => blockEntry({ ...(entry.detail as unknown as Partial<BlockEntry>), event: entry.event, ts: entry.ts });
 const reviewable = (entry: AuditEntry) => ['app.blocked', 'app.would_block', 'app.block_failed'].includes(entry.event);
 
 const copyable = (label: string) => label === t('Program') || label === t('SHA-256') || label === t('Signer identity');

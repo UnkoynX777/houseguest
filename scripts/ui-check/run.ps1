@@ -18,6 +18,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'The interface checks failed.' }
     node "$here\details.mjs"
     if ($LASTEXITCODE -ne 0) { throw 'The detail panel checks failed.' }
+    node "$here\panel.mjs"
+    if ($LASTEXITCODE -ne 0) { throw 'The panel and layer checks failed.' }
     if ($Shots) { node "$here\shots.mjs" $Shots }
 }
 finally {

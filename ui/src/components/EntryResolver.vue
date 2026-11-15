@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { ref } from 'vue';
 
 import { call, host } from '../api';
 import { evidenceLabel, platformLabel, reasonLabel, sourceLabel } from '../explain';
@@ -7,6 +7,7 @@ import { t } from '../i18n';
 import { attempt } from '../store';
 import type { LibraryApp } from '../types';
 import AppIcon from './AppIcon.vue';
+import Drawer from './Drawer.vue';
 import Icon from './Icon.vue';
 
 const props = defineProps<{ entry: LibraryApp }>();
@@ -30,19 +31,12 @@ async function browse() {
   const picked = await attempt(() => host<{ chosen: boolean; paths?: string[] }>('pick_paths', { kind: 'executable' }));
   if (picked?.chosen && picked.paths?.[0]) await choose(picked.paths[0]);
 }
-
-function onKey(event: KeyboardEvent) {
-  if (event.key === 'Escape') emit('close');
-}
-onMounted(() => window.addEventListener('keydown', onKey));
-onUnmounted(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <div class="drawer-scrim" @mousedown="emit('close')" />
-  <aside class="drawer" role="dialog" aria-modal="true" :aria-label="entry.name">
+  <Drawer :label="entry.name" @close="emit('close')">
     <div class="drawer-head">
-      <AppIcon :path="entry.candidates[0]?.path ?? ''" :sources="entry.icons" :name="entry.name" :size="52" />
+      <AppIcon :path="entry.candidates?.[0]?.path ?? ''" :sources="entry.icons" :name="entry.name" :size="52" />
       <div class="grow">
         <h2 class="truncate" :title="entry.name">{{ entry.name }}</h2>
         <div class="muted truncate">{{ platformLabel(entry.platform) }}<template v-if="entry.volume"> · {{ entry.volume }}</template><template v-if="entry.company"> · {{ entry.company }}</template></div>
@@ -58,7 +52,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
         <span v-else>{{ t('Houseguest found this installation but no program that a person would start. It is kept here in case you know which file to use.') }}</span>
       </div>
 
-      <template v-if="entry.candidates.length">
+      <template v-if="entry.candidates?.length">
         <h3>{{ t('Programs in this installation') }}</h3>
         <div v-for="candidate in entry.candidates" :key="candidate.path" class="component">
           <div class="grow" style="min-width: 0">
@@ -83,5 +77,5 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
         </template>
       </dl>
     </div>
-  </aside>
+  </Drawer>
 </template>

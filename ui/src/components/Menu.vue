@@ -2,6 +2,7 @@
 import { onBeforeUnmount, ref } from 'vue';
 
 import { t } from '../i18n';
+import { enterLayer } from '../layers';
 import Icon from './Icon.vue';
 
 defineProps<{ label?: string; text?: string; icon?: string }>();
@@ -9,17 +10,16 @@ defineProps<{ label?: string; text?: string; icon?: string }>();
 const open = ref(false);
 const root = ref<HTMLElement>();
 const up = ref(false);
+let leave: (() => void) | undefined;
 
 function away(event: Event) {
   if (root.value && !root.value.contains(event.target as Node)) close();
 }
-function key(event: KeyboardEvent) {
-  if (event.key === 'Escape') close();
-}
 function close() {
   open.value = false;
+  leave?.();
+  leave = undefined;
   document.removeEventListener('pointerdown', away, true);
-  document.removeEventListener('keydown', key, true);
 }
 function toggle() {
   if (open.value) return close();
@@ -27,7 +27,7 @@ function toggle() {
   up.value = !!box && window.innerHeight - box.bottom < 260;
   open.value = true;
   document.addEventListener('pointerdown', away, true);
-  document.addEventListener('keydown', key, true);
+  leave = enterLayer(root, close, { modal: false });
 }
 onBeforeUnmount(close);
 </script>

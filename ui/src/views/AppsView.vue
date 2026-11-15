@@ -416,7 +416,7 @@ function afterObservation() {
     </div>
 
     <EntryResolver v-if="active && !resolved(active)" :key="active.id" :entry="active" @close="active = undefined" @changed="load(true)" />
-    <AppPanel v-else-if="active" :key="active.id + profileId" :entry="active" :profile-id="profileId" @close="active = undefined" @changed="load()" @observe="observing = active" />
+    <AppPanel v-else-if="active" :entry="active" :profile-id="profileId" @close="active = undefined" @changed="load()" @observe="observing = active" />
     <LibraryTools v-if="tools" :start="tools" @close="tools = undefined" @changed="load(true)" />
     <DiscoveryModal v-if="observing" :entry="observing" :profile-id="profileId" @close="observing = undefined" @saved="afterObservation" />
   </div>

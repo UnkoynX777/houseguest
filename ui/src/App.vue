@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, type Component } from 'vue';
 
+import Boundary from './components/Boundary.vue';
 import Icon from './components/Icon.vue';
 import Mark from './components/Mark.vue';
 import { t } from './i18n';
@@ -94,13 +95,15 @@ watch(
       </button>
       <button class="nav" :title="t('Lock')" @click="lockNow"><Icon name="lock" /><span>{{ t('Lock') }}</span></button>
     </nav>
-    <main ref="mainElement" class="main"><KeepAlive><component :is="views[app.route]" /></KeepAlive></main>
+    <main ref="mainElement" class="main"><Boundary :reset="app.route" :label="t('This page could not be displayed.')"><KeepAlive><component :is="views[app.route]" /></KeepAlive></Boundary></main>
   </div>
 
-  <div class="toasts" role="status" aria-live="polite">
-    <div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.kind">
-      <Icon :name="toast.kind === 'ok' ? 'check' : toast.kind === 'bad' ? 'alert' : 'about'" />
-      <span>{{ toast.text }}</span>
+  <Teleport to="body">
+    <div class="toasts" role="status" aria-live="polite">
+      <div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.kind">
+        <Icon :name="toast.kind === 'ok' ? 'check' : toast.kind === 'bad' ? 'alert' : 'about'" />
+        <span>{{ toast.text }}</span>
+      </div>
     </div>
-  </div>
+  </Teleport>
 </template>

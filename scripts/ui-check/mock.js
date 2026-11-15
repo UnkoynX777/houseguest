@@ -76,7 +76,7 @@
     components: path.includes('Minecraft') ? components : [],
     summary: path.includes('Minecraft') ? { approved: 2, changed: 1, missing: 1, unpinned: 1, pending: 1 } : { approved: 0, changed: 0, missing: 0, unpinned: 0, pending: 0 },
     pending: path.includes('Minecraft') ? [{ id: 'r1', app_id: 'app-mc', kind: 'unknown_dependency', path: 'C:\\Games\\Minecraft\\telemetry.exe', sha256: 'c'.repeat(64), publisher: '', parent: 'C:\\Games\\Minecraft\\MinecraftLauncher.exe', profile_id: 'builtin-gaming', count: 3, first: now2, last: now - 20 }] : [],
-    history: [{ event: 'app.blocked', ts: now - 120, path: 'C:\\Games\\Minecraft\\telemetry.exe', process: 'telemetry.exe', sha256: '', publisher: '', profile: 'Gaming', rule: '', source: 'default', reason: 'default.deny', note: '', related_app: 'app-mc', parent: 'C:\\Games\\Minecraft\\MinecraftLauncher.exe', recommendation: 'approve_dependency' }],
+    history: window.__history ?? [{ event: 'app.blocked', ts: now - 120, path: 'C:\\Games\\Minecraft\\telemetry.exe', process: 'telemetry.exe', sha256: '', publisher: '', profile: 'Gaming', rule: '', source: 'default', reason: 'default.deny', note: '', related_app: 'app-mc', parent: 'C:\\Games\\Minecraft\\MinecraftLauncher.exe', recommendation: 'approve_dependency' }],
     findings: [],
   });
   const reply = (cmd, args) => {
@@ -104,7 +104,12 @@
       case 'profiles.list': return profiles;
       case 'apps.library': { const list = window.__bulk ? Array.from({ length: window.__bulk }, (_, i) => mk('Bulk App ' + i, 'Company ' + (i % 30), 'installed', i % 3 ? 'blocked' : 'allowed', { id: 'bulk-' + i, path: 'C:\Bulk\App' + i + '\app' + i + '.exe' })) : apps; return { apps: list, scanning: false, allowed: 0, blocked: 0 }; }
       case 'apps.library_old': return { apps, allowed: apps.filter((a) => a.status === 'allowed').length, blocked: apps.filter((a) => a.status === 'blocked').length };
-      case 'apps.explain': return explanation(args.path);
+      case 'apps.explain': {
+        window.__explainCalls = (window.__explainCalls || 0) + 1;
+        if (window.__explainFail) throw Object.assign(new Error('The service did not answer.'), {});
+        const reply = explanation(args.path);
+        return window.__explainMutate ? window.__explainMutate(reply) : reply;
+      }
       case 'apps.details': {
         window.__detailCalls = (window.__detailCalls || 0) + 1;
         if (window.__detailsFail) throw Object.assign(new Error('The file could not be read.'), {});
@@ -134,7 +139,7 @@
     addEventListener: (_t, h) => listeners.push(h),
     postMessage: (text) => {
       const { id, cmd, args } = JSON.parse(text);
-      setTimeout(() => { let r; try { r = { id, ok: true, data: reply(cmd, args || {}) }; } catch (e) { r = { id, ok: false, error: { code: 'service_unavailable', message: e.message, details: {} } }; } listeners.forEach((h) => h({ data: JSON.stringify(r) })); }, 30);
+      setTimeout(() => { let r; try { r = { id, ok: true, data: reply(cmd, args || {}) }; } catch (e) { r = { id, ok: false, error: { code: 'service_unavailable', message: e.message, details: {} } }; } listeners.forEach((h) => h({ data: JSON.stringify(r) })); }, (window.__delays && window.__delays[cmd]) || 30);
     },
   } };
 })();

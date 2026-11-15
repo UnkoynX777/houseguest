@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { ApiError, call } from '../api';
-import { describeBlock, describeDecision, describeNote, formatSize, kindLabel, platformLabel, recommendation, roleKindLabel, roleLabel, shortPath, signatureHint, signatureLabel, signatureTone, sourceLabel } from '../explain';
+import { blockEntry, describeBlock, describeDecision, describeNote, formatSize, kindLabel, platformLabel, recommendation, roleKindLabel, roleLabel, shortPath, signatureHint, signatureLabel, signatureTone, sourceLabel } from '../explain';
 import { t } from '../i18n';
 import { app, attempt, describe, formatTime, loadProfiles, notify, profileLabel, randomId } from '../store';
 import { signerName } from '../certificate';
 import type { Application, BlockEntry, Component, ComponentView, DecisionInfo, DependencyMode, Explanation, FileDetails, LibraryApp, PendingReview } from '../types';
 import AppIcon from './AppIcon.vue';
+import Boundary from './Boundary.vue';
 import CopyText from './CopyText.vue';
+import Drawer from './Drawer.vue';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
 
@@ -28,7 +30,9 @@ async function forgetManual() {
 type Tab = 'overview' | 'dependencies' | 'blocks' | 'advanced' | 'simulation';
 const tab = ref<Tab>('overview');
 const explanation = ref<Explanation>();
-const loading = ref(true);
+const phase = ref<'loading' | 'ready' | 'error'>('loading');
+const failure = ref('');
+const revision = ref(0);
 const busy = ref(false);
 const testPath = ref('');
 const testResult = ref<{ decision: DecisionInfo; path: string }>();
@@ -53,6 +57,7 @@ const details = ref<FileDetails>();
 const detailsPhase = ref<'loading' | 'ready' | 'error'>('loading');
 const detailsError = ref('');
 let detailsToken = 0;
+let explainToken = 0;
 
 // The signature check and the version resource are read by the service while the rest of the panel is already
 // usable, and the answer is remembered there until the file changes.
@@ -76,24 +81,61 @@ const declared = computed(() => details.value?.declared);
 const folderOf = (path: string) => path.replace(/[\\/][^\\/]*$/, '');
 const dateOf = (seconds?: number) => (seconds ? formatTime(seconds) : '');
 
+// What the service answers is read into a fixed shape here, so that no section has to guess which fields exist.
+function read(reply: Explanation): Explanation {
+  return { ...reply, components: reply.components ?? [], pending: reply.pending ?? [], findings: reply.findings ?? [], history: (reply.history ?? []).map(blockEntry), summary: reply.summary ?? { approved: 0, changed: 0, missing: 0, unpinned: 0, pending: 0 } };
+}
+
+// Reloading keeps what is already shown: the placeholders appear only while nothing has been loaded yet, a failed
+// reload leaves the old data in place with a message, and an answer that is no longer wanted is dropped.
 async function reload() {
-  loading.value = true;
+  const mine = ++explainToken;
+  if (!explanation.value) phase.value = 'loading';
   loadDetails();
-  await loadProfiles();
-  explanation.value = await attempt(() => call<Explanation>('apps.explain', { profile_id: props.profileId, path: props.entry.path, package_family: props.entry.package_family }));
-  loading.value = false;
+  try {
+    await loadProfiles();
+    const reply = await call<Explanation>('apps.explain', { profile_id: props.profileId, path: props.entry.path, package_family: props.entry.package_family });
+    if (mine !== explainToken) return;
+    explanation.value = read(reply);
+    revision.value++;
+    failure.value = '';
+    phase.value = 'ready';
+  } catch (error) {
+    if (mine !== explainToken) return;
+    failure.value = describe(error);
+    if (explanation.value) notify('bad', failure.value);
+    else phase.value = 'error';
+  }
 }
 
-onMounted(() => {
-  reload();
-  window.addEventListener('keydown', onKey);
+onMounted(reload);
+onUnmounted(() => {
+  explainToken++;
+  detailsToken++;
 });
-onUnmounted(() => window.removeEventListener('keydown', onKey));
-watch(() => [props.entry.path, props.profileId], reload);
+watch(
+  () => [props.entry.path, props.profileId] as const,
+  ([path], [before]) => {
+    if (path !== before) {
+      explanation.value = undefined;
+      details.value = undefined;
+      testResult.value = undefined;
+      testPath.value = '';
+      scrolls.clear();
+    }
+    void reload();
+  },
+);
 
-function onKey(event: KeyboardEvent) {
-  if (event.key === 'Escape' && !confirm.value) emit('close');
-}
+const body = ref<HTMLElement>();
+const scrolls = new Map<Tab, number>();
+let shown: Tab = tab.value;
+watch(tab, async (next) => {
+  scrolls.set(shown, body.value?.scrollTop ?? 0);
+  shown = next;
+  await nextTick();
+  if (body.value) body.value.scrollTop = scrolls.get(next) ?? 0;
+});
 
 async function persist(next: Application, message = t('Saved.')) {
   busy.value = true;
@@ -211,8 +253,7 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
 </script>
 
 <template>
-  <div class="drawer-scrim" @mousedown="emit('close')" />
-  <aside class="drawer" role="dialog" aria-modal="true" :aria-label="entry.name">
+  <Drawer :label="entry.name" @close="emit('close')">
     <div class="drawer-head">
       <AppIcon :path="entry.path" :sources="entry.icons" :name="entry.name" :size="52" />
       <div class="grow">
@@ -230,9 +271,17 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
       </button>
     </div>
 
-    <div v-if="loading || !explanation" class="drawer-body"><div v-for="n in 4" :key="n" class="skeleton" style="height: 56px" /></div>
+    <div v-if="!explanation" ref="body" class="drawer-body">
+      <div v-if="phase === 'error'" class="failure" role="alert">
+        <h3><Icon name="alert" :size="16" /> {{ t('The details of this program could not be loaded.') }}</h3>
+        <p>{{ failure }}</p>
+        <button class="btn sm" @click="reload">{{ t('Try again') }}</button>
+      </div>
+      <template v-else><div v-for="n in 4" :key="n" class="skeleton" style="height: 56px" /></template>
+    </div>
 
-    <div v-else class="drawer-body">
+    <div v-else ref="body" class="drawer-body">
+      <Boundary :reset="`${tab}:${revision}`" @retry="reload">
       <template v-if="tab === 'overview'">
         <div class="diagnosis" :class="allowed ? 'allowed' : 'blocked'">
           <dl class="kv">
@@ -480,8 +529,9 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
           <span class="hint">{{ t('Started on its own, outside any application, in this profile.') }}</span>
         </div>
       </template>
+      </Boundary>
     </div>
-  </aside>
+  </Drawer>
 
   <Modal v-if="confirm" :title="confirm.title" @close="confirm = undefined">
     <div class="banner warn"><Icon name="alert" /><span>{{ t('Approving it lets the application start other programs through it. Only continue if the application cannot work without it.') }}</span></div>

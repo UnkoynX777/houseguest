@@ -30,17 +30,28 @@ export function describeDecision(decision: DecisionInfo, applicationName = ''): 
   return reason;
 }
 
-export function describeNote(note: string): string {
-  if (note.startsWith('component_changed:')) return t('The file changed since it was approved. Review it to allow it again.');
-  if (note.startsWith('component_updated:')) return t('The file was updated by its publisher and still carries the approved signature.');
+export function describeNote(note?: string | null): string {
+  if (note?.startsWith('component_changed:')) return t('The file changed since it was approved. Review it to allow it again.');
+  if (note?.startsWith('component_updated:')) return t('The file was updated by its publisher and still carries the approved signature.');
   return '';
 }
 
 export function describeBlock(entry: BlockEntry): string {
   if (entry.related_app) return t('A program the allowed application needed is not approved yet.');
-  if (entry.note.startsWith('component_changed:')) return t('An approved file changed and needs a new review.');
+  if (entry.note?.startsWith('component_changed:')) return t('An approved file changed and needs a new review.');
   if (entry.event === 'protection.spared') return t('Windows marks this process as essential, so Houseguest left it running.');
   return describeDecision({ reason: entry.reason, source: entry.source, rule_id: entry.rule } as DecisionInfo);
+}
+
+// The audit trail holds events of different shapes and of older versions; a missing field is an empty one.
+export function blockEntry(raw: Partial<BlockEntry> | null | undefined): BlockEntry {
+  const text = (value: unknown) => (typeof value === 'string' ? value : '');
+  const source = raw ?? {};
+  return {
+    event: text(source.event), ts: typeof source.ts === 'number' ? source.ts : 0, path: text(source.path), process: text(source.process),
+    sha256: text(source.sha256), publisher: text(source.publisher), profile: text(source.profile), rule: text(source.rule), source: text(source.source),
+    reason: text(source.reason), note: text(source.note), related_app: text(source.related_app), parent: text(source.parent), recommendation: text(source.recommendation),
+  };
 }
 
 export function recommendation(entry: BlockEntry): string {
