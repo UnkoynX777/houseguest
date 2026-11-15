@@ -802,7 +802,9 @@ Json Controller::caches_json() {
                   {"hit_rate", hits + misses == 0 ? 0.0 : static_cast<double>(hits) / static_cast<double>(hits + misses)},
                   {"profiles", library_cache_.size()},
                   {"decisions", decisions},
-                  {"revision", store_.revision()}}}};
+                  {"revision", store_.revision()}}},
+                {"identity", {{"files", resolver_.cached()}}},
+                {"details", {{"files", details_.cached()}}}};
 }
 
 Json Controller::command_stats_json() {

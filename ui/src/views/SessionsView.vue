@@ -4,6 +4,7 @@ import Toggle from '../components/Toggle.vue';
 import { computed, onActivated, onDeactivated, ref, toRef } from 'vue';
 
 import { ApiError, call } from '../api';
+import { signerName } from '../certificate';
 import Findings from '../components/Findings.vue';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
@@ -114,7 +115,7 @@ async function extend(add: number) {
         <div class="timeline">
           <div v-for="rule in detail.exceptions" :key="rule.id">
             <span class="badge info">{{ rule.match.type }}</span>
-            <span class="mono grow truncate">{{ rule.match.value }}</span>
+            <span class="grow truncate" :class="{ mono: rule.match.type !== 'publisher' }" :title="rule.match.value">{{ rule.match.type === 'publisher' ? signerName(rule.match.value) || rule.match.value : rule.match.value }}</span>
             <span class="faint">{{ rule.expires_at ? t('until {time}', { time: formatTime(rule.expires_at) }) : '' }}</span>
           </div>
         </div>

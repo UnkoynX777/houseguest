@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <wincrypt.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -15,6 +16,8 @@
 #include "houseguest/system/signature.hpp"
 #include "houseguest/system/text.hpp"
 #include "houseguest/system/windows_info.hpp"
+
+#include "catalog_support.hpp"
 
 using namespace houseguest::system;
 
@@ -312,4 +315,75 @@ TEST_CASE("distinguished names keep every attribute but only friendly ones name 
     CHECK(name.fields.front().label == "Serial number");
     CHECK(parse_distinguished_name({}).fields.empty());
     CHECK(parse_distinguished_name(bytes("not der")).fields.empty());
+}
+
+TEST_CASE("icon locations are read in every form installers write them", "[icons]") {
+    using houseguest::system::catalog::parse_icon_location;
+    const auto plain = parse_icon_location(LR"(C:\Windows\System32\cmd.exe,0)");
+    REQUIRE(plain);
+    CHECK(plain->file == std::filesystem::path(LR"(C:\Windows\System32\cmd.exe)"));
+    CHECK(plain->index == 0);
+
+    const auto quoted = parse_icon_location(LR"("C:\Windows\System32\shell32.dll",-154)");
+    REQUIRE(quoted);
+    CHECK(quoted->file == std::filesystem::path(LR"(C:\Windows\System32\shell32.dll)"));
+    CHECK(quoted->index == -154);
+
+    const auto slashes = parse_icon_location(L"C:/Windows/System32/cmd.exe");
+    REQUIRE(slashes);
+    CHECK(slashes->file == std::filesystem::path(LR"(C:\Windows\System32\cmd.exe)"));
+    CHECK(slashes->index == 0);
+
+    const auto variable = parse_icon_location(LR"(%SystemRoot%\System32\cmd.exe,1)");
+    REQUIRE(variable);
+    CHECK(variable->file.wstring().find(L'%') == std::wstring::npos);
+    CHECK(variable->index == 1);
+
+    const auto trailing = parse_icon_location(LR"("C:\Windows\System32\cmd.exe",)");
+    REQUIRE(trailing);
+    CHECK(trailing->file == std::filesystem::path(LR"(C:\Windows\System32\cmd.exe)"));
+
+    CHECK_FALSE(parse_icon_location(L""));
+    CHECK_FALSE(parse_icon_location(LR"(relative\icon.ico,0)"));
+    CHECK_FALSE(parse_icon_location(LR"(\\server\share\icon.ico,0)"));
+    CHECK_FALSE(parse_icon_location(std::wstring(5000, L'a')));
+}
+
+TEST_CASE("an installation record's icon and conflicting publishers are kept with their sources", "[discovery][icons]") {
+    const auto folder = std::filesystem::temp_directory_path() / "hg-icon-discovery";
+    std::filesystem::remove_all(folder);
+    std::filesystem::create_directories(folder / "App");
+    std::filesystem::copy_file(std::filesystem::path(R"(C:\Windows\System32\find.exe)"), folder / "App" / "Zephyr.exe");
+    std::ofstream(folder / "App" / "zephyr.ico", std::ios::binary) << "ico";
+    const std::wstring key = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\HouseguestTestZephyr";
+    HKEY handle = nullptr;
+    REQUIRE(RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &handle, nullptr) ==
+            ERROR_SUCCESS);
+    const auto set = [&](const wchar_t* name, const std::wstring& value) {
+        RegSetValueExW(handle, name, 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
+                       static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+    };
+    const auto root = (folder / "App").wstring();
+    std::wstring forward = root;
+    std::ranges::replace(forward, L'\\', L'/');
+    set(L"DisplayName", L"Zephyr Quest");
+    set(L"Publisher", L"Zephyr Studios");
+    set(L"InstallLocation", forward);
+    set(L"DisplayIcon", forward + L"/zephyr.ico,0");
+    RegCloseKey(handle);
+
+    const auto catalog = discover_catalog({});
+    RegDeleteTreeW(HKEY_CURRENT_USER, key.c_str());
+
+    const auto found = std::ranges::find(catalog.apps, std::string("Zephyr Quest"), &InstalledApp::name);
+    REQUIRE(found != catalog.apps.end());
+    const auto expected = path_to_utf8(folder / "App" / "zephyr.ico");
+    REQUIRE_FALSE(found->icons.empty());
+    CHECK(found->icons.front().kind == "registry");
+    CHECK(found->icons.front().path == expected);
+    CHECK(found->path.find('/') == std::string::npos);
+    CHECK(found->company == "Zephyr Studios");
+    CHECK(found->company_source == "windows_registry");
+    CHECK(found->name_source == "windows_registry");
+    std::filesystem::remove_all(folder);
 }

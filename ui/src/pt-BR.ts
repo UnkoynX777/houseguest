@@ -801,4 +801,5 @@ export const pt: Record<string, string> = {
   'signer identity': 'identidade do signatário',
   'thumbprint': 'impressão digital',
   'timestamped': 'com carimbo de data',
+  'Also reported': 'Também informado',
 };

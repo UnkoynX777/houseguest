@@ -60,7 +60,12 @@ core::Json to_json(const system::InstalledApp& app) {
     for (const auto& item : app.evidence) evidence.push_back({{"kind", item.kind}, {"detail", item.detail}});
     core::Json icons = core::Json::array();
     for (const auto& item : app.icons) icons.push_back({{"kind", item.kind}, {"path", item.path}, {"index", item.index}});
+    core::Json alternatives = core::Json::array();
+    for (const auto& item : app.alternatives)
+        alternatives.push_back({{"field", item.field}, {"value", item.value}, {"source", item.source}});
     return {{"icons", std::move(icons)},
+            {"alternatives", std::move(alternatives)},
+            {"origins", {{"name", app.name_source}, {"company", app.company_source}, {"version", app.version_source}}},
             {"id", app.id},
             {"name", app.name},
             {"path", app.path},
@@ -120,6 +125,15 @@ system::InstalledApp app_from_json(const core::Json& json) {
             }
             app.candidates.push_back(std::move(candidate));
         }
+    }
+    if (const auto it = json.find("origins"); it != json.end() && it->is_object()) {
+        app.name_source = it->value("name", "");
+        app.company_source = it->value("company", "");
+        app.version_source = it->value("version", "");
+    }
+    if (const auto it = json.find("alternatives"); it != json.end() && it->is_array()) {
+        for (const auto& item : *it)
+            app.alternatives.push_back({item.value("field", ""), item.value("value", ""), item.value("source", "")});
     }
     if (const auto it = json.find("icons"); it != json.end() && it->is_array()) {
         for (const auto& item : *it)

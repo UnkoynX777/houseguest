@@ -1,5 +1,7 @@
 # Caches, invalidation and interface state
 
+See [metadata.md](metadata.md) for how icons, declared information and signatures are produced and why none of it reaches a decision.
+
 This page lists every cache in Houseguest, who owns it, what makes it stale, and what it is never used for. The rule behind all of it: **a cache may make something faster to show, never easier to allow.** What may run is decided by the policy the supervisor was handed and by facts read from the operating system for that process, not by anything on this page.
 
 ## Data flow
@@ -23,6 +25,8 @@ This page lists every cache in Houseguest, who owns it, what makes it stale, and
 | File identity | `IdentityResolver` | canonical path and `FileStamp` | the stamp changes (size, write time, **change time**, volume and **file id**) | 4096 entries | yes, but only as a memo of facts about the file |
 | COM server index | `ComServerIndex` | canonical program path | Windows reports a change below `HKLM\...\CLSID` (`RegNotifyChangeKeyValue`), checked on the next lookup | one set | yes, as evidence for one protected class |
 | Compiled profile and library decisions | `Controller` | profile id, then program path and package family | the store revision moves, or the program's size or write time moves | one entry per listed program | **no**, presentation only |
+| Icon pictures | `IconService` (host) | every file that could supply the picture, with its change stamp, and the size | any of those files changes | 600 in memory, 45 days on disk | no |
+| File details (version resource, signature) | `FileDetails` | canonical path and `FileStamp` | the stamp changes | 512 files | **no**, presentation only |
 | Page data | `cache.ts` | page key | the service reports a new policy, catalog or history generation, the session changes, the owner locks, or the age limit passes | 48 slots, least recently used evicted | **no** |
 
 ### Why the file stamp and not the write time

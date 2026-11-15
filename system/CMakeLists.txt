@@ -23,6 +23,7 @@ target_link_libraries(houseguest_system
 
 if(HOUSEGUEST_BUILD_TESTS)
   add_executable(houseguest_system_tests tests/system_tests.cpp)
+  target_include_directories(houseguest_system_tests PRIVATE src)
   target_link_libraries(houseguest_system_tests PRIVATE houseguest::system houseguest_warnings Catch2::Catch2WithMain)
   add_test(NAME houseguest_system_tests COMMAND houseguest_system_tests)
 endif()

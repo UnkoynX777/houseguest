@@ -44,6 +44,13 @@
     mk('Roblox Player', 'Roblox Corporation', 'installed', 'allowed'),
     mk('7-Zip', 'Igor Pavlov', 'start_menu', 'blocked'),
     mk('Calculator', 'Microsoft Corporation', 'store', 'allowed'),
+    mk('Long Path Game', 'Riot Games, Inc.', 'installed', 'blocked', {
+      id: 'long-path', path: 'D:\\Very Long Folder Name For A Game Library\\Riot Games\\VALORANT\\live\\ShooterGame\\Binaries\\Win64\\VALORANT-Win64-Shipping.exe',
+      install_dir: 'D:\\Very Long Folder Name For A Game Library\\Riot Games\\VALORANT\\live',
+      icons: [{ kind: 'registry', path: 'C:\\ProgramData\\Riot Games\\Metadata\\valorant.live\\valorant.live.ico', index: 0 }],
+      origins: { name: 'windows_registry', company: 'windows_registry', version: '' },
+      alternatives: [{ field: 'company', value: 'Riot Games', source: 'packages' }],
+    }),
   ];
   const profile = (id, name, def, extra = {}) => ({ id, name, default_action: def, rules: [], apps: [], ...extra });
   const profiles = [
@@ -62,7 +69,7 @@
   ];
   const now2 = now - 400;
   const explanation = (path) => ({
-    path, sha256: 'a'.repeat(64), publisher: 'C=SE, O=Mojang AB, CN=Mojang AB',
+    path, sha256: 'a'.repeat(64), publisher: 'CN="Riot Games, Inc.", O="Riot Games, Inc.", L=Los Angeles, S=California, C=US, SERIALNUMBER=4558474, 2.5.4.15=Private Organization, 1.3.6.1.4.1.311.60.2.1.3=US',
     decision: path.includes('Minecraft') ? { action: 'allow', source: 'application', reason: 'application.main', rule_id: '', app_id: 'app-mc', component_id: 'c1', note: '', review_app: '' }
       : { action: 'deny', source: 'default', reason: 'default.deny', rule_id: '', app_id: '', component_id: '', note: '', review_app: '' },
     application: path.includes('Minecraft') ? { id: 'app-mc', name: 'Minecraft Launcher', mode: 'approved', unknown: 'review', priority: 50 } : undefined,
@@ -76,7 +83,7 @@
     switch (cmd) {
       case 'host.info': return { elevated: false };
       case 'host.get_prefs': case 'host.set_prefs': return { minimize_to_tray: true, start_with_windows: false, theme: window.__theme || 'light' };
-      case 'host.icon': { const name = args.path.split('\\').slice(-2)[0] || 'A'; return { png: Math.abs([...name].reduce((s, c) => s + c.charCodeAt(0), 0)) % 3 === 0 ? '' : swatch(name, colors[name.length % colors.length]) }; }
+      case 'host.icon': { (window.__iconCalls ||= []).push({ path: args.path, size: args.size, sources: args.sources });  const name = args.path.split('\\').slice(-2)[0] || 'A'; return { png: Math.abs([...name].reduce((s, c) => s + c.charCodeAt(0), 0)) % 3 === 0 ? '' : swatch(name, colors[name.length % colors.length]) }; }
       case 'status': return { version: '0.4.0', configured: true, armed: true, now, enforcement: 'supervised', store_tampered: false, language: 'en', ends_at: now + 3000, profile: 'Gaming', generations: { policy: window.__gp || 1, catalog: window.__gc || 1, history: window.__gh || 1 } };
       case 'audit.query': {
         if (window.__failHistory) throw Object.assign(new Error('pipe closed'), {});
@@ -98,6 +105,19 @@
       case 'apps.library': { const list = window.__bulk ? Array.from({ length: window.__bulk }, (_, i) => mk('Bulk App ' + i, 'Company ' + (i % 30), 'installed', i % 3 ? 'blocked' : 'allowed', { id: 'bulk-' + i, path: 'C:\Bulk\App' + i + '\app' + i + '.exe' })) : apps; return { apps: list, scanning: false, allowed: 0, blocked: 0 }; }
       case 'apps.library_old': return { apps, allowed: apps.filter((a) => a.status === 'allowed').length, blocked: apps.filter((a) => a.status === 'blocked').length };
       case 'apps.explain': return explanation(args.path);
+      case 'apps.details': {
+        window.__detailCalls = (window.__detailCalls || 0) + 1;
+        if (window.__detailsFail) throw Object.assign(new Error('The file could not be read.'), {});
+        const unsigned = /Hand Tool|curl/.test(args.path);
+        const name = (cn) => ({ common_name: cn, organization: cn, country: 'US', fields: [{ label: 'Common name', oid: '2.5.4.3', value: cn }, { label: 'Organization', oid: '2.5.4.10', value: cn }, { label: 'Jurisdiction country', oid: '1.3.6.1.4.1.311.60.2.1.3', value: 'US' }, { label: 'Country', oid: '2.5.4.6', value: 'US' }] });
+        return {
+          path: args.path, exists: true, size: 240096528,
+          declared: { company: 'Riot Games, Inc.', product: 'VALORANT', description: 'VALORANT', file_version: '', product_version: '', copyright: '', original_name: 'VALORANT-Win64-Shipping.exe', internal_name: '' },
+          signature: unsigned ? { state: 'unsigned', signer: '', via_catalog: false, timestamped: false, certificate_expired: false, subject: { common_name: '', organization: '', country: '', fields: [] }, issuer: { common_name: '', organization: '', country: '', fields: [] }, thumbprint_sha1: '', thumbprint_sha256: '', serial: '', algorithm: '', not_before: 0, not_after: 0, status_code: '0x800B0100', revocation_checked: false }
+            : { state: window.__sigState || 'valid', signer: 'Riot Games, Inc.', via_catalog: false, timestamped: true, certificate_expired: false, subject: name('Riot Games, Inc.'), issuer: name('DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1'), thumbprint_sha1: 'A'.repeat(40), thumbprint_sha256: 'B'.repeat(64), serial: '0a1b2c3d4e5f60718293a4b5c6d7e8f9', algorithm: 'sha384RSA', not_before: now - 86400 * 200, not_after: now + 86400 * 160, status_code: '0x00000000', revocation_checked: false },
+        };
+      }
+      case 'host.reveal': window.__revealed = args.path; return { opened: true };
       case 'reviews.list': return [{ id: 'r1', app_id: 'app-mc', kind: 'unknown_dependency', path: 'C:\\Games\\Minecraft\\telemetry.exe', sha256: '', publisher: '', parent: '', profile_id: 'builtin-gaming', count: 3, first: now2, last: now }];
       case 'continuity.report': return { install_directory: 'C:\\Program Files\\Houseguest', install_trusted: true, pinned: true, missing: [], webview_runtimes: ['x'], webview_trusted: true, cli: '' };
       case 'dashboard': return { version: '0.4.0', configured: true, armed: true, now, enforcement: 'supervised', store_tampered: false, language: 'en', ends_at: now + 3000, blocked: 7, profiles: 5, allowed_rules: 3, recent: [], session: { profile_id: 'builtin-gaming', profile_name: 'Gaming', started_at: now - 600, ends_at: now + 3000, audit_only: false, guest_sids: ['S-1'] } };

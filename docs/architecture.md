@@ -120,7 +120,7 @@ Each process-start event is queued (events first, reconciliation sweeps second, 
 
 ## Caches, invalidation and interface state
 
-Every cache, its owner, what makes it stale, and the rule that no cache decides what may run are in [caching.md](caching.md), together with how Windows components are classified and the measurements taken for them.
+Every cache, its owner, what makes it stale, and the rule that no cache decides what may run are in [caching.md](caching.md), together with how Windows components are classified and the measurements taken for them. Where icons, declared metadata and signatures come from, and how they are kept apart from enforcement, is in [metadata.md](metadata.md).
 
 ## Performance
 

@@ -112,6 +112,8 @@ export interface LibraryApp extends Required<AppEntry> {
   candidates: ExecutableCandidate[];
   evidence: { kind: string; detail: string }[];
   icons?: { kind: string; path: string; index: number }[];
+  origins?: { name: string; company: string; version: string };
+  alternatives?: { field: string; value: string; source: string }[];
   offline: boolean;
   sources: string[];
   kind: AppKind;

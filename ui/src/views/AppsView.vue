@@ -372,7 +372,7 @@ function afterObservation() {
       <div class="app-row" role="button" tabindex="0" :aria-selected="selected.has(key(entry))" @click="open(entry)" @keydown.enter="open(entry)">
         <input class="pick" type="checkbox" :checked="selected.has(key(entry))" :aria-label="t('Select {name}', { name: entry.name })" @click.stop @change="toggle(entry)" />
         <AppIcon :path="iconPath(entry)" :sources="entry.icons" :name="entry.name" :size="34" />
-        <div style="min-width: 0"><strong class="truncate" style="display: block">{{ entry.name }}</strong><span class="hint truncate" style="display: block">{{ entry.company || sourceLabel(entry.source) }}</span></div>
+        <div style="min-width: 0"><strong class="truncate" style="display: block" :title="entry.name">{{ entry.name }}</strong><span class="hint truncate" style="display: block" :title="entry.company">{{ entry.company || sourceLabel(entry.source) }}</span></div>
         <div class="hint mono truncate hide-narrow" :title="entry.path || entry.install_dir">{{ entry.path || entry.install_dir }}</div>
         <div class="row hide-narrow" style="gap: 6px">
           <span v-if="entry.kind !== 'installed'" class="mini">{{ kindLabel(entry.kind) }}</span>

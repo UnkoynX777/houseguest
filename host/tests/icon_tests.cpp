@@ -197,6 +197,7 @@ TEST_CASE("a changed file changes the fingerprint and a missing one is distingui
 // with asking the shell for the executable alone, which is what the window did before.
 #include <shobjidl.h>
 
+#include <chrono>
 #include <iostream>
 
 #include "houseguest/core/serialization.hpp"
@@ -218,6 +219,7 @@ TEST_CASE("survey of the machine's library", "[.survey]") {
     const auto output = environment("HG_SURVEY_OUT");
     if (!output.empty()) fs::create_directories(output);
     int total = 0, before_ok = 0, after_ok = 0, declared = 0;
+    double render_ms = 0;
     for (const auto& app : library["apps"]) {
         const std::string path = app.value("path", std::string());
         if (path.empty()) continue;
@@ -232,7 +234,9 @@ TEST_CASE("survey of the machine's library", "[.survey]") {
             before = SUCCEEDED(factory->GetImage({64, 64}, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK, &bitmap)) && bitmap;
             if (bitmap) DeleteObject(bitmap);
         }
+        const auto started = std::chrono::steady_clock::now();
         const auto after = render_icon(path, sources, 64);
+        render_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
         before_ok += before;
         after_ok += after.has_value();
         declared += after && after->source != "executable";
@@ -244,5 +248,5 @@ TEST_CASE("survey of the machine's library", "[.survey]") {
         }
     }
     std::cout << "entries=" << total << " old_with_picture=" << before_ok << " new_with_picture=" << after_ok
-              << " from_declared_sources=" << declared << "\n";
+              << " from_declared_sources=" << declared << " render_ms_total=" << static_cast<int>(render_ms) << "\n";
 }

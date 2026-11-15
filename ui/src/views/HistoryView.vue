@@ -208,10 +208,10 @@ const filtered = computed(() => filter.value !== 'all' || !!query.value.trim() |
           <span v-else class="glyph"><Icon :name="glyph(entry)" /></span>
           <div class="grow">
             <div class="main-line">
-              <strong class="truncate">{{ isApp(entry) ? appName(entry) : eventLabel(entry) }}</strong>
+              <strong class="truncate" :title="isApp(entry) ? appName(entry) : eventLabel(entry)">{{ isApp(entry) ? appName(entry) : eventLabel(entry) }}</strong>
               <span v-if="outcomeLabel(entry)" class="badge" :class="outcomeBadge(entry)">{{ outcomeLabel(entry) }}</span>
             </div>
-            <div class="sub-line truncate">
+            <div class="sub-line truncate" :title="isApp(entry) ? reason(entry) : ''">
               <template v-if="isApp(entry)">{{ reason(entry) }}<template v-if="detail(entry).profile"> · {{ detail(entry).profile }}</template></template>
               <template v-else>{{ t('by {actor}', { actor: entry.actor }) }}</template>
             </div>

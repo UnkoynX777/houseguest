@@ -216,8 +216,8 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
     <div class="drawer-head">
       <AppIcon :path="entry.path" :sources="entry.icons" :name="entry.name" :size="52" />
       <div class="grow">
-        <h2 class="truncate">{{ entry.name }}</h2>
-        <div class="muted truncate">{{ entry.company || t('Unknown publisher') }}<template v-if="entry.version"> · {{ entry.version }}</template></div>
+        <h2 class="truncate" :title="entry.name">{{ entry.name }}</h2>
+        <div class="muted truncate" :title="entry.company">{{ entry.company || t('Unknown publisher') }}<template v-if="entry.version"> · {{ entry.version }}</template></div>
       </div>
       <span v-if="explanation" class="badge" :class="allowed ? 'ok' : 'bad'"><span class="dot" />{{ allowed ? t('Allowed') : t('Blocked') }}</span>
       <button class="btn icon ghost" :aria-label="t('Close')" @click="emit('close')"><Icon name="x" /></button>
@@ -296,8 +296,9 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
             <section>
               <h4>{{ t('Found by Houseguest') }}</h4>
               <dl class="kv">
-                <dt>{{ t('Found by') }}</dt><dd>{{ (entry.sources?.length ? entry.sources : [entry.source]).map(sourceLabel).join(', ') }}</dd>
-                <dt>{{ t('Publisher in the installation record') }}</dt><dd><template v-if="entry.company">{{ entry.company }}</template><span v-else class="absent">{{ t('Not recorded') }}</span></dd>
+                <dt>{{ t('Found by') }}</dt><dd>{{ [...new Set((entry.sources?.length ? entry.sources : [entry.source]).map(sourceLabel))].join(', ') }}</dd>
+                <dt>{{ t('Publisher in the installation record') }}</dt><dd><template v-if="entry.company">{{ entry.company }} <span v-if="entry.origins?.company" class="muted">({{ sourceLabel(entry.origins.company) }})</span></template><span v-else class="absent">{{ t('Not recorded') }}</span></dd>
+                <dt v-if="entry.alternatives?.length">{{ t('Also reported') }}</dt><dd v-if="entry.alternatives?.length"><div v-for="item in entry.alternatives" :key="item.field + item.value">{{ item.field === 'company' ? t('Publisher') : t('Name') }}: {{ item.value }} <span class="muted">({{ sourceLabel(item.source) }})</span></div></dd>
                 <dt v-if="entry.platform">{{ t('Platform') }}</dt><dd v-if="entry.platform">{{ platformLabel(entry.platform) }}</dd>
                 <dt v-if="entry.role !== 'application'">{{ t('Classified as') }}</dt><dd v-if="entry.role !== 'application'">{{ roleKindLabel(entry.role) }}</dd>
               </dl>
@@ -379,7 +380,7 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
             <div v-for="review in explanation.pending" :key="review.id" class="component">
               <div class="grow">
                 <strong>{{ fileName(review.path) }}</strong>
-                <div class="hint mono truncate">{{ review.path }}</div>
+                <div class="hint mono truncate" :title="review.path">{{ review.path }}</div>
               </div>
               <div class="actions">
                 <button class="btn sm primary" :disabled="busy" @click="approve(review, 0)">{{ t('Approve') }}</button>
@@ -444,7 +445,7 @@ const modeHint = computed(() => modes.value.find((m) => m.id === application.val
           </div>
           <h3>{{ t('Per component') }}</h3>
           <div v-for="component in application.components" :key="component.id" class="component">
-            <div class="grow" style="min-width: 0"><strong>{{ component.label || fileName(component.path) }}</strong><div class="hint mono truncate">{{ component.path }}</div></div>
+            <div class="grow" style="min-width: 0"><strong>{{ component.label || fileName(component.path) }}</strong><div class="hint mono truncate" :title="component.path">{{ component.path }}</div></div>
             <div class="meta" style="grid-column: 1 / -1">
               <label v-if="component.publisher" class="check" style="padding: 0"><input type="checkbox" :checked="component.follow_updates" :disabled="busy" @change="updateComponent(component, { follow_updates: ($event.target as HTMLInputElement).checked })" />{{ t('Accept updates signed by the same publisher') }}</label>
               <label v-if="component.role !== 'main'" class="check" style="padding: 0"><input type="checkbox" :checked="component.scope === 'independent'" :disabled="busy || (!component.sha256 && !component.publisher)" @change="updateComponent(component, { scope: ($event.target as HTMLInputElement).checked ? 'independent' : 'descendant' })" />{{ t('May also be started by Windows or a broker') }}</label>

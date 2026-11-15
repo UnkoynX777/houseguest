@@ -41,6 +41,8 @@ struct Entry {
     std::string root_key;
     fs::path root;
     int name_rank = -1;
+    int company_rank = -1;
+    int version_rank = -1;
     bool user_facing = false;
     bool has_exe = false;
     std::vector<std::pair<fs::path, int>> executables;
@@ -51,6 +53,51 @@ struct Entry {
 
 void add_unique(std::vector<std::string>& list, const std::string& value) {
     if (std::ranges::find(list, value) == list.end()) list.push_back(value);
+}
+
+// How much a source can be trusted to describe the product, as opposed to one file of it. A platform or a package
+// manifest names the product it distributes; the installer's uninstall record was written by the product's own
+// installer; anything else is a hint. Ties keep the first answer, and the disagreeing one is kept as an alternative.
+int information_rank(const std::string& source) {
+    if (source == "packages" || source == "xbox_games" || source == "steam" || source == "epic" || source == "gog" ||
+        source == "ubisoft" || source == "ea" || source == "battle_net")
+        return 3;
+    if (source == "windows_registry") return 2;
+    return 1;
+}
+
+void note_alternative(InstalledApp& app, const char* field, const std::string& value, const std::string& source) {
+    if (value.empty() || app.alternatives.size() >= 12) return;
+    const bool known = std::ranges::any_of(app.alternatives, [&](const Alternative& a) {
+        return a.field == field && a.value == value;
+    });
+    if (!known) app.alternatives.push_back({field, value, source});
+}
+
+void adopt(InstalledApp& app, const char* field, std::string& target, std::string& target_source, int& target_rank,
+           const std::string& value, int rank, const std::string& source, bool keep_disagreement) {
+    if (value.empty()) return;
+    if (target.empty()) {
+        target = value;
+        target_source = source;
+        target_rank = rank;
+        return;
+    }
+    if (alnum(target) == alnum(value)) {
+        if (rank > target_rank) {
+            target_source = source;
+            target_rank = rank;
+        }
+        return;
+    }
+    if (rank > target_rank) {
+        if (keep_disagreement) note_alternative(app, field, target, target_source);
+        target = value;
+        target_source = source;
+        target_rank = rank;
+    } else if (keep_disagreement) {
+        note_alternative(app, field, value, source);
+    }
 }
 
 void add_evidence(Entry& entry, const std::vector<Evidence>& more) {
@@ -191,15 +238,16 @@ private:
         add_unique(entry.app.sources, claim.source);
         entry.app.source = entry.app.sources.front();
         add_evidence(entry, claim.evidence);
-        if (claim.name_rank > entry.name_rank && !claim.name.empty()) {
-            entry.app.name = claim.name;
-            entry.name_rank = claim.name_rank;
-        }
+        adopt(entry.app, "name", entry.app.name, entry.app.name_source, entry.name_rank, claim.name, claim.name_rank,
+              claim.source, true);
+        const int rank = information_rank(claim.source);
+        adopt(entry.app, "company", entry.app.company, entry.app.company_source, entry.company_rank, claim.publisher,
+              rank, claim.source, true);
+        adopt(entry.app, "version", entry.app.version, entry.app.version_source, entry.version_rank, claim.version,
+              rank, claim.source, false);
         const auto fill = [](std::string& target, const std::string& value) {
             if (target.empty()) target = value;
         };
-        fill(entry.app.company, claim.publisher);
-        fill(entry.app.version, claim.version);
         fill(entry.app.scope, claim.scope);
         fill(entry.app.package_family, claim.package_family);
         fill(entry.app.platform, claim.platform);
@@ -400,13 +448,25 @@ void finish_metadata(Entry& entry,
     const auto known = previous_by_path.find(canonical_key(file));
     if (known != previous_by_path.end() && known->second->size == entry.app.size &&
         known->second->modified == entry.app.modified && !known->second->description.empty()) {
-        if (entry.app.company.empty()) entry.app.company = known->second->company;
-        if (entry.app.version.empty()) entry.app.version = known->second->version;
+        if (entry.app.company.empty()) {
+            entry.app.company = known->second->company;
+            entry.app.company_source = known->second->company_source;
+        }
+        if (entry.app.version.empty()) {
+            entry.app.version = known->second->version;
+            entry.app.version_source = known->second->version_source;
+        }
         entry.app.description = known->second->description;
     } else {
         const auto version = read_version(file);
-        if (entry.app.company.empty()) entry.app.company = version.company;
-        if (entry.app.version.empty()) entry.app.version = version.version;
+        if (entry.app.company.empty() && !version.company.empty()) {
+            entry.app.company = version.company;
+            entry.app.company_source = "executable";
+        }
+        if (entry.app.version.empty() && !version.version.empty()) {
+            entry.app.version = version.version;
+            entry.app.version_source = "executable";
+        }
         entry.app.description = !version.description.empty() ? version.description : version.product;
     }
     if (entry.app.name.empty())

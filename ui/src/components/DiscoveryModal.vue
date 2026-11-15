@@ -137,7 +137,7 @@ onUnmounted(() => {
       <div v-if="report && items.length === 0" class="empty"><Icon name="flask" /><span>{{ t('Nothing seen yet.') }}</span></div>
       <div v-else class="table-wrap">
         <div v-for="item in report?.items ?? []" :key="key(item)" class="observed" style="grid-template-columns: minmax(0, 1fr) auto">
-          <div style="min-width: 0"><strong>{{ item.name }}</strong><div class="hint mono truncate">{{ item.path }}</div></div>
+          <div style="min-width: 0"><strong>{{ item.name }}</strong><div class="hint mono truncate" :title="item.path">{{ item.path }}</div></div>
           <span class="mini">{{ roleLabel(item.role) }}</span>
         </div>
       </div>

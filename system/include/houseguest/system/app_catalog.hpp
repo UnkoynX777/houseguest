@@ -29,6 +29,13 @@ struct IconSource {
     int index = 0;
 };
 
+// A value another source reported for a field the entry already has a better-ranked answer for.
+struct Alternative {
+    std::string field;
+    std::string value;
+    std::string source;
+};
+
 struct ExecutableCandidate {
     std::string path;
     int score = 0;
@@ -55,6 +62,10 @@ struct InstalledApp {
     Resolution resolution = Resolution::Resolved;
     std::vector<ExecutableCandidate> candidates;
     std::vector<IconSource> icons;
+    std::vector<Alternative> alternatives;
+    std::string name_source;
+    std::string company_source;
+    std::string version_source;
     std::vector<Evidence> evidence;
     std::int64_t modified = 0;
     std::int64_t size = 0;

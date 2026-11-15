@@ -1,0 +1,35 @@
+import { mkdirSync } from 'node:fs';
+
+import { open } from './cdp.mjs';
+
+const out = process.argv[2];
+mkdirSync(out, { recursive: true });
+const b = await open();
+await b.size(1280, 900);
+await b.goto('http://127.0.0.1:5599/');
+await b.run(`localStorage.clear()`);
+await b.goto('http://127.0.0.1:5599/');
+await b.login();
+await b.click('Applications', 'nav button');
+await b.sleep(800);
+const search = (name) => b.run(`(() => { const i = document.querySelector('.search input'); i.value = ${JSON.stringify(name)}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+await search('Long Path');
+await b.sleep(600);
+await b.run(`document.querySelector('.app-card')?.click()`);
+await b.sleep(1000);
+await b.shot(`${out}/panel-overview.png`);
+await b.run(`document.querySelector('.drawer details.fold > summary').click()`);
+await b.sleep(300);
+await b.run(`document.querySelectorAll('.drawer details.fold details.fold > summary').forEach((s) => s.click())`);
+await b.sleep(300);
+await b.run(`document.querySelector('.drawer-body').scrollTop = 420`);
+await b.sleep(300);
+await b.shot(`${out}/panel-technical.png`);
+await b.size(1280, 900, 'dark');
+await b.sleep(400);
+await b.run(`document.querySelector('.drawer-body').scrollTop = 0`);
+await b.shot(`${out}/panel-dark.png`);
+await b.size(560, 900);
+await b.sleep(400);
+await b.shot(`${out}/panel-narrow.png`);
+b.close();
