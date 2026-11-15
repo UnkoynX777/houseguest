@@ -7,11 +7,9 @@
 namespace houseguest::host {
 namespace {
 
-constexpr int kPreferredWidth = 1240;
-constexpr int kPreferredHeight = 800;
-constexpr int kMinimumWidth = 760;
-constexpr int kMinimumHeight = 480;
-constexpr int kWorkAreaShare = 92;
+constexpr int kPreferredWidth = 1000;
+constexpr int kPreferredHeight = 700;
+constexpr int kWorkAreaShare = 94;
 
 RECT work_area(HMONITOR monitor) {
     MONITORINFO info{sizeof(info)};
@@ -68,15 +66,19 @@ RECT clamp_to(const RECT& area, const RECT& bounds) {
 }
 
 SIZE minimum_for(const RECT& area, UINT dpi) {
-    return {std::min<LONG>(scale(kMinimumWidth, dpi), width_of(area)),
-            std::min<LONG>(scale(kMinimumHeight, dpi), height_of(area))};
+    const RECT fixed = preferred_bounds(area, dpi);
+    return {width_of(fixed), height_of(fixed)};
 }
 
 InitialWindow initial_window(const std::optional<SavedPlacement>& saved) {
     if (saved) {
-        const RECT wanted{saved->x, saved->y, saved->x + saved->width, saved->y + saved->height};
-        if (HMONITOR monitor = MonitorFromRect(&wanted, MONITOR_DEFAULTTONULL)) {
-            return {clamp_to(work_area(monitor), wanted), saved->maximized};
+        // The window has one size; only where it sits is remembered.
+        const RECT probe{saved->x, saved->y, saved->x + 64, saved->y + 64};
+        if (HMONITOR monitor = MonitorFromRect(&probe, MONITOR_DEFAULTTONULL)) {
+            const RECT area = work_area(monitor);
+            const RECT fixed = preferred_bounds(area, monitor_dpi(monitor));
+            const RECT wanted{saved->x, saved->y, saved->x + width_of(fixed), saved->y + height_of(fixed)};
+            return {clamp_to(area, wanted), false};
         }
     }
     HMONITOR monitor = monitor_under_cursor();

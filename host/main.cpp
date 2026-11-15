@@ -251,6 +251,18 @@ void handle_host_command(const Json& id, const std::string& command, const Json&
         data = host::open_text(g.window);
     } else if (command == "host.reveal") {
         data = reveal_in_explorer(args.value("path", std::string()));
+    } else if (command == "host.window") {
+        const auto action = args.value("action", std::string());
+        if (action == "minimize") PostMessageW(g.window, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+        else if (action == "close") PostMessageW(g.window, WM_CLOSE, 0, 0);
+        else if (action == "menu") {
+            RECT r{};
+            GetWindowRect(g.window, &r);
+            const HMENU menu = GetSystemMenu(g.window, FALSE);
+            const int chosen = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN, r.left + 8, r.top + 40, 0, g.window, nullptr);
+            if (chosen != 0) PostMessageW(g.window, WM_SYSCOMMAND, static_cast<WPARAM>(chosen), 0);
+        }
+        data = {{"ok", true}};
     } else if (command == "host.info") {
         data = {{"elevated", host::is_elevated()}};
     } else if (command == "host.get_prefs") {
@@ -386,6 +398,8 @@ void configure_settings() {
     settings->put_AreDefaultScriptDialogsEnabled(FALSE);
     ComPtr<ICoreWebView2Settings3> settings3;
     if (SUCCEEDED(settings.As(&settings3))) settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+    ComPtr<ICoreWebView2Settings9> settings9;
+    if (SUCCEEDED(settings.As(&settings9))) settings9->put_IsNonClientRegionSupportEnabled(TRUE);
     ComPtr<ICoreWebView2Settings4> settings4;
     if (SUCCEEDED(settings.As(&settings4))) {
         settings4->put_IsPasswordAutosaveEnabled(FALSE);
@@ -517,6 +531,10 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         return 0;
     }
     switch (message) {
+        case WM_NCCALCSIZE:
+            // The page draws its own title bar, so the client area is the whole window.
+            if (wparam != FALSE) return 0;
+            return DefWindowProcW(window, message, wparam, lparam);
         case WM_SIZE:
             if (wparam == SIZE_MINIMIZED && g.settings.minimize_to_tray && !g.exiting) {
                 ShowWindow(window, SW_HIDE);
@@ -536,8 +554,10 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             save_settings();
             return 0;
         case WM_GETMINMAXINFO: {
-            const SIZE minimum = host::minimum_size(window);
-            reinterpret_cast<MINMAXINFO*>(lparam)->ptMinTrackSize = {minimum.cx, minimum.cy};
+            const SIZE fixed = host::minimum_size(window);
+            auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+            info->ptMinTrackSize = {fixed.cx, fixed.cy};
+            info->ptMaxTrackSize = {fixed.cx, fixed.cy};
             return 0;
         }
         case WM_DPICHANGED: {
@@ -622,9 +642,12 @@ HWND create_main_window(HINSTANCE instance, bool& maximized) {
 
     const auto initial = host::initial_window(g.settings.placement);
     const RECT& r = initial.bounds;
-    HWND window = CreateWindowExW(0, kWindowClass, L"Houseguest", WS_OVERLAPPEDWINDOW, r.left, r.top,
+    HWND window = CreateWindowExW(0, kWindowClass, L"Houseguest", WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, r.left, r.top,
                                   r.right - r.left, r.bottom - r.top, nullptr, nullptr, instance, nullptr);
     maximized = initial.maximized;
+    const MARGINS frame{1, 1, 1, 1};
+    DwmExtendFrameIntoClientArea(window, &frame);
+    SetWindowPos(window, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     return window;
 }
 
