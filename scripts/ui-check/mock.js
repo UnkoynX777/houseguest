@@ -98,6 +98,9 @@
       case 'ai.job': { const events = args.since === 0 ? (window.__jobEvents || [{ type: 'chat', chat_id: 'chat-1' }, { type: 'tool', name: 'list_installed_apps', ok: true }, { type: 'text', delta: 'I found **Steam** on drive D:.\n\n- `D:\\Games\\Steam\\steam.exe`\n- Valve\n\n<img src=x onerror=alert(1)>' }, { type: 'proposal', id: 'prop-1' }, { type: 'done', ok: true }]) : []; return { events, next: args.since === 0 ? events.length : args.since, done: true, chat_id: 'chat-1' }; }
       case 'ai.cancel': case 'ai.proposal.apply': case 'ai.proposal.discard': case 'ai.proposal.rollback': case 'ai.settings.set': case 'ai.key.clear': return {};
       case 'ai.key.set': return { models: ['gemini-3.1-flash-lite'], model: 'gemini-3.1-flash-lite' };
+      case 'diagnostics': return { version: '5.0.0', capabilities: { product_name: 'Windows 10 Pro', edition: 'Professional', display_version: '22H2', build: '19045', supported_build: true, ready: true, webview2: true, checks: [] }, supervisor_running: true, supervisor: { mode: 'supervised', degraded_reason: '', inspected: 120, terminated: 7, termination_failed: 0, pid_reuse_skipped: 0, identity_cache_entries: 40, latency_ms: { samples: 7, average: 4, p95: 9, max: 12 } } };
+      case 'backup.list': return ['backup-1794700000.json', 'backup-1794710000.json'];
+      case 'backup.create': return {};
       case 'host.info': return { elevated: false };
       case 'host.get_prefs': case 'host.set_prefs': return { minimize_to_tray: true, start_with_windows: false, theme: window.__theme || 'light' };
       case 'host.icon': { (window.__iconCalls ||= []).push({ path: args.path, size: args.size, sources: args.sources });  const name = args.path.split('\\').slice(-2)[0] || 'A'; return { png: Math.abs([...name].reduce((s, c) => s + c.charCodeAt(0), 0)) % 3 === 0 ? '' : swatch(name, colors[name.length % colors.length]) }; }

@@ -207,6 +207,7 @@ const statusText = (s: Proposal['status']) => ({ pending: t('Waiting for you'), 
       <div class="row chat-top">
         <select class="select" style="width: 240px" :value="chatId" :aria-label="t('Conversation')" @change="($event.target as HTMLSelectElement).value ? open(($event.target as HTMLSelectElement).value) : fresh()">
           <option value="">{{ t('New conversation') }}</option>
+          <option v-if="chatId && !chats.some((c) => c.id === chatId)" :value="chatId">{{ t('Conversation') }}</option>
           <option v-for="c in chats" :key="c.id" :value="c.id">{{ c.title || t('Conversation') }}</option>
         </select>
         <span class="grow" />
@@ -264,7 +265,7 @@ const statusText = (s: Proposal['status']) => ({ pending: t('Waiting for you'), 
 .chip:hover { background: var(--accent-soft); }
 .msg { display: flex; }
 .msg.user { justify-content: flex-end; }
-.bubble { max-width: 88%; padding: 8px 12px; border-radius: 12px; background: var(--surface-2); overflow-wrap: anywhere; display: grid; gap: 6px; }
+.bubble { max-width: 88%; padding: 8px 12px; border-radius: 12px; background: var(--surface-2); overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 6px; }
 .msg.user .bubble { background: var(--accent-soft); white-space: pre-wrap; }
 .msg.error .bubble { background: var(--danger-soft); color: var(--danger); }
 .md :deep(p) { margin: 0 0 6px; }

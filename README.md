@@ -14,13 +14,21 @@
 A Windows service enforces the rules, so closing the window changes nothing. The source is public, every block and every change goes into a tamper-evident log, and the limits of what Windows can guarantee are written down instead of hidden.
 
 <p align="center">
-  <img src="docs/images/demo.gif" alt="Walkthrough: set a profile, preview the result, start a guest session, see a blocked launch" width="80%">
+  <img src="docs/images/v5/dashboard.png" alt="Dashboard with an active guest session" width="49%">
+  <img src="docs/images/v5/dashboard-dark.png" alt="Dashboard in dark mode" width="49%">
 </p>
 
 <p align="center">
-  <img src="docs/images/dashboard-active.png" alt="Dashboard with an active guest session" width="49%">
-  <img src="docs/images/dashboard-active-dark.png" alt="Dashboard in dark mode" width="49%">
+  <img src="docs/images/v5/remote-access.png" alt="Remote access page" width="49%">
+  <img src="docs/images/v5/assistant.png" alt="Assistant proposing a profile that waits for confirmation" width="49%">
 </p>
+
+<p align="center">
+  <img src="docs/images/v5/phone-overview.png" alt="Remote panel on a phone: overview" width="24%">
+  <img src="docs/images/v5/phone-activity.png" alt="Remote panel on a phone: activity" width="24%">
+</p>
+
+<sub>Pictures show demo data. The desktop pages are the real interface code rendered at the application window size in Chrome against a stand-in service, and the phone pictures are the real remote panel served by the real local API with a stand-in service behind it. They are not captures of the packaged WebView2 window, and there is no video demo in this release.</sub>
 
 ## Why Houseguest
 
@@ -41,8 +49,8 @@ Windows has parental controls and policy features, but nothing simple for the co
 - English and Portuguese.
 
 <p align="center">
-  <img src="docs/images/policy-preview.png" alt="Policy preview" width="49%">
-  <img src="docs/images/history-dark.png" alt="History with a blocked launch" width="49%">
+  <img src="docs/images/v5/applications.png" alt="Applications" width="49%">
+  <img src="docs/images/v5/security.png" alt="Security" width="49%">
 </p>
 
 ## Quick start

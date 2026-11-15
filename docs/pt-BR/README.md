@@ -9,7 +9,7 @@
 Um serviço do Windows aplica as regras, então fechar a janela não muda nada. O código é público, cada bloqueio e cada alteração vai para um registro à prova de adulteração, e os limites do que o Windows consegue garantir estão escritos, não escondidos.
 
 <p align="center">
-  <img src="../images/dashboard-pt-BR.png" alt="Painel com uma sessão de convidado ativa" width="80%">
+  <img src="../images/v5/dashboard.png" alt="Painel com uma sessão de convidado ativa" width="80%">
 </p>
 
 ## Por que o Houseguest
@@ -22,7 +22,10 @@ O Windows tem controle parental e recursos de política, mas nada simples para o
 - **Prévia antes de iniciar:** veja quais aplicativos seriam permitidos ou bloqueados.
 - **Modo de auditoria**, **exceções temporárias** e **recuperação por administrador sempre disponível**.
 - **Ícone na área de notificação**, iniciar com o Windows (opcional), tema claro/escuro do Windows e cronômetro da sessão.
-- **Privado por padrão:** nada sai do seu computador.
+- **Janela compacta:** um único tamanho fixo (1000 × 700 lógicos), barra de título desenhada na própria página e barra lateral só com ícones.
+- **Acesso remoto pelo celular (opcional, desligado por padrão):** API local em porta atribuída pelo Windows, túnel Cloudflare configurado pela interface, login do Cloudflare Access verificado de novo pelo Houseguest, chave por celular e PIN para mudanças. Veja [acesso remoto](../remote-access.md) (em inglês).
+- **Assistente (opcional, desligado por padrão):** pergunte em linguagem natural sobre aplicativos, perfis e bloqueios com sua própria chave do Gemini; ele só propõe mudanças, que acontecem depois que você confirma. Veja [o assistente](../assistant.md) (em inglês).
+- **Privado por padrão:** com os recursos opcionais desligados, nada sai do seu computador. Acesso remoto e assistente só enviam dados à Cloudflare e ao Google depois que você os configura.
 
 ## Início rápido
 

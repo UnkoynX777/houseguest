@@ -2,7 +2,7 @@
 # pages, preserved filters and scroll, windowed lists, generation-driven refresh and stored preferences.
 # Pass -Shots <folder> to also save screenshots of the detail panel.
 # Build the interface first (cd ui; npm run build). Needs Node 22 and Chrome; uses port 5599 and debugging port 9444.
-param([string] $Shots = '')
+param([string] $Shots = '', [string] $Screens = '')
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $chrome = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -24,6 +24,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'The v5 interface checks failed.' }
     node "$here\remote-panel.mjs"
     if ($LASTEXITCODE -ne 0) { throw 'The remote panel checks failed.' }
+    if ($Screens) { node "$here\screens.mjs" $Screens }
     if ($Shots) { node "$here\shots.mjs" $Shots }
 }
 finally {
