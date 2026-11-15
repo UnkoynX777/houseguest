@@ -8,6 +8,7 @@ import { reactive, watch } from 'vue';
 
 export const routes = [
   'dashboard', 'apps', 'profiles', 'rules', 'sessions', 'history', 'security', 'settings', 'diagnostics', 'about',
+  'remote', 'assistant',
 ] as const;
 export type RouteName = (typeof routes)[number];
 

@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch, type Component } from 'vue';
 
 import Boundary from './components/Boundary.vue';
 import Icon from './components/Icon.vue';
-import Mark from './components/Mark.vue';
+import TitleBar from './components/TitleBar.vue';
 import { t } from './i18n';
 import { app, boot, formatDuration, remaining, toasts, unlocked, type Route } from './store';
 import AboutView from './views/AboutView.vue';
@@ -16,12 +16,15 @@ import ProfilesView from './views/ProfilesView.vue';
 import RulesView from './views/RulesView.vue';
 import SecurityView from './views/SecurityView.vue';
 import SessionsView from './views/SessionsView.vue';
+import AssistantView from './views/AssistantView.vue';
+import RemoteView from './views/RemoteView.vue';
 import SettingsView from './views/SettingsView.vue';
 import { lockNow } from './store';
 
 const views: Record<Route, Component> = {
   dashboard: DashboardView, apps: AppsView, profiles: ProfilesView, rules: RulesView, sessions: SessionsView,
   history: HistoryView, security: SecurityView, settings: SettingsView, diagnostics: DiagnosticsView, about: AboutView,
+  remote: RemoteView, assistant: AssistantView,
 };
 
 const groups = computed<{ route: Route; label: string }[][]>(() => [
@@ -38,6 +41,10 @@ const groups = computed<{ route: Route; label: string }[][]>(() => [
     { route: 'history', label: t('History') },
     { route: 'security', label: t('Security') },
     { route: 'diagnostics', label: t('Diagnostics') },
+  ],
+  [
+    { route: 'remote', label: t('Remote access') },
+    { route: 'assistant', label: t('Assistant') },
   ],
 ]);
 
@@ -75,27 +82,29 @@ watch(
 </script>
 
 <template>
-  <div v-if="!app.ready" class="gate"><span class="spinner" /></div>
-  <GateView v-else-if="!unlocked" />
-  <div v-else class="shell">
-    <nav class="sidebar" :aria-label="t('Main navigation')">
-      <div class="brand"><Mark /><span>Houseguest</span></div>
-      <template v-for="(group, index) in groups" :key="index">
-        <div v-if="index > 0" class="nav-divider" />
-        <button v-for="item in group" :key="item.route" class="nav" :title="item.label" :aria-current="app.route === item.route ? 'page' : undefined" @click="app.route = item.route">
+  <div class="frame">
+    <TitleBar />
+    <div v-if="!app.ready" class="gate"><span class="spinner" /></div>
+    <GateView v-else-if="!unlocked" />
+    <div v-else class="shell">
+      <nav class="sidebar" :aria-label="t('Main navigation')">
+        <template v-for="(group, index) in groups" :key="index">
+          <div v-if="index > 0" class="nav-divider" />
+          <button v-for="item in group" :key="item.route" class="nav" :title="item.label" :aria-label="item.label" :aria-current="app.route === item.route ? 'page' : undefined" @click="app.route = item.route">
+            <Icon :name="item.route" /><span>{{ item.label }}</span>
+          </button>
+        </template>
+        <div class="spacer" />
+        <button class="side-status" :class="{ active: protection.active }" :title="protection.text" :aria-label="protection.text" @click="app.route = 'dashboard'">
+          <span class="dot" />
+        </button>
+        <button v-for="item in footer" :key="item.route" class="nav" :title="item.label" :aria-label="item.label" :aria-current="app.route === item.route ? 'page' : undefined" @click="app.route = item.route">
           <Icon :name="item.route" /><span>{{ item.label }}</span>
         </button>
-      </template>
-      <div class="spacer" />
-      <button class="side-status" :class="{ active: protection.active }" :title="protection.text" @click="app.route = 'dashboard'">
-        <span class="dot" /><span>{{ protection.text }}</span>
-      </button>
-      <button v-for="item in footer" :key="item.route" class="nav" :title="item.label" :aria-current="app.route === item.route ? 'page' : undefined" @click="app.route = item.route">
-        <Icon :name="item.route" /><span>{{ item.label }}</span>
-      </button>
-      <button class="nav" :title="t('Lock')" @click="lockNow"><Icon name="lock" /><span>{{ t('Lock') }}</span></button>
-    </nav>
-    <main ref="mainElement" class="main"><Boundary :reset="app.route" :label="t('This page could not be displayed.')"><KeepAlive><component :is="views[app.route]" /></KeepAlive></Boundary></main>
+        <button class="nav" :title="t('Lock')" :aria-label="t('Lock')" @click="lockNow"><Icon name="lock" /><span>{{ t('Lock') }}</span></button>
+      </nav>
+      <main ref="mainElement" class="main"><Boundary :reset="app.route" :label="t('This page could not be displayed.')"><KeepAlive><component :is="views[app.route]" /></KeepAlive></Boundary></main>
+    </div>
   </div>
 
   <Teleport to="body">

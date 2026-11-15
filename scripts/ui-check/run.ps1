@@ -20,6 +20,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'The detail panel checks failed.' }
     node "$here\panel.mjs"
     if ($LASTEXITCODE -ne 0) { throw 'The panel and layer checks failed.' }
+    node "$here\v5.mjs"
+    if ($LASTEXITCODE -ne 0) { throw 'The v5 interface checks failed.' }
     if ($Shots) { node "$here\shots.mjs" $Shots }
 }
 finally {

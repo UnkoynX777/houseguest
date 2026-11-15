@@ -16,6 +16,12 @@ import {
   Eye,
   FlaskConical,
   Info,
+  Globe,
+  Minus,
+  SendHorizontal,
+  Smartphone,
+  Sparkles,
+  Undo2,
   LayoutDashboard,
   LayoutGrid,
   Link2,
@@ -80,6 +86,12 @@ const icons: Record<string, Component> = {
   key: KeyRound,
   layers: Layers,
   tool: Wrench,
+  remote: Globe,
+  assistant: Sparkles,
+  minimize: Minus,
+  send: SendHorizontal,
+  phone: Smartphone,
+  undo: Undo2,
 };
 
 defineProps<{ name: string }>();

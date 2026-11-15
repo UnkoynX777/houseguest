@@ -81,6 +81,23 @@
   });
   const reply = (cmd, args) => {
     switch (cmd) {
+      case 'host.window': (window.__windowCalls ||= []).push(args.action); return { ok: true };
+      case 'remote.status': return window.__remote || { state: 'connected', configured: true, enabled: true, hostname: 'houseguest.example.com', tunnel_name: 'Houseguest a1b2c3', url: 'https://houseguest.example.com', emails: ['owner@example.com'], connected_seconds: 5400, last_connected: now - 5400, last_exit: 0, restarts: 0, last_error: '', access_policy: true, component_installed: true };
+      case 'remote.logs': return ['INF Starting tunnel', 'INF Registered tunnel connection connIndex=0', 'INF Registered tunnel connection connIndex=1'];
+      case 'remote.test': return { reachable: true, protected: true, status: 200, message: 'Anonymous visitors are stopped before they reach Houseguest.' };
+      case 'remote.discover': return { accounts: [{ id: 'a'.repeat(32), name: 'Personal' }], zones: [{ id: 'b'.repeat(32), name: 'example.com', account: 'a'.repeat(32) }] };
+      case 'api.info': return { running: true, port: 49321, bind: '127.0.0.1', served: 12, refused: 0, devices: [{ id: 'dev-1', name: 'Pixel 8', scope: 'write', created: now - 86400, expires: now + 86400 * 20, last_seen: now - 300, revoked: false }, { id: 'dev-2', name: 'Tablet', scope: 'read', created: now - 3600, expires: now + 86400 * 25, last_seen: now - 60, revoked: false }] };
+      case 'api.devices.create': return { id: 'dev-3', token: 'hgd_' + '0123456789abcdef'.repeat(4), scope: args.scope, expires: now + 86400 * 30 };
+      case 'api.devices.revoke': return {};
+      case 'ai.status': return window.__ai || { enabled: true, has_key: true, model: 'gemini-3.1-flash-lite', share_context: false, limits: { per_minute: 10, per_day: 400, used_today: 4 }, privacy: 'Messages, and the application names, paths and log lines the assistant looks up, are sent to Google. On Gemini\'s free tier Google may use them to improve its products; a paid plan does not. Nothing is sent while the assistant is off.' };
+      case 'ai.models': return { models: ['gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash'] };
+      case 'ai.chat.list': return window.__chats || [];
+      case 'ai.chat.get': return { id: args.id, title: 'Steam on D:', messages: window.__messages || [] };
+      case 'ai.proposals': return window.__proposals || [];
+      case 'ai.chat.send': window.__sent = args; return { job: 'job-1' };
+      case 'ai.job': { const events = args.since === 0 ? (window.__jobEvents || [{ type: 'chat', chat_id: 'chat-1' }, { type: 'tool', name: 'list_installed_apps', ok: true }, { type: 'text', delta: 'I found **Steam** on drive D:.\n\n- `D:\\Games\\Steam\\steam.exe`\n- Valve\n\n<img src=x onerror=alert(1)>' }, { type: 'proposal', id: 'prop-1' }, { type: 'done', ok: true }]) : []; return { events, next: args.since === 0 ? events.length : args.since, done: true, chat_id: 'chat-1' }; }
+      case 'ai.cancel': case 'ai.proposal.apply': case 'ai.proposal.discard': case 'ai.proposal.rollback': case 'ai.settings.set': case 'ai.key.clear': return {};
+      case 'ai.key.set': return { models: ['gemini-3.1-flash-lite'], model: 'gemini-3.1-flash-lite' };
       case 'host.info': return { elevated: false };
       case 'host.get_prefs': case 'host.set_prefs': return { minimize_to_tray: true, start_with_windows: false, theme: window.__theme || 'light' };
       case 'host.icon': { (window.__iconCalls ||= []).push({ path: args.path, size: args.size, sources: args.sources });  const name = args.path.split('\\').slice(-2)[0] || 'A'; return { png: Math.abs([...name].reduce((s, c) => s + c.charCodeAt(0), 0)) % 3 === 0 ? '' : swatch(name, colors[name.length % colors.length]) }; }

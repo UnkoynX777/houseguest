@@ -33,6 +33,8 @@ export const app = reactive({
   clock: Date.now(),
   theme: 'system' as Theme,
   prefs: { minimize_to_tray: true, start_with_windows: false } as HostPrefs,
+  // What the owner is looking at, offered to the assistant only if they allowed sharing it.
+  context: {} as Record<string, string>,
 });
 
 const statusInterval = 5000;
